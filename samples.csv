@@ -1,0 +1,6 @@
+ASMID,SPECIES_IN,STRAIN,BIOPROJECT,NCBI_TAXONID,BUSCO_LINEAGE,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES,TRANSL_TABLE,LOCUSTAG
+GCA_001929475.1_NeoIirr1.0,Neolecta irregularis DAH-3,DAH-3,PRJNA167926,1198029,dikarya,Ascomycota,,Neolectomycetes,,Neolectales,Neolectaceae,Neolecta,Neolecta irregularis,1,F4173319
+GCF_000002945.2_ASM294v3,Schizosaccharomyces pombe,972h-,PRJNA13836,4896,dikarya,Ascomycota,,Schizosaccharomycetes,,Schizosaccharomycetales,Schizosaccharomycetaceae,Schizosaccharomyces,Schizosaccharomyces pombe,1,FD3AB542
+GCF_000146045.2_R64,Saccharomyces cerevisiae S288C,S288C,PRJNA43747,559292,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Saccharomyces,Saccharomyces cerevisiae,1,F24A1226
+GCA_055755615.1_ASM5575561v1,Pyronema omphalodes,CBS144459,PRJNA1251119,337075,dikarya,Ascomycota,,Pezizomycetes,,Pezizales,Pyronemataceae,Pyronema,Pyronema omphalodes,1,FD6849A1
+GCA_004115165.2_Cimm211_ragoo,Coccidioides immitis,WA_211,PRJNA245906,5501,dikarya,Ascomycota,,Eurotiomycetes,,Onygenales,Onygenaceae,Coccidioides,Coccidioides immitis,1,FCEA440F
