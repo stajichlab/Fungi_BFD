@@ -1,0 +1,2 @@
+GCA_029267275.1_ASM2926727v1,All contigs too small
+GCA_982397245.1_T46-F,Entirely Bacteria
