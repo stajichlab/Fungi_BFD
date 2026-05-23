@@ -46,6 +46,9 @@ process RUN_PFAM {
 
     script:
     """
+    module load hmmer/3.4
+    module load db-pfam
+    # the version of PFAM_DB should be recorded in the metadata for reproducibility
     hmmscan --cut_ga --cpu ${task.cpus} \\
         --domtblout ${locustag}.pfam \\
         --tblout    ${locustag}.tblout \\
@@ -113,6 +116,8 @@ process RUN_CAZY {
 
     script:
     """
+    module load dbcanlight
+    # the version of dbCAN should be recorded in the metadata for reproducibility
     mkdir -p ${locustag}
     dbcanlight search -i ${proteins} -m cazyme -o ${locustag} -t ${task.cpus}
     dbcanlight search -i ${proteins} -m sub    -o ${locustag} -t ${task.cpus}
@@ -183,6 +188,9 @@ process RUN_MEROPS {
 
     script:
     """
+    module load ncbi-blast
+    module load db-merops
+    # the version of MEROPS should be recorded in the metadata for reproducibility
     blastp -query ${proteins} \\
         -db \$MEROPS_DB/merops_scan.lib \\
         -out ${locustag}.blasttab \\
@@ -247,6 +255,7 @@ process RUN_SIGNALP {
 
     script:
     """
+    module load signalp/6-gpu
     OUTD=\$(mktemp -d)
     signalp6 -od \$OUTD -org euk --mode fast -format txt \\
         -fasta ${proteins} --write_procs ${task.cpus} -bs 100
@@ -366,6 +375,7 @@ process RUN_TARGETP {
     script:
     """
     TMPD=\$(mktemp -d)
+    module load targetp
     targetp -batch 50 -tmp \$TMPD -format short \\
         -fasta ${proteins} -org non-pl -prefix ${locustag}
     pigz -f ${locustag}_summary.targetp2
@@ -429,6 +439,7 @@ process RUN_IDP {
 
     script:
     """
+    module load aiupred
     aiupred.py -i ${proteins} -o ${locustag}.aiupred.txt
     pigz ${locustag}.aiupred.txt
     python3 ${params.scripts}/gather_AIUPred.py ${locustag}.aiupred.txt.gz \\
@@ -501,6 +512,7 @@ process RUN_WOLFPSORT {
 
     script:
     """
+    module load wolfpsort
     cat ${proteins} | runWolfPsortSummary fungi > ${locustag}.wolfpsort.results.txt
     pigz ${locustag}.wolfpsort.results.txt
     """
@@ -556,6 +568,7 @@ process RUN_PREDGPI {
 
     script:
     """
+    module load predgpi
     predgpi.py -f ${proteins} -m gff3 -o ${locustag}.predgpi.gff3
     pigz ${locustag}.predgpi.gff3
     """
