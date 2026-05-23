@@ -135,7 +135,28 @@ All parameters can be overridden on the command line with `--param value`.
 | `--bigquery` | `bigquery/` | Merged DuckDB-loadable CSV.gz files |
 | `--scripts` | `scripts/` | Location of helper Python scripts |
 | `--run_pfam` … `--run_predgpi` | `true` | Toggle individual subworkflows on/off |
+| `--pfam_nodes` | `1` | SLURM nodes per hmmscan job; `1` = single-node threaded, `>1` = MPI |
 | `--n_test` | `0` (all samples) | Limit to first N samples (for testing) |
+
+### Pfam MPI mode
+
+By default each `hmmscan` job runs on a single node using 16 threads (`--cpu 16`). For large sample sets, MPI mode distributes the Pfam-A HMM database across multiple nodes so each species finishes faster.
+
+**Enable MPI (e.g. 4 nodes per species):**
+```bash
+sbatch nextflow/run_functional.sh --run_pfam true --pfam_nodes 4
+```
+
+Under the hood, when `pfam_nodes > 1` the pipeline:
+1. Requests `-N <n> --ntasks-per-node=1` from SLURM for each Pfam job
+2. Launches hmmscan as `srun --mpi=pmi2 -N <n> -n <n> hmmscan --mpi --cut_ga --cpu 16 …`
+
+Each MPI rank searches a stripe of Pfam-A; `--cpu 16` still gives 16 search threads per rank. Memory is allocated per-job (48 GB total), so with 4 nodes each node uses roughly 12 GB.
+
+**Recommendations:**
+- `--pfam_nodes 1` (default) — adequate for ≤500 species or when queue wait time dominates
+- `--pfam_nodes 4` — suitable for large runs on the `epyc` queue where multi-node jobs are available
+- Do not exceed the number of HMM partitions that HMMER would naturally create; diminishing returns set in beyond ~8 nodes
 
 ### How to run
 
