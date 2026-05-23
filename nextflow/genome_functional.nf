@@ -45,12 +45,18 @@ process RUN_PFAM {
         path("${locustag}.tblout.gz"),  emit: tblout
 
     script:
+    def mpi_launch = params.pfam_tasks > 1 ? "srun -N ${params.pfam_nodes} -n ${params.pfam_tasks}" : ""
+    def mpi_flag   = params.pfam_tasks > 1 ? "--mpi" : ""
     """
-    module load hmmer/3.4
+    # PFAM_DB and hmmer module loaded by beforeScript; version recorded in trace
+    if [ ! -z "${mpi_flag}" ]; then
+        module load hmmer/3.4-mpi
+    else
+        module load hmmer/3.4
+    fi
     module load db-pfam
-    # the version of PFAM_DB should be recorded in the metadata for reproducibility
-    hmmscan --cut_ga --cpu ${task.cpus} \\
-        --domtblout ${locustag}.pfam \\
+    ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali --cpu ${task.cpus} \\
+        --domtbl    ${locustag}.pfam \\
         --tblout    ${locustag}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
     pigz ${locustag}.pfam ${locustag}.tblout
@@ -150,6 +156,7 @@ process MERGE_CAZY {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_cazy.py \\
         --overviews ${overviews} \\
         --cazymes   ${cazymes} \\
@@ -221,6 +228,7 @@ process MERGE_MEROPS {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_merops.py -o merops.csv ${blasttabs}
     pigz merops.csv
     """
@@ -283,6 +291,7 @@ process MERGE_SIGNALP {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_signalp.py -o signalp.signal_peptide.csv ${gff3s}
     pigz signalp.signal_peptide.csv
     """
@@ -341,6 +350,7 @@ process MERGE_TMHMM {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_tmhmm.py -o tmhmm.csv ${tsvs}
     pigz tmhmm.csv
     """
@@ -400,6 +410,7 @@ process MERGE_TARGETP {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_targetp.py -o targetP.csv ${summaries}
     pigz targetP.csv
     """
@@ -535,6 +546,7 @@ process MERGE_WOLFPSORT {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_wolfpsort.py -o wolfpsort.csv ${results}
     pigz wolfpsort.csv
     """
@@ -591,6 +603,7 @@ process MERGE_PREDGPI {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_predgpi.py -o predgpi.csv ${gff3s}
     pigz predgpi.csv
     """
