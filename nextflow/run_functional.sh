@@ -22,7 +22,6 @@ mkdir -p logs/nextflow
 NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run nextflow/genome_functional.nf \
     -c nextflow/nextflow.config \
-    nextflow run genome_functional.nf -c nextflow.config \
     --run_pfam true \
     --run_cazy false \
     --run_merops false \
@@ -31,6 +30,6 @@ nextflow run nextflow/genome_functional.nf \
     --run_targetp false \
     --run_idp false \
     --run_wolfpsort false \
-    --run_predgpi false
+    --run_predgpi false \
     -resume \
     "$@"

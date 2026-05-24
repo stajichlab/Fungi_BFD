@@ -38,28 +38,34 @@ process RUN_PFAM {
     publishDir "${params.outdir}/pfam_hmmscan", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.pfam.gz"),    emit: domtbl
-        path("${locustag}.tblout.gz"),  emit: tblout
+        path("${basename}.pfam.gz"),    emit: domtbl
+        path("${basename}.tblout.gz"),  emit: tblout
 
     script:
+    def mpi_launch = params.pfam_tasks > 1 ? "srun -N ${params.pfam_nodes} -n ${params.pfam_tasks}" : ""
+    def mpi_flag   = params.pfam_tasks > 1 ? "--mpi" : ""
     """
-    module load hmmer/3.4
+    # PFAM_DB and hmmer module loaded by beforeScript; version recorded in trace
+    if [ ! -z "${mpi_flag}" ]; then
+        module load hmmer/3.4-mpi
+    else
+        module load hmmer/3.4
+    fi
     module load db-pfam
-    # the version of PFAM_DB should be recorded in the metadata for reproducibility
-    hmmscan --cut_ga --cpu ${task.cpus} \\
-        --domtblout ${locustag}.pfam \\
-        --tblout    ${locustag}.tblout \\
+    ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali --cpu ${task.cpus} \\
+        --domtbl    ${basename}.pfam \\
+        --tblout    ${basename}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
-    pigz ${locustag}.pfam ${locustag}.tblout
+    pigz ${basename}.pfam ${basename}.tblout
     """
 
     stub:
     """
-    printf '#\\n' | gzip > ${locustag}.pfam.gz
-    printf '' | gzip     > ${locustag}.tblout.gz
+    printf '#\\n' | gzip > ${basename}.pfam.gz
+    printf '' | gzip     > ${basename}.tblout.gz
     """
 }
 
@@ -104,35 +110,35 @@ workflow CAZY {
 process RUN_CAZY {
     tag        "${locustag}"
     label      'cazy'
-    publishDir { "${params.outdir}/cazy/${locustag}" }, mode: 'copy'
+    publishDir { "${params.outdir}/cazy/${basename}" }, mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.overview.tsv.gz"),   emit: overview
-        path("${locustag}.cazymes.tsv.gz"),    emit: cazymes
-        path("${locustag}.substrates.tsv.gz"), emit: substrates
+        path("${basename}.overview.tsv.gz"),   emit: overview
+        path("${basename}.cazymes.tsv.gz"),    emit: cazymes
+        path("${basename}.substrates.tsv.gz"), emit: substrates
 
     script:
     """
     module load dbcanlight
     # the version of dbCAN should be recorded in the metadata for reproducibility
-    mkdir -p ${locustag}
-    dbcanlight search -i ${proteins} -m cazyme -o ${locustag} -t ${task.cpus}
-    dbcanlight search -i ${proteins} -m sub    -o ${locustag} -t ${task.cpus}
-    dbcanlight conclude ${locustag}
-    pigz -f ${locustag}/cazymes.tsv ${locustag}/substrates.tsv ${locustag}/overview.tsv
-    mv ${locustag}/overview.tsv.gz   ${locustag}.overview.tsv.gz
-    mv ${locustag}/cazymes.tsv.gz    ${locustag}.cazymes.tsv.gz
-    mv ${locustag}/substrates.tsv.gz ${locustag}.substrates.tsv.gz
+    mkdir -p ${basename}
+    dbcanlight search -i ${proteins} -m cazyme -o ${basename} -t ${task.cpus}
+    dbcanlight search -i ${proteins} -m sub    -o ${basename} -t ${task.cpus}
+    dbcanlight conclude ${basename}
+    pigz -f ${basename}/cazymes.tsv ${basename}/substrates.tsv ${basename}/overview.tsv
+    mv ${basename}/overview.tsv.gz   ${basename}.overview.tsv.gz
+    mv ${basename}/cazymes.tsv.gz    ${basename}.cazymes.tsv.gz
+    mv ${basename}/substrates.tsv.gz ${basename}.substrates.tsv.gz
     """
 
     stub:
     """
-    printf 'Gene_ID\\tEC\\tcazyme_fam\\tsub_fam\\tdiamond_fam\\tSubstrate\\t#ofTools\\n' | gzip > ${locustag}.overview.tsv.gz
-    printf 'HMM_Profile\\tProfile_Length\\tGene_ID\\tGene_Length\\tEvalue\\tProfile_Start\\tProfile_End\\tGene_Start\\tGene_End\\tCoverage\\n' | gzip > ${locustag}.cazymes.tsv.gz
-    printf 'Gene_ID\\tSubstrate\\n' | gzip > ${locustag}.substrates.tsv.gz
+    printf 'Gene_ID\\tEC\\tcazyme_fam\\tsub_fam\\tdiamond_fam\\tSubstrate\\t#ofTools\\n' | gzip > ${basename}.overview.tsv.gz
+    printf 'HMM_Profile\\tProfile_Length\\tGene_ID\\tGene_Length\\tEvalue\\tProfile_Start\\tProfile_End\\tGene_Start\\tGene_End\\tCoverage\\n' | gzip > ${basename}.cazymes.tsv.gz
+    printf 'Gene_ID\\tSubstrate\\n' | gzip > ${basename}.substrates.tsv.gz
     """
 }
 
@@ -150,6 +156,7 @@ process MERGE_CAZY {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_cazy.py \\
         --overviews ${overviews} \\
         --cazymes   ${cazymes} \\
@@ -181,10 +188,10 @@ process RUN_MEROPS {
     publishDir "${params.outdir}/merops", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.blasttab.gz"), emit: blasttab
+        path("${basename}.blasttab.gz"), emit: blasttab
 
     script:
     """
@@ -193,19 +200,19 @@ process RUN_MEROPS {
     # the version of MEROPS should be recorded in the metadata for reproducibility
     blastp -query ${proteins} \\
         -db \$MEROPS_DB/merops_scan.lib \\
-        -out ${locustag}.blasttab \\
+        -out ${basename}.blasttab \\
         -num_threads ${task.cpus} \\
         -seg yes -soft_masking true \\
         -max_target_seqs 10 \\
         -evalue 1e-10 \\
         -outfmt 6 \\
         -use_sw_tback
-    pigz ${locustag}.blasttab
+    pigz ${basename}.blasttab
     """
 
     stub:
     """
-    printf '' | gzip > ${locustag}.blasttab.gz
+    printf '' | gzip > ${basename}.blasttab.gz
     """
 }
 
@@ -221,6 +228,7 @@ process MERGE_MEROPS {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_merops.py -o merops.csv ${blasttabs}
     pigz merops.csv
     """
@@ -247,11 +255,11 @@ process RUN_SIGNALP {
     publishDir "${params.outdir}/signalp", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.signalp.gff3.gz"),         emit: gff3
-        path("${locustag}.signalp.results.txt.gz"),  emit: results
+        path("${basename}.signalp.gff3.gz"),         emit: gff3
+        path("${basename}.signalp.results.txt.gz"),  emit: results
 
     script:
     """
@@ -259,15 +267,15 @@ process RUN_SIGNALP {
     OUTD=\$(mktemp -d)
     signalp6 -od \$OUTD -org euk --mode fast -format txt \\
         -fasta ${proteins} --write_procs ${task.cpus} -bs 100
-    pigz -c \$OUTD/output.gff3             > ${locustag}.signalp.gff3.gz
-    pigz -c \$OUTD/prediction_results.txt  > ${locustag}.signalp.results.txt.gz
+    pigz -c \$OUTD/output.gff3             > ${basename}.signalp.gff3.gz
+    pigz -c \$OUTD/prediction_results.txt  > ${basename}.signalp.results.txt.gz
     rm -rf \$OUTD
     """
 
     stub:
     """
-    printf '##gff-version 3\\n' | gzip > ${locustag}.signalp.gff3.gz
-    printf '# SignalP-6.0\\n'   | gzip > ${locustag}.signalp.results.txt.gz
+    printf '##gff-version 3\\n' | gzip > ${basename}.signalp.gff3.gz
+    printf '# SignalP-6.0\\n'   | gzip > ${basename}.signalp.results.txt.gz
     """
 }
 
@@ -283,6 +291,7 @@ process MERGE_SIGNALP {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_signalp.py -o signalp.signal_peptide.csv ${gff3s}
     pigz signalp.signal_peptide.csv
     """
@@ -309,23 +318,24 @@ process RUN_TMHMM {
     publishDir "${params.outdir}/tmhmm", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.tmhmm_short.tsv.gz"),   emit: short_tsv
-        path("${locustag}.tmhmm_results.tsv.gz"), emit: full_tsv
+        path("${basename}.tmhmm_short.tsv.gz"),   emit: short_tsv
+        path("${basename}.tmhmm_results.tsv.gz"), emit: full_tsv
 
     script:
     """
-    tmhmm --noplot         < ${proteins} > ${locustag}.tmhmm_results.tsv
-    tmhmm --short --noplot < ${proteins} > ${locustag}.tmhmm_short.tsv
-    pigz ${locustag}.tmhmm_results.tsv ${locustag}.tmhmm_short.tsv
+    module load tmhmm
+    tmhmm --noplot         < ${proteins} > ${basename}.tmhmm_results.tsv
+    tmhmm --short --noplot < ${proteins} > ${basename}.tmhmm_short.tsv
+    pigz ${basename}.tmhmm_results.tsv ${basename}.tmhmm_short.tsv
     """
 
     stub:
     """
-    printf '# TMHMM\\n' | gzip > ${locustag}.tmhmm_results.tsv.gz
-    printf '# TMHMM\\n' | gzip > ${locustag}.tmhmm_short.tsv.gz
+    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_results.tsv.gz
+    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_short.tsv.gz
     """
 }
 
@@ -341,6 +351,7 @@ process MERGE_TMHMM {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_tmhmm.py -o tmhmm.csv ${tsvs}
     pigz tmhmm.csv
     """
@@ -367,24 +378,24 @@ process RUN_TARGETP {
     publishDir "${params.outdir}/targetP", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}_summary.targetp2.gz"), emit: summary
+        path("${basename}_summary.targetp2.gz"), emit: summary
 
     script:
     """
     TMPD=\$(mktemp -d)
     module load targetp
     targetp -batch 50 -tmp \$TMPD -format short \\
-        -fasta ${proteins} -org non-pl -prefix ${locustag}
-    pigz -f ${locustag}_summary.targetp2
+        -fasta ${proteins} -org non-pl -prefix ${basename}
+    pigz -f ${basename}_summary.targetp2
     rm -rf \$TMPD
     """
 
     stub:
     """
-    printf '# TargetP-2.0\\n' | gzip > ${locustag}_summary.targetp2.gz
+    printf '# TargetP-2.0\\n' | gzip > ${basename}_summary.targetp2.gz
     """
 }
 
@@ -400,6 +411,7 @@ process MERGE_TARGETP {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_targetp.py -o targetP.csv ${summaries}
     pigz targetP.csv
     """
@@ -430,29 +442,29 @@ process RUN_IDP {
     publishDir "${params.outdir}/aiupred", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.aiupred.txt.gz"),     emit: raw
-        path("${locustag}.idp.csv.gz"),         emit: idp_csv
-        path("${locustag}.idp_summary.csv.gz"), emit: idp_summary_csv
+        path("${basename}.aiupred.txt.gz"),     emit: raw
+        path("${basename}.idp.csv.gz"),         emit: idp_csv
+        path("${basename}.idp_summary.csv.gz"), emit: idp_summary_csv
 
     script:
     """
     module load aiupred
-    aiupred.py -i ${proteins} -o ${locustag}.aiupred.txt
-    pigz ${locustag}.aiupred.txt
-    python3 ${params.scripts}/gather_AIUPred.py ${locustag}.aiupred.txt.gz \\
-        --outfile      ${locustag}.idp.csv \\
-        --outfilesum   ${locustag}.idp_summary.csv
-    pigz ${locustag}.idp.csv ${locustag}.idp_summary.csv
+    aiupred.py -i ${proteins} -o ${basename}.aiupred.txt
+    pigz ${basename}.aiupred.txt
+    python3 ${params.scripts}/gather_AIUPred.py ${basename}.aiupred.txt.gz \\
+        --outfile      ${basename}.idp.csv \\
+        --outfilesum   ${basename}.idp_summary.csv
+    pigz ${basename}.idp.csv ${basename}.idp_summary.csv
     """
 
     stub:
     """
-    printf '' | gzip > ${locustag}.aiupred.txt.gz
-    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${locustag}.idp.csv.gz
-    printf 'protein_id,idp_status\\n'                                     | gzip > ${locustag}.idp_summary.csv.gz
+    printf '' | gzip > ${basename}.aiupred.txt.gz
+    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${basename}.idp.csv.gz
+    printf 'protein_id,idp_status\\n'                                     | gzip > ${basename}.idp_summary.csv.gz
     """
 }
 
@@ -505,21 +517,21 @@ process RUN_WOLFPSORT {
     publishDir "${params.outdir}/wolfpsort", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.wolfpsort.results.txt.gz"), emit: results
+        path("${basename}.wolfpsort.results.txt.gz"), emit: results
 
     script:
     """
     module load wolfpsort
-    cat ${proteins} | runWolfPsortSummary fungi > ${locustag}.wolfpsort.results.txt
-    pigz ${locustag}.wolfpsort.results.txt
+    cat ${proteins} | runWolfPsortSummary fungi > ${basename}.wolfpsort.results.txt
+    pigz ${basename}.wolfpsort.results.txt
     """
 
     stub:
     """
-    printf '# WoLF PSORT\\n' | gzip > ${locustag}.wolfpsort.results.txt.gz
+    printf '# WoLF PSORT\\n' | gzip > ${basename}.wolfpsort.results.txt.gz
     """
 }
 
@@ -535,6 +547,7 @@ process MERGE_WOLFPSORT {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_wolfpsort.py -o wolfpsort.csv ${results}
     pigz wolfpsort.csv
     """
@@ -561,21 +574,21 @@ process RUN_PREDGPI {
     publishDir "${params.outdir}/predgpi", mode: 'copy'
 
     input:
-        tuple val(locustag), val(label), val(species), val(strain), path(proteins)
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${locustag}.predgpi.gff3.gz"), emit: gff3
+        path("${basename}.predgpi.gff3.gz"), emit: gff3
 
     script:
     """
     module load predgpi
-    predgpi.py -f ${proteins} -m gff3 -o ${locustag}.predgpi.gff3
-    pigz ${locustag}.predgpi.gff3
+    predgpi.py -f ${proteins} -m gff3 -o ${basename}.predgpi.gff3
+    pigz ${basename}.predgpi.gff3
     """
 
     stub:
     """
-    printf '##gff-version 3\\n' | gzip > ${locustag}.predgpi.gff3.gz
+    printf '##gff-version 3\\n' | gzip > ${basename}.predgpi.gff3.gz
     """
 }
 
@@ -591,6 +604,7 @@ process MERGE_PREDGPI {
 
     script:
     """
+    export PATH="${projectDir}/bin:\$PATH"
     merge_predgpi.py -o predgpi.csv ${gff3s}
     pigz predgpi.csv
     """
@@ -616,13 +630,13 @@ workflow {
             def species  = row.SPECIES?.trim() ?: ''
             def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def label    = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_')
-            def prot     = file("${params.pep_dir}/${label}.proteins.fa", glob: false)
+            def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
+            def prot     = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
             if (!prot.exists()) {
-                log.warn "Skipping ${label} (${locustag}): protein file not found"
+                log.warn "Skipping ${basename} (${locustag}): protein file not found"
                 return null
             }
-            return tuple(locustag, label, species, strain, prot)
+            return tuple(locustag, basename, species, strain, prot)
         }
         .filter { it != null }
         .take(params.n_test > 0 ? params.n_test as int : -1)
