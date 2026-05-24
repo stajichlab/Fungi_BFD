@@ -288,4 +288,4 @@ The Nextflow config sources `/etc/profile.d/modules.sh` in a `beforeScript` bloc
 
 ## Contact
 
-Jason Stajich — jasonst@ucr.edu — Stajich Lab / MosesLab, UC Riverside
+Jason Stajich — jasonst@ucr.edu — Stajich Lab
