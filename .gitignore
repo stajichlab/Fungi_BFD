@@ -6,3 +6,13 @@ work/
 tests/output/
 tests/work/
 logs/nextflow/
+pep/
+cds/
+gff3/
+gff/
+genome/
+genome_annotation/
+rnaseq_data/
+rnaseq_reads/
+logs/
+results/
