@@ -1,0 +1,3 @@
+ASMID	SPECIES	STRAIN	contig_count	total_length_bp	min_contig_bp	max_contig_bp	median_contig_bp	mean_contig_bp	L50	N50_bp	L90	N90_bp	gc_pct	n_gap_count	total_n_bases	masked_bases	masked_pct	t2t_scaffolds	telomere_fwd	telomere_rev
+GCA_902806535.1_HR	Hypoxylon rickii	MUCL 53309	59	32885605	2766	5049219	27710	557383.14	4	3420550	10	815377	46.08	0	0	6121860	18.62	0	5	13
+GCF_010015735.1_Aaoar1	Aaosphaeria arxii CBS 175.79	CBS 175.79	45	38886218	2453	5683700	14617	864138.18	4	4421818	13	1183166	49.70	180	135178	3744679	9.63	0	0	0
