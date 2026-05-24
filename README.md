@@ -1,6 +1,6 @@
 # Fungi5K
 
-Comparative genomics analysis of **5,813 re-annotated fungal genomes** from NCBI (dataset frozen 2024-08-12).  
+Comparative genomics analysis of **22k re-annotated fungal genomes** from NCBI (dataset frozen 2025-05).  
 Analyzes gene structure, functional domains, protein orthology, and kingdom-wide phylogenetics across Fungi.  
 See [project_README.md](project_README.md) for a full description of all analyses and outputs.
 
