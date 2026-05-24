@@ -400,24 +400,28 @@ process RNASEQ_PREPARE {
     module load miniconda3
     eval "\$(conda shell.bash hook)"
     module load funannotate
+    module load fastp
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
 
     # ── Run full funannotate train on the representative genome ───────────────
+    # Use SCRATCH for the funannotate output dir so Trinity/HISAT2/normalize
+    # intermediates land on fast local storage and don't consume project quota.
     echo "[INFO] RNASEQ_PREPARE: running funannotate train for representative ${out} (species: ${species_tag})"
-    funannotate train -i ${genome_fa} -o ${params.target}/${out} \\
+
+    funannotate train -i ${genome_fa} -o \$SCRATCH/${out} \\
         --left ${r1} --right ${r2} --aligners minimap2 \\
         --species "${species}" --strain "${strain}" \\
         --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
         --header_length ${header_length} \\
         --jaccard_clip --no-progress --min_coverage 4 \\
         --max_intronlen ${params.max_intronlen} \\
-	--stop_after_trinity
+	--stop_after_trinity --trimmer fastp
 
     # ── Copy shared outputs to rnaseq_data/ ──────────────────────────────────
-    TRAINDIR="${params.target}/${out}/training"
+    TRAINDIR="\$SCRATCH/${out}/training"
     cp \$TRAINDIR/trimmomatic/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
     cp \$TRAINDIR/trimmomatic/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
     cp \$TRAINDIR/normalize/left.norm.fq.gz             ${species_tag}_left.norm.fq.gz          || touch ${species_tag}_left.norm.fq.gz
@@ -430,9 +434,8 @@ process RNASEQ_PREPARE {
         touch ${species_tag}.trinity-GG.fasta
     fi
 
-    # ── Clean up large intermediates ──────────────────────────────────────────
-    rm -rf "\$TRAINDIR/hisat2.*"
-    rm -rf "\$TRAINDIR/trinity_gg"
+    # ── Clean up scratch output dir (all intermediates were temporary) ────────
+    rm -rf "\$SCRATCH/${out}"
     echo "[INFO] RNASEQ_PREPARE complete for ${species_tag}"
     """
 
@@ -547,6 +550,7 @@ process FUNANNOTATE_TRAIN {
             --header_length ${header_length} \\
             --jaccard_clip --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
+	    --trimmer fastp \\
             \$pasa_db_arg
     fi
 
@@ -831,9 +835,27 @@ workflow {
         log.info "Suppress list loaded: ${suppressSet.size()} ASMIDs will be skipped"
     }
 
+    // ── Taxonomy filter ───────────────────────────────────────────────────────
+    // Parse --taxon RANK:VALUE (e.g. --taxon PHYLUM:Ascomycota).
+    // taxonFilter is a closure applied after splitCsv on the raw row map.
+    def taxonFilter
+    if (params.taxon) {
+        def parts = (params.taxon as String).split(':', 2)
+        if (parts.size() != 2 || !parts[0] || !parts[1]) {
+            error "--taxon must be in RANK:VALUE format, e.g. --taxon PHYLUM:Ascomycota"
+        }
+        def taxRank  = parts[0].toUpperCase()
+        def taxValue = parts[1]
+        log.info "Taxonomy filter: ${taxRank} = '${taxValue}'"
+        taxonFilter = { row -> row[taxRank]?.trim() == taxValue }
+    } else {
+        taxonFilter = { row -> true }
+    }
+
     // ── Prediction pipeline ───────────────────────────────────────────────────
     def jobs = channel.fromPath(params.samples)
         .splitCsv(header: true)
+        .filter(taxonFilter)
         .map { row ->
             def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
             def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
@@ -1035,6 +1057,7 @@ workflow {
         // pre-annotate steps and for FUNANNOTATE_ANNOTATE itself.
         def postpredict = channel.fromPath(params.samples)
             .splitCsv(header: true)
+            .filter(taxonFilter)
             .map { row ->
                 def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
                 def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
