@@ -55,7 +55,7 @@ Four Nextflow workflows live under `nextflow/`, all driven by a single unified c
 
 ```
 nextflow/
-  genome_functional.nf    ← BFD functional annotation (Pfam, CAZy, MEROPS, SignalP, …)
+  BFD.nf    ← BFD functional annotation (Pfam, CAZy, MEROPS, SignalP, …)
   genome_seqstats.nf      ← BFD sequence statistics (AA freq, codon freq, gene stats, chrom info)
   funannotate.nf          ← genome prediction + annotation (funannotate/PASA/Augustus)
   interproscan6.nf        ← InterProScan 6 XML generation for annotate_misc/
@@ -80,7 +80,7 @@ Each workflow is activated by its `-profile` flag; shared settings (SLURM execut
 
 ---
 
-### Workflow 1: Functional annotation (`genome_functional.nf`)
+### Workflow 1: Functional annotation (`BFD.nf`)
 
 Runs nine tools in parallel across all species in `samples.csv`. Input: `pep/*.proteins.fa`.
 
