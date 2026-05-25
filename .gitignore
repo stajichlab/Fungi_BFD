@@ -16,3 +16,5 @@ rnaseq_data/
 rnaseq_reads/
 logs/
 results/
+tests/output/
+nextflow/tests/output/function/

@@ -5,6 +5,7 @@ from collections import Counter
 import sys
 import argparse
 import csv
+import gzip
 import os
 import time
 
@@ -34,12 +35,12 @@ def main():
     parser.add_argument("-ext", "--ext", default="proteins.fa",help="file extension when reading folder")
     parser.add_argument('-v','--debug', help='Debugging output', action='store_true')
 
-    parser.add_argument("-o","--outfile", default='bigquery/aa_freq.csv', 
+    parser.add_argument("-o","--outfile", default='tables/aa_freq.csv.gz',
                         help="Output file")
-    
-    
+
+
     args = parser.parse_args()
-    with open (args.outfile, "w",newline="") as outfh:
+    with gzip.open(args.outfile, "wt", newline="") as outfh:
         outwriter = csv.writer(outfh)
         outwriter.writerow(["species_prefix","amino_acid","frequency"])
         n = 0
