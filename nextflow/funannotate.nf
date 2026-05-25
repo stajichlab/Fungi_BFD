@@ -22,11 +22,18 @@
 //   → emits: ..., path(masked_fa), val(taxonid)   [storeDir caches input_clean_genomes/<asmid>.masked.fasta]
 //   [skipped unless --run_repeatmasker; masked_fa falls back to unmasked .fa if .masked.fasta absent]
 // SRA_FETCH receives: val(species_tag), val(taxonid)   [only when --run_sra_fetch; one per species]
-//   → emits: val(species_tag), path(r1.fastq.gz), path(r2.fastq.gz)
-//   → storeDir caches combined reads at rnaseq_reads/<species_tag>_{R1,R2}.fastq.gz
-//   → empty files (0 bytes) written when no RNA-seq found; TRAIN checks size to skip
-// FUNANNOTATE_TRAIN receives: ..., val(genome_fa), path(r1), path(r2)   [only when --run_sra_fetch]
-//   → emits: ..., val(genome_fa)   [reads remain in storeDir; TRAIN skips if r1 is empty]
+//   → emits: val(species_tag), path(norm_R1.fastq.gz), path(norm_R2.fastq.gz)
+//   → storeDir caches normalized reads at rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
+//   → empty files (0 bytes) written when no RNA-seq found; downstream checks size to skip
+//   → SRA_FETCH handles: download → fastp trim → bbnorm normalization internally
+// --stop_after_sra_fetch: when true, pipeline halts after SRA_FETCH (skips RNASEQ_PREPARE,
+//   FUNANNOTATE_TRAIN, FUNANNOTATE_PREDICT and all downstream steps).
+// RNASEQ_PREPARE receives: ..., val(genome_fa), path(norm_r1), path(norm_r2)   [representative only]
+//   → emits: val(species_tag), path(trinity-GG.fasta)   [storeDir caches in rnaseq_data/]
+//   → normalized reads stay in rnaseq_reads/ and are NOT re-emitted from RNASEQ_PREPARE
+// FUNANNOTATE_TRAIN receives: ..., val(genome_fa), path(norm_r1), path(norm_r2), path(trinity_fa)
+//   → norm reads come directly from SRA_FETCH; trinity_fa from RNASEQ_PREPARE
+//   → emits: ..., val(genome_fa)
 // FUNANNOTATE_PREDICT receives: ..., val(genome_fa)   [from TRAIN or directly after masking/clean]
 
 // Download and extract NCBI taxdump once; storeDir caches it at params.taxondb so
@@ -186,22 +193,25 @@ process SRA_FETCH {
     tuple val(species_tag), val(taxonid)
 
     output:
-    tuple val(species_tag), path("${species_tag}_R1.fastq.gz"), path("${species_tag}_R2.fastq.gz"), emit: reads
+    tuple val(species_tag), path("${species_tag}_norm_R1.fastq.gz"), path("${species_tag}_norm_R2.fastq.gz"), emit: reads
 
     script:
     """
     module load ncbi_edirect
     module load sratoolkit
     module load parallel-fastq-dump
+    module load fastp
+    module load BBTools
+    module load workspace/scratch
 
     # Output files must always exist (storeDir requirement).
-    : > ${species_tag}_R1.fastq.gz
-    : > ${species_tag}_R2.fastq.gz
+    : > ${species_tag}_norm_R1.fastq.gz
+    : > ${species_tag}_norm_R2.fastq.gz
 
     ACCESSIONS=\$(esearch -db sra \
-        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND Illumina[Platform]" | \
+        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND (BGISEQ[Platform] OR Illumina[Platform])" | \
         efetch -format runinfo | \
-        awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ {print \$1}' | \
+        awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {print \$1}' | \
         sort -u | head -n ${params.max_rnaseq_runs} || true)
 
     if [ -z "\$ACCESSIONS" ]; then
@@ -221,17 +231,32 @@ process SRA_FETCH {
             }
             if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
                 # if we could run these in parallel?
-                ${params.fastq_hdr_script} --read 1 reads/\${ACC}_1.fastq.gz | pigz -c >> ${species_tag}_R1.fastq.gz
-                ${params.fastq_hdr_script} --read 2 reads/\${ACC}_2.fastq.gz | pigz >> ${species_tag}_R2.fastq.gz
-                rm reads/\${ACC}_1.fastq.gz reads/\${ACC}_2.fastq.gz
+                parallel -j 2 ${params.fastq_hdr_script} --read {} reads/\${ACC}_{}.fastq.gz \
+                    \\| pigz -c \\>\\> ${species_tag}_R{}.fastq.gz  ::: 1 2
+                rm reads/\${ACC}_[12].fastq.gz
             else
                 echo "[WARN] Missing pair for \$ACC after download, skipping"
             fi
         done
         rm -rf reads
+        bbnorm.sh in=${species_tag}_R1.fastq.gz in2=${species_tag}_R2.fastq.gz \
+            out1=\$TMPDIR/${species_tag}_norm_R1.fastq.gz \
+            out2=\$TMPDIR/${species_tag}_norm_R2.fastq.gz target=30
 
-        NPAIRS=\$(zcat ${species_tag}_R1.fastq.gz 2>/dev/null | awk 'NR%4==1' | wc -l || echo 0)
-        echo "[INFO] Combined \$NPAIRS read pairs for ${species_tag}"
+        fastp   --in1 \$TMPDIR/${species_tag}_norm_R1.fastq.gz \
+                --in2 \$TMPDIR/${species_tag}_norm_R2.fastq.gz \
+                --out1 ${species_tag}_norm_R1.fastq.gz --out2 ${species_tag}_norm_R2.fastq.gz \
+                --thread ${task.cpus} --detect_adapter_for_pe \
+                --cut_front --cut_front_window_size 1 --cut_front_mean_quality 5 \
+                --cut_tail --cut_tail_window_size 1 --cut_tail_mean_quality 5 \
+                --cut_right --cut_right_window_size 4 --cut_right_mean_quality 5 \
+                --length_required 25
+
+        rm \$TMPDIR/${species_tag}_norm_R[12].fastq.gz
+        rm ${species_tag}_R[12].fastq.gz
+
+        NPAIRS=\$(zcat ${species_tag}_norm_R1.fastq.gz 2>/dev/null | awk 'NR%4==1' | wc -l || echo 0)
+        echo "[INFO] Combined \$NPAIRS normalized read pairs for ${species_tag}"
 
         # Append provenance manifest.
         mkdir -p "${launchDir}/rnaseq_reads"
@@ -241,21 +266,21 @@ process SRA_FETCH {
         fi
         printf "%s\t%s\t%s\t%s\n" \
             "${species_tag}" "${taxonid}" \
-            "\$(echo \$ACCESSIONS | tr '\n' ',' | sed 's/,\$//')" \
+            "\$(echo \$ACCESSIONS | tr '[:space:]' ',' | sed 's/,\$//')" \
             "\$(date -Iseconds)" >> "\$MANIFEST"
     fi
     """
 
     stub:
     """
-    : > ${species_tag}_R1.fastq.gz
-    : > ${species_tag}_R2.fastq.gz
+    : > ${species_tag}_norm_R1.fastq.gz
+    : > ${species_tag}_norm_R2.fastq.gz
     echo "[STUB] SRA_FETCH noop for ${species_tag} (taxonid=${taxonid})"
     """
 }
 
 // Run funannotate train on the representative (first) assembly of each species, then
-// archive the Trinity-GG transcripts, Trimmomatic trimmed reads, and Trinity-normalized
+// archive the Trinity-GG transcripts (normalized reads are in rnaseq_reads)
 // reads into rnaseq_data/ so all other strains can skip those expensive steps.
 // storeDir skips this process entirely if all five output files already exist.
 process RNASEQ_PREPARE {
@@ -274,10 +299,6 @@ process RNASEQ_PREPARE {
 
     output:
     tuple val(species_tag),
-            path("${species_tag}_trimmed_R1.fastq.gz"),
-            path("${species_tag}_trimmed_R2.fastq.gz"),
-            path("${species_tag}_left.norm.fq.gz"),
-            path("${species_tag}_right.norm.fq.gz"),
             path("${species_tag}.trinity-GG.fasta"), emit: shared
 
     script:
@@ -285,8 +306,6 @@ process RNASEQ_PREPARE {
     # ── Empty-reads sentinel: no RNA-seq found by SRA_FETCH ──────────────────
     if [ ! -s "${r1}" ]; then
         echo "[INFO] No RNAseq reads for ${species_tag}; writing empty shared markers"
-        touch ${species_tag}_trimmed_R1.fastq.gz ${species_tag}_trimmed_R2.fastq.gz
-        touch ${species_tag}_left.norm.fq.gz ${species_tag}_right.norm.fq.gz
         touch ${species_tag}.trinity-GG.fasta
         exit 0
     fi
@@ -296,10 +315,6 @@ process RNASEQ_PREPARE {
     if [ -f "\$TRAIN_GFF3" ]; then
         echo "[INFO] Training already complete for ${out}; extracting shared files to rnaseq_data"
         TRAINDIR="${params.target}/${out}/training"
-        cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
-        cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
-        cp \$TRAINDIR/normalize/left.norm.fq.gz             ${species_tag}_left.norm.fq.gz          || touch ${species_tag}_left.norm.fq.gz
-        cp \$TRAINDIR/normalize/right.norm.fq.gz            ${species_tag}_right.norm.fq.gz         || touch ${species_tag}_right.norm.fq.gz
         TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "trinity.fasta" | head -1)
         if [ -n "\$TRINITY_FA" ]; then
             cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
@@ -325,20 +340,16 @@ process RNASEQ_PREPARE {
     echo "[INFO] RNASEQ_PREPARE: running funannotate train for representative ${out} (species: ${species_tag})"
 
     funannotate train -i ${genome_fa} -o \$SCRATCH/${out} \\
-        --left ${r1} --right ${r2} --aligners minimap2 \\
+        --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
         --species "${species}" --strain "${strain}" \\
         --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
         --header_length ${header_length} \\
         --jaccard_clip --no-progress --min_coverage 4 \\
         --max_intronlen ${params.max_intronlen} \\
-	--stop_after_trinity --trimmer ${params.rnaseq_trimmer}
+        --stop_after_trinity --no_trimmomatic
 
     # ── Copy shared outputs to rnaseq_data/ ──────────────────────────────────
     TRAINDIR="\$SCRATCH/${out}/training"
-    cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
-    cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
-    cp \$TRAINDIR/normalize/left.norm.fq.gz             ${species_tag}_left.norm.fq.gz          || touch ${species_tag}_left.norm.fq.gz
-    cp \$TRAINDIR/normalize/right.norm.fq.gz            ${species_tag}_right.norm.fq.gz         || touch ${species_tag}_right.norm.fq.gz
     TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "trinity.fasta" | head -1)
     if [ -n "\$TRINITY_FA" ]; then
         cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
@@ -354,10 +365,6 @@ process RNASEQ_PREPARE {
 
     stub:
     """
-    touch ${species_tag}_trimmed_R1.fastq.gz
-    touch ${species_tag}_trimmed_R2.fastq.gz
-    touch ${species_tag}_left.norm.fq.gz
-    touch ${species_tag}_right.norm.fq.gz
     echo ">stub_trinity_${species_tag}" > ${species_tag}.trinity-GG.fasta
     mkdir -p ${params.target}/${out}/training
     touch ${params.target}/${out}/training/funannotate_train.pasa.gff3
@@ -378,9 +385,7 @@ process FUNANNOTATE_TRAIN {
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), path(r1), path(r2),
-          path(trinity_fa), path(trimmed_r1), path(trimmed_r2),
-          path(left_norm), path(right_norm)
+          val(genome_fa), path(r1), path(r2), path(trinity_fa)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -447,7 +452,7 @@ process FUNANNOTATE_TRAIN {
     if [ -s "${trinity_fa}" ]; then
         echo "[INFO] Running funannotate train (PASA only) for ${out} using shared Trinity from rnaseq_data"
         funannotate train -i ${genome_fa} -o ${params.target}/${out} \\
-            --trinity ${trinity_fa} --left_norm  ${left_norm} --right_norm ${right_norm} \\
+            --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
@@ -455,15 +460,14 @@ process FUNANNOTATE_TRAIN {
             --max_intronlen ${params.max_intronlen} \\
             \$pasa_db_arg
     else
-        echo "[INFO] Running full funannotate train for ${out} (no shared Trinity available)"
+        echo "[INFO] Running funannotate train (no shared Trinity) for ${out} using pre-normalized reads"
         funannotate train -i ${genome_fa} -o ${params.target}/${out} \\
-            --left ${r1} --right ${r2} --aligners minimap2 \\
+            --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
             --jaccard_clip --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
-            --trimmer ${params.rnaseq_trimmer} \\
             \$pasa_db_arg
     fi
 
@@ -540,7 +544,7 @@ process FUNANNOTATE_PREDICT {
 
     funannotate predict --name ${locustag} -i ${genome_fa} --strain "${strain}" \\
         -o ${out} -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
-        --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 \\
+        --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 glimmerhmm:0 \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
@@ -553,13 +557,15 @@ process FUNANNOTATE_PREDICT {
     fi
     if [ -d "${out}/predict_misc/ab_initio_parameters" ]; then
         mv ${out}/predict_misc/ab_initio_parameters ${out}
-	mv ${out}/predict_misc/trnascan.no-overlaps.gff3 ${out}
+        mv ${out}/predict_misc/trnascan.no-overlaps.gff3 ${out}
         rm -rf ${out}/predict_misc
         mkdir -p ${out}/predict_misc
         mv ${out}/ab_initio_parameters ${out}/trnascan.no-overlaps.gff3 ${out}/predict_misc
     fi
     find ${out}/predict_results/ -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
         | xargs -0 --no-run-if-empty pigz
+    # Remove the training symlink so publishDir does not overwrite the real training dir.
+    rm -f "${out}/training"
     sync
     """
 
@@ -656,6 +662,10 @@ process INTERPROSCAN_RUN {
 
 process SIGNALP_RUN {
     tag "$out"
+
+    cpus   8
+    memory '16 GB'
+    time   '12h'
 
     publishDir "${params.target}", mode: 'copy', overwrite: true
 
@@ -873,6 +883,7 @@ workflow {
 
             SRA_FETCH(sra_input)
 
+            if (!params.stop_after_sra_fetch) {
             // Build per-assembly channel keyed by species_tag with SRA reads joined.
             def assembly_with_reads = predict_genome_ch
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
@@ -882,8 +893,8 @@ workflow {
                 .combine(SRA_FETCH.out.reads, by: 0)
 
             // RNASEQ_PREPARE: run funannotate train --stop_after_trinity once per species on
-            // the representative (first) assembly, then cache Trinity-GG, trimmed reads,
-            // and normalized reads in rnaseq_data/ so all other strains share them.
+            // the representative (first) assembly, then cache the Trinity-GG FASTA in rnaseq_data/
+            // so all other strains share it. Normalized reads stay in rnaseq_reads/ (SRA_FETCH storeDir).
             // pasa.gff3 is NOT produced here (--stop_after_trinity stops before PASA);
             // it is produced by FUNANNOTATE_TRAIN for every strain including the representative.
             def repr_ch = assembly_with_reads
@@ -895,13 +906,13 @@ workflow {
                 }
             RNASEQ_PREPARE(repr_ch)
 
-            // Join shared rnaseq_data files back to every assembly for FUNANNOTATE_TRAIN.
+            // Join shared Trinity from rnaseq_data back to every assembly for FUNANNOTATE_TRAIN.
+            // Normalized reads (r1/r2) come from SRA_FETCH via assembly_with_reads; they are NOT
+            // re-emitted by RNASEQ_PREPARE (they live in rnaseq_reads/ via storeDir).
             def train_input = assembly_with_reads
                 .combine(RNASEQ_PREPARE.out.shared, by: 0)
-                .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2,
-                       trimmed_r1, trimmed_r2, left_norm, right_norm, trinity_fa ->
-                    tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2,
-                          trinity_fa, trimmed_r1, trimmed_r2, left_norm, right_norm)
+                .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, trinity_fa ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, trinity_fa)
                 }
 
             // Branch on r1 (index 9) and trinity_fa (index 11) file sizes.
@@ -911,27 +922,28 @@ workflow {
                 no_rnaseq:  true
             }
             def predict_no_rnaseq = branched.no_rnaseq
-                .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf, _tr1, _tr2, _ln, _rn ->
+                .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
                 }
 
             // Skip TRAIN at the channel level when pasa.gff3 already exists and is non-empty.
             // pasa.gff3 is produced by FUNANNOTATE_TRAIN (not RNASEQ_PREPARE) for every strain,
             // including the representative. Size check guards against zero-byte incomplete files.
-            def train_todo = branched.has_rnaseq.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf, _tr1, _tr2, _ln, _rn ->
+            def train_todo = branched.has_rnaseq.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
                 def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
                 !gff3.exists() || gff3.size() == 0
             }
             def train_done = branched.has_rnaseq
-                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf, _tr1, _tr2, _ln, _rn ->
+                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
                     def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
                     gff3.exists() && gff3.size() > 0
                 }
-                .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf, _tr1, _tr2, _ln, _rn ->
+                .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
                 }
             FUNANNOTATE_TRAIN(train_todo)
             predict_input_ch = FUNANNOTATE_TRAIN.out.mix(train_done).mix(predict_no_rnaseq)
+            } // end if (!params.stop_after_sra_fetch)
         } else {
             predict_input_ch = predict_genome_ch
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, _taxonid ->
@@ -939,6 +951,7 @@ workflow {
                 }
         }
 
+        if (!params.stop_after_sra_fetch || !params.run_sra_fetch) {
         def predict_ch = predict_input_ch
             .filter { out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa ->
                 def f = file("${params.target}/${out}/predict_results/${out}.gbk")
@@ -1068,6 +1081,7 @@ workflow {
                 !f.exists() || f.size() == 0
             })
         }
+        } // end if (!params.stop_after_sra_fetch || !params.run_sra_fetch)
     }
 }
 
@@ -1141,6 +1155,8 @@ process FUNANNOTATE_UPDATE {
         ln -sfn "${params.target}/${out}/training" "${out}/training"
     fi
 
+    # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
+    # funannotate update will still run its internal alignment step against these.
     echo "[INFO] Running funannotate update for ${out}"
     funannotate update -i ${params.target}/${out} \\
         --left ${r1} --right ${r2} \\
