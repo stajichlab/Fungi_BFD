@@ -293,6 +293,22 @@ process MERGE_CHROM_INFO {
 // ════════════════════════════════════════════════════════════════════════════
 
 workflow {
+    // ── Taxonomy filter ────────────────────────────────────────────────────────
+    // Parse --taxon RANK:VALUE (e.g. --taxon PHYLUM:Ascomycota).
+    def taxonFilter
+    if (params.taxon) {
+        def parts = (params.taxon as String).split(':', 2)
+        if (parts.size() != 2 || !parts[0] || !parts[1]) {
+            error "--taxon must be in RANK:VALUE format, e.g. --taxon PHYLUM:Ascomycota"
+        }
+        def taxRank  = parts[0].toUpperCase()
+        def taxValue = parts[1]
+        log.info "Taxonomy filter: ${taxRank} = '${taxValue}'"
+        taxonFilter = { row -> row[taxRank]?.trim() == taxValue }
+    } else {
+        taxonFilter = { row -> true }
+    }
+
     // ── shared sample channel ──────────────────────────────────────────────
     // Builds tuple(locustag, basename, species, strain, <file>) per sample,
     // skipping rows whose input file is absent.
@@ -300,6 +316,7 @@ workflow {
     def rows_ch = Channel
         .fromPath(params.samples)
         .splitCsv(header: true)
+        .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
             def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
@@ -358,7 +375,8 @@ workflow {
         def chrom_ch = Channel
             .fromPath(params.samples)
             .splitCsv(header: true)
-            .withIndex()   // emits [row, 0-based index]
+            .withIndex()   // emits [row, 0-based index]; filter after to preserve original CSV row numbers
+            .filter { row, idx -> taxonFilter(row) }
             .map { row, idx ->
                 def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
                 tuple(idx, locustag)

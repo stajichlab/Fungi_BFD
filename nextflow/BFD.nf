@@ -747,22 +747,130 @@ process CALC_GENE_STATS {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// INPUT SETUP (symlinks from genome_annotation → input/)
+// ════════════════════════════════════════════════════════════════════════════
+
+workflow SETUP_INPUT {
+    take: ch   // tuple(locustag, basename, species, strain)
+    main:
+        SETUP_SYMLINKS(ch)
+    emit:
+        done = SETUP_SYMLINKS.out.done
+}
+
+process SETUP_SYMLINKS {
+    tag   "${locustag}"
+    label 'setup'
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain)
+
+    output:
+        tuple val(locustag), val(basename), val(species), val(strain), emit: done
+        path ".setup_done_${locustag}", emit: marker
+
+    script:
+    """
+    src="${params.genome_annotation}/${basename}/predict_results"
+    misc="${params.genome_annotation}/${basename}/predict_misc"
+
+    if [ ! -d "\$src" ]; then
+        echo "[WARN] predict_results not found for ${basename}: \$src" >&2
+        touch .setup_done_${locustag}
+        exit 0
+    fi
+
+    mkdir -p "${params.pep_dir}" "${params.cds_dir}" "${params.gff_dir}" \\
+             "${params.genome_dir}" "${params.trna_dir}"
+
+    # Create symlink only if missing or broken
+    make_link() {
+        local target=\$1 linkname=\$2
+        if [ ! -e "\$target" ]; then
+            echo "[WARN] source not found, skipping: \$target" >&2
+            return 0
+        fi
+        if [[ ! -L "\$linkname" || ! -e "\$linkname" ]]; then
+            ln -sfn "\$target" "\$linkname"
+            echo "[INFO] linked \$linkname -> \$target"
+        else
+            echo "[INFO] symlink already valid, skipping: \$linkname"
+        fi
+    }
+
+    make_link "\$src/${basename}.proteins.fa"        "${params.pep_dir}/${basename}.proteins.fa"
+    make_link "\$src/${basename}.cds-transcripts.fa" "${params.cds_dir}/${basename}.cds-transcripts.fa"
+    make_link "\$src/${basename}.gff3"               "${params.gff_dir}/${basename}.gff3"
+    make_link "\$src/${basename}.scaffolds.fa"       "${params.genome_dir}/${basename}.scaffolds.fa"
+
+    if [ -f "\$misc/trnascan.no-overlaps.gff3" ]; then
+        make_link "\$misc/trnascan.no-overlaps.gff3" "${params.trna_dir}/${basename}.trna.gff3"
+    else
+        echo "[INFO] no trnascan GFF3 for ${basename}, skipping trna symlink"
+    fi
+
+    touch .setup_done_${locustag}
+    """
+
+    stub:
+    """
+    echo "[STUB] SETUP_SYMLINKS for ${basename} (${locustag})"
+    touch .setup_done_${locustag}
+    """
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // MAIN WORKFLOW
 // ════════════════════════════════════════════════════════════════════════════
 
 workflow {
-    // ── input channel ──────────────────────────────────────────────────────────
-    // Filename convention (matching 1KFG): {SPECIES}_{STRAIN}.proteins.fa
-    //   STRAIN: first ';'-delimited token; single quotes and extra whitespace stripped
-    proteins_ch = Channel
+    // ── Taxonomy filter ────────────────────────────────────────────────────────
+    // Parse --taxon RANK:VALUE (e.g. --taxon PHYLUM:Ascomycota).
+    def taxonFilter
+    if (params.taxon) {
+        def parts = (params.taxon as String).split(':', 2)
+        if (parts.size() != 2 || !parts[0] || !parts[1]) {
+            error "--taxon must be in RANK:VALUE format, e.g. --taxon PHYLUM:Ascomycota"
+        }
+        def taxRank  = parts[0].toUpperCase()
+        def taxValue = parts[1]
+        log.info "Taxonomy filter: ${taxRank} = '${taxValue}'"
+        taxonFilter = { row -> row[taxRank]?.trim() == taxValue }
+    } else {
+        taxonFilter = { row -> true }
+    }
+
+    // ── Base sample channel ────────────────────────────────────────────────────
+    // Emits tuple(locustag, basename, species, strain) per row.
+    // STRAIN: first ';'-delimited token; single quotes stripped.
+    def rows_ch = Channel
         .fromPath(params.samples)
         .splitCsv(header: true)
+        .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
             def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
-            def prot     = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
+            tuple(locustag, basename, species, strain)
+        }
+        .take(params.n_test > 0 ? params.n_test as int : -1)
+
+    // ── Input setup: symlink predict_results files into input/ subdirs ─────────
+    // Each species proceeds to functional annotation as soon as its own
+    // symlinks are ready — no global barrier.
+    def ready_ch
+    if (params.run_setup) {
+        SETUP_INPUT(rows_ch)
+        ready_ch = SETUP_INPUT.out.done
+    } else {
+        ready_ch = rows_ch
+    }
+
+    // ── Protein channel ────────────────────────────────────────────────────────
+    proteins_ch = ready_ch
+        .map { locustag, basename, species, strain ->
+            def prot = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
             if (!prot.exists()) {
                 log.warn "Skipping ${basename} (${locustag}): protein file not found"
                 return null
@@ -770,7 +878,6 @@ workflow {
             return tuple(locustag, basename, species, strain, prot)
         }
         .filter { it != null }
-        .take(params.n_test > 0 ? params.n_test as int : -1)
 
     if (params.run_pfam)      PFAM(proteins_ch)
     if (params.run_cazy)      CAZY(proteins_ch)
