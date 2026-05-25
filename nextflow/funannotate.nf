@@ -209,7 +209,7 @@ process SRA_FETCH {
     : > ${species_tag}_norm_R2.fastq.gz
 
     ACCESSIONS=\$(esearch -db sra \
-        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND (BGISEQ[Platform] OR Illumina[Platform])" | \
+        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])" | \
         efetch -format runinfo | \
         awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {print \$1}' | \
         sort -u | head -n ${params.max_rnaseq_runs} || true)
@@ -232,16 +232,19 @@ process SRA_FETCH {
             if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
                 # if we could run these in parallel?
                 parallel -j 2 ${params.fastq_hdr_script} --read {} reads/\${ACC}_{}.fastq.gz \
-                    \\| pigz -c \\>\\> ${species_tag}_R{}.fastq.gz  ::: 1 2
+                    \\| pigz -c \\>\\> \$TMPDIR/${species_tag}_R{}.fastq.gz  ::: 1 2
                 rm reads/\${ACC}_[12].fastq.gz
             else
                 echo "[WARN] Missing pair for \$ACC after download, skipping"
             fi
         done
         rm -rf reads
-        bbnorm.sh in=${species_tag}_R1.fastq.gz in2=${species_tag}_R2.fastq.gz \
+	${launchDir}/scripts/enforce_seqpair_readlen in=\$TMPDIR/${species_tag}_R1.fastq.gz \
+	in2=\$TMPDIR/${species_tag}_R2.fastq.gz out=\$TMPDIR/${species_tag}_trunc_R1.fastq.gz \
+	out2=\$TMPDIR/${species_tag}_trunc_R2.fastq.gz minlen=75
+        bbnorm.sh in=\$TMPDIR/${species_tag}_trunc_R1.fastq.gz in2=\$TMPDIR/${species_tag}_trunc_R2.fastq.gz \
             out1=\$TMPDIR/${species_tag}_norm_R1.fastq.gz \
-            out2=\$TMPDIR/${species_tag}_norm_R2.fastq.gz target=30
+            out2=\$TMPDIR/${species_tag}_norm_R2.fastq.gz target=30 ecc=t
 
         fastp   --in1 \$TMPDIR/${species_tag}_norm_R1.fastq.gz \
                 --in2 \$TMPDIR/${species_tag}_norm_R2.fastq.gz \
@@ -252,8 +255,7 @@ process SRA_FETCH {
                 --cut_right --cut_right_window_size 4 --cut_right_mean_quality 5 \
                 --length_required 25
 
-        rm \$TMPDIR/${species_tag}_norm_R[12].fastq.gz
-        rm ${species_tag}_R[12].fastq.gz
+        rm \$TMPDIR/${species_tag}_*
 
         NPAIRS=\$(zcat ${species_tag}_norm_R1.fastq.gz 2>/dev/null | awk 'NR%4==1' | wc -l || echo 0)
         echo "[INFO] Combined \$NPAIRS normalized read pairs for ${species_tag}"
