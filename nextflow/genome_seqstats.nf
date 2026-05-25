@@ -16,11 +16,6 @@
  *   nextflow run nextflow/genome_seqstats.nf -c nextflow/nextflow.config -stub-run --n_test 2
  */
 
-params.run_aa_freq    = true
-params.run_codon_freq = true
-params.run_gene_stats = true
-params.run_chrom_info = true
-
 // ════════════════════════════════════════════════════════════════════════════
 // SUBWORKFLOWS
 // ════════════════════════════════════════════════════════════════════════════

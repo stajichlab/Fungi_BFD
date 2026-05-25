@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# Lint the genome_functional.nf workflow.
+# Lint the BFD.nf workflow.
 # Run from the project root: bash pipeline/nextflow/run_lint.sh
 
 set -euo pipefail
@@ -10,7 +10,7 @@ module load nextflow 2>/dev/null || true
 
 echo "=== Nextflow syntax check (-preview, local executor, 0 samples) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/genome_functional.nf \
+nextflow run ${NXFDIR}/BFD.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
     -preview \
@@ -19,7 +19,7 @@ nextflow run ${NXFDIR}/genome_functional.nf \
 echo ""
 echo "=== nf-core lint (if available) ==="
 if module load nf-core 2>/dev/null; then
-    nf-core lint ${NXFDIR}/genome_functional.nf \
+    nf-core lint ${NXFDIR}/BFD.nf \
         --fail-ignored --fail-warned \
         2>&1 || true   # nf-core lint warns about non-nf-core structure; treat as advisory
 else

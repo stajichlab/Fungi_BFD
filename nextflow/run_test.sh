@@ -21,7 +21,7 @@ mkdir -p logs/nextflow
 
 echo "=== Step 1: Syntax + channel wiring check (preview) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/genome_functional.nf \
+nextflow run ${NXFDIR}/BFD.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
     -preview 2>&1 | tee logs/nextflow/functional_preview.log
@@ -29,7 +29,7 @@ nextflow run ${NXFDIR}/genome_functional.nf \
 echo ""
 echo "=== Step 2: Full stub-run (all 9 tool subworkflows) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/genome_functional.nf \
+nextflow run ${NXFDIR}/BFD.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
     -stub-run 2>&1 | tee logs/nextflow/functional_stubrun.log

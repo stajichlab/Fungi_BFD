@@ -20,7 +20,7 @@ module load nextflow
 mkdir -p logs/nextflow
 
 NXF_OPTS="-Xms512m -Xmx4g" \
-nextflow run nextflow/genome_functional.nf \
+nextflow run nextflow/BFD.nf \
     -c nextflow/nextflow.config \
     -profile BFD \
     --run_pfam true \

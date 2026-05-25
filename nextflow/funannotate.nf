@@ -18,9 +18,7 @@
 //   → emits: ..., path(genome_fa), val(taxonid)   [storeDir moves .fa; workflow maps to abs string]
 //   → writes <asmid>.fa to input_clean_genomes/ (storeDir; skip check targets this file)
 //   → purge/FCS intermediates written as side effects to input_clean_genomes/clean/
-// REPEATMODELER_RUN receives: val(species_tag), val(asmid), val(genome_fa)  [one per species]
-//   → emits: val(species_tag), path(rmlib)   [storeDir caches repeat_library/<species_tag>.RMlib.fasta]
-// REPEATMASKER_RUN receives: val(species_tag), ..., val(genome_fa), val(taxonid), path(rmlib)
+// MASKREPEAT_TANTAN_RUN receives: ..., val(genome_fa), val(taxonid)
 //   → emits: ..., path(masked_fa), val(taxonid)   [storeDir caches input_clean_genomes/<asmid>.masked.fasta]
 //   [skipped unless --run_repeatmasker; masked_fa falls back to unmasked .fa if .masked.fasta absent]
 // SRA_FETCH receives: val(species_tag), val(taxonid)   [only when --run_sra_fetch; one per species]
@@ -134,98 +132,21 @@ process GENOME_CLEAN {
     """
 }
 
-// Run RepeatModeler on one representative assembly per species to build a de-novo
-// repeat library.  storeDir caches the library so the process is skipped on re-runs
-// or when another assembly of the same species already produced it.
-//
-// Output naming convention:
-//   repeat_library/{species_tag}.{asmid}.RM_lib.fasta  — the canonical file (storeDir output)
-//   repeat_library/{species_tag}.RMlib.fasta           — symlink to the above (for downstream use)
-//   repeat_library/library_manifest.tsv                — records which asmid built each library
-process REPEATMODELER_RUN {
-    tag "$species_tag"
-
-    storeDir "${launchDir}/repeat_library"
-
-    cpus   16
-    memory '32 GB'
-    time   '72h'
-
-    input:
-    tuple val(species_tag), val(asmid), val(genome_fa)
-
-    output:
-    tuple val(species_tag), path("${species_tag}.${asmid}.RM_lib.fasta"), emit: rmlib
-
-    script:
-    """
-    module load RepeatModeler
-    DBNAME=${asmid}_rmdb
-    BuildDatabase -name \$DBNAME ${genome_fa}
-    RepeatModeler -database \$DBNAME -threads ${task.cpus} -LTRStruct
-    if [ -f "\${DBNAME}-families.fa" ]; then
-        cp \${DBNAME}-families.fa ${species_tag}.${asmid}.RM_lib.fasta
-    else
-        echo "[WARN] RepeatModeler found no families for ${asmid}; creating empty library"
-        touch ${species_tag}.${asmid}.RM_lib.fasta
-    fi
-    pigz -dc ${launchDir}/lib/fungi_repeat.20170127.lib.gz >> ${species_tag}.${asmid}.RM_lib.fasta
-
-    # Copy to storeDir so the symlink target exists before Nextflow moves the declared output
-    mkdir -p ${launchDir}/repeat_library
-    cp ${species_tag}.${asmid}.RM_lib.fasta \
-        ${launchDir}/repeat_library/${species_tag}.${asmid}.RM_lib.fasta
-    # (Re-)create the convenience symlink; relative so it resolves within repeat_library/
-    ln -sf ${species_tag}.${asmid}.RM_lib.fasta \
-        ${launchDir}/repeat_library/${species_tag}.RMlib.fasta
-
-    # Append provenance record; initialise header on first entry
-    MANIFEST="${launchDir}/repeat_library/library_manifest.tsv"
-    if [ ! -f "\$MANIFEST" ]; then
-        printf "species_tag\tasmid\trmlib_file\ttimestamp\n" > "\$MANIFEST"
-    fi
-    printf "%s\t%s\t%s\t%s\n" \
-        "${species_tag}" "${asmid}" \
-        "${species_tag}.${asmid}.RM_lib.fasta" \
-        "\$(date -Iseconds)" >> "\$MANIFEST"
-    """
-
-    stub:
-    """
-    echo ">stub_repeat_${species_tag}" > ${species_tag}.${asmid}.RM_lib.fasta
-    pigz -dc ${launchDir}/lib/fungi_repeat.20170127.lib.gz >> ${species_tag}.${asmid}.RM_lib.fasta
-    mkdir -p ${launchDir}/repeat_library
-    cp ${species_tag}.${asmid}.RM_lib.fasta \
-        ${launchDir}/repeat_library/${species_tag}.${asmid}.RM_lib.fasta
-    ln -sf ${species_tag}.${asmid}.RM_lib.fasta \
-        ${launchDir}/repeat_library/${species_tag}.RMlib.fasta
-    MANIFEST="${launchDir}/repeat_library/library_manifest.tsv"
-    if [ ! -f "\$MANIFEST" ]; then
-        printf "species_tag\tasmid\trmlib_file\ttimestamp\n" > "\$MANIFEST"
-    fi
-    printf "%s\t%s\t%s\t%s\n" \
-        "${species_tag}" "${asmid}" \
-        "${species_tag}.${asmid}.RM_lib.fasta" \
-        "\$(date -Iseconds)" >> "\$MANIFEST"
-    """
-}
-
-// Soft-mask each assembly genome using the per-species repeat library produced by
-// REPEATMODELER_RUN.  storeDir caches the masked FASTA alongside the clean genome.
-// The full RepeatMasker output folder is written as a side effect to repeat_masker/<asmid>/.
-process REPEATMASKER_RUN {
+// Soft-mask each assembly using funannotate mask with tantan.
+// storeDir caches the masked FASTA alongside the clean genome.
+process MASKREPEAT_TANTAN_RUN {
     tag "$asmid"
 
     storeDir "${launchDir}/input_clean_genomes"
 
-    cpus   16
-    memory '24 GB'
+    cpus   8
+    memory '16 GB'
     time   '2h'
 
     input:
-    tuple val(species_tag), val(out), val(asmid), val(species), val(strain), val(locustag),
+    tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), val(taxonid), path(rmlib)
+          val(genome_fa), val(taxonid)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -234,24 +155,16 @@ process REPEATMASKER_RUN {
 
     script:
     """
-    module load RepeatMasker
-    mkdir -p rm_out
-    RepeatMasker -e rmblast -species "${params.repeatmasker_species}" -pa ${task.cpus} -dir rm_out -noisy -xsmall ${genome_fa}
-    MASKED=rm_out/\$(basename ${genome_fa}).masked
-    if [ ! -f "\$MASKED" ]; then
-        echo "[WARN] RepeatMasker produced no .masked file; copying unmasked genome"
-        cp ${genome_fa} ${asmid}.masked.fasta
-    else
-        cp \$MASKED ${asmid}.masked.fasta
-    fi
-    mkdir -p ${launchDir}/repeat_masker/${asmid}
-    mv rm_out/* ${launchDir}/repeat_masker/${asmid}/ 2>/dev/null || true
+    source /etc/profile.d/modules.sh 2>/dev/null || true
+    module load miniconda3
+    eval "\$(conda shell.bash hook)"
+    module load funannotate
+    funannotate mask -i ${genome_fa} -o ${asmid}.masked.fasta -m tantan --cpus ${task.cpus}
     """
 
     stub:
     """
     echo ">stub_${asmid}_masked" > ${asmid}.masked.fasta
-    mkdir -p ${launchDir}/repeat_masker/${asmid}
     """
 }
 
@@ -383,11 +296,11 @@ process RNASEQ_PREPARE {
     if [ -f "\$TRAIN_GFF3" ]; then
         echo "[INFO] Training already complete for ${out}; extracting shared files to rnaseq_data"
         TRAINDIR="${params.target}/${out}/training"
-        cp \$TRAINDIR/trimmomatic/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
-        cp \$TRAINDIR/trimmomatic/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
+        cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
+        cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
         cp \$TRAINDIR/normalize/left.norm.fq.gz             ${species_tag}_left.norm.fq.gz          || touch ${species_tag}_left.norm.fq.gz
         cp \$TRAINDIR/normalize/right.norm.fq.gz            ${species_tag}_right.norm.fq.gz         || touch ${species_tag}_right.norm.fq.gz
-        TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "*.trinity.fasta" | head -1)
+        TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "trinity.fasta" | head -1)
         if [ -n "\$TRINITY_FA" ]; then
             cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
         else
@@ -418,19 +331,19 @@ process RNASEQ_PREPARE {
         --header_length ${header_length} \\
         --jaccard_clip --no-progress --min_coverage 4 \\
         --max_intronlen ${params.max_intronlen} \\
-	--stop_after_trinity --trimmer fastp
+	--stop_after_trinity --trimmer ${params.rnaseq_trimmer}
 
     # ── Copy shared outputs to rnaseq_data/ ──────────────────────────────────
     TRAINDIR="\$SCRATCH/${out}/training"
-    cp \$TRAINDIR/trimmomatic/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
-    cp \$TRAINDIR/trimmomatic/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
+    cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_left.fastq.gz  ${species_tag}_trimmed_R1.fastq.gz  || touch ${species_tag}_trimmed_R1.fastq.gz
+    cp \$TRAINDIR/${params.rnaseq_trimmer}/trimmed_right.fastq.gz ${species_tag}_trimmed_R2.fastq.gz || touch ${species_tag}_trimmed_R2.fastq.gz
     cp \$TRAINDIR/normalize/left.norm.fq.gz             ${species_tag}_left.norm.fq.gz          || touch ${species_tag}_left.norm.fq.gz
     cp \$TRAINDIR/normalize/right.norm.fq.gz            ${species_tag}_right.norm.fq.gz         || touch ${species_tag}_right.norm.fq.gz
-    TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "*.trinity.fasta" | head -1)
+    TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "trinity.fasta" | head -1)
     if [ -n "\$TRINITY_FA" ]; then
         cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
     else
-        echo "[WARN] No *.trinity.fasta found under \$TRAINDIR for ${out}"
+        echo "[WARN] No trinity.fasta found under \$TRAINDIR for ${out}"
         touch ${species_tag}.trinity-GG.fasta
     fi
 
@@ -550,7 +463,7 @@ process FUNANNOTATE_TRAIN {
             --header_length ${header_length} \\
             --jaccard_clip --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
-	    --trimmer fastp \\
+            --trimmer ${params.rnaseq_trimmer} \\
             \$pasa_db_arg
     fi
 
@@ -615,6 +528,12 @@ process FUNANNOTATE_PREDICT {
         echo "[DEBUG] genome_fa    = ${genome_fa}"
         echo "[DEBUG] TMPDIR       = \$TMPDIR"
         echo "[DEBUG] pwd          = \$(pwd)"
+    fi
+
+    # Link training data into work dir so funannotate predict finds it at the relative path it expects.
+    mkdir -p ${out}
+    if [ -d "${params.target}/${out}/training" ]; then
+        ln -sfn "${params.target}/${out}/training" "${out}/training"
     fi
 
     TBL2ASN_PARAMS="-l paired-ends"
@@ -914,36 +833,12 @@ workflow {
 
         // ── Repeat masking ────────────────────────────────────────────────────────
         // predict_genome_ch carries the genome path to use for prediction — either
-        // the soft-masked genome (default) or the clean unmasked genome (--skip_repeatmasker).
+        // the tantan soft-masked genome (default) or the clean unmasked genome
+        // (--run_repeatmasker false).
         def predict_genome_ch
         if (params.run_repeatmasker) {
-            // Tag each assembly with species_tag for grouping and RM output naming.
-            def tagged_ch = clean_genome_ch
-                .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
-                    def species_tag = species.replaceAll(/\s+/, '_')
-                    tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
-                }
-
-            if(params.run_repeatmodeler) {
-                // Run RepeatModeler once per species: group assemblies, pick the first.
-                def rm_model_input = tagged_ch
-                    .map { species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
-                        tuple(species_tag, asmid, genome_fa)
-                    }
-                    .groupTuple(by: 0)
-                    .map { species_tag, asmids, genome_fas ->
-                        tuple(species_tag, asmids[0], genome_fas[0])
-                    }
-                REPEATMODELER_RUN(rm_model_input)
-                // Join per-species RM library back to every assembly, then run RepeatMasker.
-                REPEATMASKER_RUN(tagged_ch.combine(REPEATMODELER_RUN.out.rmlib, by: 0))
-            } else {
-                // Run RepeatMasker with the pre-built fungi repeat library.
-                def default_rmlib_ch = Channel.value(file("${launchDir}/lib/fungi_repeat.20170127.lib"))
-                REPEATMASKER_RUN(tagged_ch.combine(default_rmlib_ch))
-            }
-
-            predict_genome_ch = REPEATMASKER_RUN.out.masked
+            MASKREPEAT_TANTAN_RUN(clean_genome_ch)
+            predict_genome_ch = MASKREPEAT_TANTAN_RUN.out.masked
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, masked_fa, taxonid ->
                     tuple(out, asmid, species, strain, locustag, busco, hlen, ttable,
                         masked_fa.toAbsolutePath().toString(), taxonid)
@@ -1238,6 +1133,12 @@ process FUNANNOTATE_UPDATE {
             ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
         pasa_db_arg="--pasa_db mysql"
         sleep 5
+    fi
+
+    # Link training data into work dir so funannotate update finds it at the relative path it expects.
+    mkdir -p ${out}
+    if [ -d "${params.target}/${out}/training" ]; then
+        ln -sfn "${params.target}/${out}/training" "${out}/training"
     fi
 
     echo "[INFO] Running funannotate update for ${out}"
