@@ -13,29 +13,26 @@
  *
  * Dry-run / testing:
  *   nextflow run nextflow/BFD.nf -c nextflow/nextflow.config -profile BFD -stub-run --n_test 2
+ *
+ * Key params (all defined in nextflow.config / conf/profile_BFD.config):
+ *   --merge_all   (default true)  Merge ALL result files in the output subdirs,
+ *                                 not just those produced in this run. Use false
+ *                                 to restrict to the current run only.
+ *   --skip_merge  (default false) Skip all MERGE_* steps entirely.
  */
 
-// All params (samples, pep_dir, outdir, tables, scripts, run_*, n_test) are
-// defined in nextflow.config — do not redeclare defaults here.
+// All params (samples, pep_dir, outdir, tables, scripts, run_*, merge_all,
+// skip_merge, n_test) are defined in nextflow.config — do not redeclare defaults here.
 
 // ════════════════════════════════════════════════════════════════════════════
-// SUBWORKFLOWS
+// RUN PROCESSES  (storeDir → skip automatically if all outputs already exist)
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── Pfam ─────────────────────────────────────────────────────────────────────
-workflow PFAM {
-    take: ch
-    main:
-        RUN_PFAM(ch)
-        MERGE_PFAM(RUN_PFAM.out.domtbl.collect())
-    emit:
-        merged = MERGE_PFAM.out.csv
-}
-
 process RUN_PFAM {
     tag        "${locustag}"
     label      'pfam'
-    publishDir "${params.outdir}/pfam_hmmscan", mode: 'copy'
+    storeDir   "${params.outdir}/pfam_hmmscan"
 
     input:
         tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
@@ -69,48 +66,11 @@ process RUN_PFAM {
     """
 }
 
-process MERGE_PFAM {
-    label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
-
-    input:
-        path(domtbls)
-
-    output:
-        path("pfam.csv.gz"), emit: csv
-
-    script:
-    """
-    python3 ${params.scripts}/pfamtbl_to_long.py \\
-        --outfile pfam.csv \\
-        ${domtbls}
-    pigz pfam.csv
-    """
-
-    stub:
-    """
-    printf 'protein_id,hmm_id,hmm_acc,hmm_len,full_seq_e_value,full_seq_score,full_seq_bias,domain_num,domain_num_of,domain_c_evalue,domain_i_evalue,domain_score,domain_bias,hmm_from,hmm_to,ali_from,ali_to,env_from,env_to\\n' | gzip > pfam.csv.gz
-    """
-}
-
 // ── CAZy ─────────────────────────────────────────────────────────────────────
-workflow CAZY {
-    take: ch
-    main:
-        RUN_CAZY(ch)
-        MERGE_CAZY(
-            RUN_CAZY.out.overview.collect(),
-            RUN_CAZY.out.cazymes.collect()
-        )
-    emit:
-        merged_overview = MERGE_CAZY.out.overview_csv
-        merged_hmm      = MERGE_CAZY.out.hmm_csv
-}
-
 process RUN_CAZY {
     tag        "${locustag}"
     label      'cazy'
-    publishDir { "${params.outdir}/cazy/${basename}" }, mode: 'copy'
+    storeDir   { "${params.outdir}/cazy/${basename}" }
 
     input:
         tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
@@ -139,6 +99,239 @@ process RUN_CAZY {
     printf 'Gene_ID\\tEC\\tcazyme_fam\\tsub_fam\\tdiamond_fam\\tSubstrate\\t#ofTools\\n' | gzip > ${basename}.overview.tsv.gz
     printf 'HMM_Profile\\tProfile_Length\\tGene_ID\\tGene_Length\\tEvalue\\tProfile_Start\\tProfile_End\\tGene_Start\\tGene_End\\tCoverage\\n' | gzip > ${basename}.cazymes.tsv.gz
     printf 'Gene_ID\\tSubstrate\\n' | gzip > ${basename}.substrates.tsv.gz
+    """
+}
+
+// ── MEROPS ────────────────────────────────────────────────────────────────────
+process RUN_MEROPS {
+    tag        "${locustag}"
+    label      'merops'
+    storeDir   "${params.outdir}/merops"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.blasttab.gz"), emit: blasttab
+
+    script:
+    """
+    module load ncbi-blast
+    module load db-merops
+    # the version of MEROPS should be recorded in the metadata for reproducibility
+    blastp -query ${proteins} \\
+        -db \$MEROPS_DB/merops_scan.lib \\
+        -out ${basename}.blasttab \\
+        -num_threads ${task.cpus} \\
+        -seg yes -soft_masking true \\
+        -max_target_seqs 10 \\
+        -evalue 1e-10 \\
+        -outfmt 6 \\
+        -use_sw_tback
+    pigz ${basename}.blasttab
+    """
+
+    stub:
+    """
+    printf '' | gzip > ${basename}.blasttab.gz
+    """
+}
+
+// ── SignalP ───────────────────────────────────────────────────────────────────
+process RUN_SIGNALP {
+    tag        "${locustag}"
+    label      'signalp'
+    storeDir   "${params.outdir}/signalp"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.signalp.gff3.gz"),         emit: gff3
+        path("${basename}.signalp.results.txt.gz"),  emit: results
+
+    script:
+    """
+    module load signalp/6-gpu
+    OUTD=\$(mktemp -d)
+    signalp6 -od \$OUTD -org euk --mode fast -format txt \\
+        -fasta ${proteins} --write_procs ${task.cpus} -bs 100
+    pigz -c \$OUTD/output.gff3             > ${basename}.signalp.gff3.gz
+    pigz -c \$OUTD/prediction_results.txt  > ${basename}.signalp.results.txt.gz
+    rm -rf \$OUTD
+    """
+
+    stub:
+    """
+    printf '##gff-version 3\\n' | gzip > ${basename}.signalp.gff3.gz
+    printf '# SignalP-6.0\\n'   | gzip > ${basename}.signalp.results.txt.gz
+    """
+}
+
+// ── TMHMM ─────────────────────────────────────────────────────────────────────
+process RUN_TMHMM {
+    tag        "${locustag}"
+    label      'tmhmm'
+    storeDir   "${params.outdir}/tmhmm"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.tmhmm_short.tsv.gz"),   emit: short_tsv
+        path("${basename}.tmhmm_results.tsv.gz"), emit: full_tsv
+
+    script:
+    """
+    module load tmhmm
+    tmhmm --noplot         < ${proteins} > ${basename}.tmhmm_results.tsv
+    tmhmm --short --noplot < ${proteins} > ${basename}.tmhmm_short.tsv
+    pigz ${basename}.tmhmm_results.tsv ${basename}.tmhmm_short.tsv
+    """
+
+    stub:
+    """
+    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_results.tsv.gz
+    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_short.tsv.gz
+    """
+}
+
+// ── TargetP ───────────────────────────────────────────────────────────────────
+process RUN_TARGETP {
+    tag        "${locustag}"
+    label      'targetp'
+    storeDir   "${params.outdir}/targetP"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}_summary.targetp2.gz"), emit: summary
+
+    script:
+    """
+    TMPD=\$(mktemp -d)
+    module load targetp
+    targetp -batch 50 -tmp \$TMPD -format short \\
+        -fasta ${proteins} -org non-pl -prefix ${basename}
+    pigz -f ${basename}_summary.targetp2
+    rm -rf \$TMPD
+    """
+
+    stub:
+    """
+    printf '# TargetP-2.0\\n' | gzip > ${basename}_summary.targetp2.gz
+    """
+}
+
+// ── IDP (AIUPred) ─────────────────────────────────────────────────────────────
+process RUN_IDP {
+    tag        "${locustag}"
+    label      'idp'
+    storeDir   "${params.outdir}/aiupred"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.aiupred.txt.gz"),     emit: raw
+        path("${basename}.idp.csv.gz"),         emit: idp_csv
+        path("${basename}.idp_summary.csv.gz"), emit: idp_summary_csv
+
+    script:
+    """
+    module load aiupred
+    aiupred.py -i ${proteins} -o ${basename}.aiupred.txt
+    pigz ${basename}.aiupred.txt
+    python3 ${params.scripts}/gather_AIUPred.py ${basename}.aiupred.txt.gz \\
+        --outfile      ${basename}.idp.csv \\
+        --outfilesum   ${basename}.idp_summary.csv
+    pigz ${basename}.idp.csv ${basename}.idp_summary.csv
+    """
+
+    stub:
+    """
+    printf '' | gzip > ${basename}.aiupred.txt.gz
+    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${basename}.idp.csv.gz
+    printf 'protein_id,idp_status\\n'                                     | gzip > ${basename}.idp_summary.csv.gz
+    """
+}
+
+// ── WoLF PSORT ────────────────────────────────────────────────────────────────
+process RUN_WOLFPSORT {
+    tag        "${locustag}"
+    label      'wolfpsort'
+    storeDir   "${params.outdir}/wolfpsort"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.wolfpsort.results.txt.gz"), emit: results
+
+    script:
+    """
+    module load wolfpsort
+    cat ${proteins} | runWolfPsortSummary fungi > ${basename}.wolfpsort.results.txt
+    pigz ${basename}.wolfpsort.results.txt
+    """
+
+    stub:
+    """
+    printf '# WoLF PSORT\\n' | gzip > ${basename}.wolfpsort.results.txt.gz
+    """
+}
+
+// ── predGPI ───────────────────────────────────────────────────────────────────
+process RUN_PREDGPI {
+    tag        "${locustag}"
+    label      'predgpi'
+    storeDir   "${params.outdir}/predgpi"
+
+    input:
+        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+
+    output:
+        path("${basename}.predgpi.gff3.gz"), emit: gff3
+
+    script:
+    """
+    module load predgpi
+    predgpi.py -f ${proteins} -m gff3 -o ${basename}.predgpi.gff3
+    pigz ${basename}.predgpi.gff3
+    """
+
+    stub:
+    """
+    printf '##gff-version 3\\n' | gzip > ${basename}.predgpi.gff3.gz
+    """
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MERGE PROCESSES  (publishDir; inputs are staged file lists)
+// ════════════════════════════════════════════════════════════════════════════
+
+process MERGE_PFAM {
+    label      'merge'
+    publishDir "${params.tables}", mode: 'copy'
+
+    input:
+        path(domtbls)
+
+    output:
+        path("pfam.csv.gz"), emit: csv
+
+    script:
+    """
+    python3 ${params.scripts}/pfamtbl_to_long.py \\
+        --outfile pfam.csv \\
+        ${domtbls}
+    pigz pfam.csv
+    """
+
+    stub:
+    """
+    printf 'protein_id,hmm_id,hmm_acc,hmm_len,full_seq_e_value,full_seq_score,full_seq_bias,domain_num,domain_num_of,domain_c_evalue,domain_i_evalue,domain_score,domain_bias,hmm_from,hmm_to,ali_from,ali_to,env_from,env_to\\n' | gzip > pfam.csv.gz
     """
 }
 
@@ -172,50 +365,6 @@ process MERGE_CAZY {
     """
 }
 
-// ── MEROPS ────────────────────────────────────────────────────────────────────
-workflow MEROPS {
-    take: ch
-    main:
-        RUN_MEROPS(ch)
-        MERGE_MEROPS(RUN_MEROPS.out.blasttab.collect())
-    emit:
-        merged = MERGE_MEROPS.out.csv
-}
-
-process RUN_MEROPS {
-    tag        "${locustag}"
-    label      'merops'
-    publishDir "${params.outdir}/merops", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.blasttab.gz"), emit: blasttab
-
-    script:
-    """
-    module load ncbi-blast
-    module load db-merops
-    # the version of MEROPS should be recorded in the metadata for reproducibility
-    blastp -query ${proteins} \\
-        -db \$MEROPS_DB/merops_scan.lib \\
-        -out ${basename}.blasttab \\
-        -num_threads ${task.cpus} \\
-        -seg yes -soft_masking true \\
-        -max_target_seqs 10 \\
-        -evalue 1e-10 \\
-        -outfmt 6 \\
-        -use_sw_tback
-    pigz ${basename}.blasttab
-    """
-
-    stub:
-    """
-    printf '' | gzip > ${basename}.blasttab.gz
-    """
-}
-
 process MERGE_MEROPS {
     label      'merge'
     publishDir "${params.tables}", mode: 'copy'
@@ -236,46 +385,6 @@ process MERGE_MEROPS {
     stub:
     """
     printf 'species_prefix,protein_id,merops_id,percent_identity,aln_length,mismatches,gap_openings,q_start,q_end,s_start,s_end,evalue,bitscore\\n' | gzip > merops.csv.gz
-    """
-}
-
-// ── SignalP ───────────────────────────────────────────────────────────────────
-workflow SIGNALP {
-    take: ch
-    main:
-        RUN_SIGNALP(ch)
-        MERGE_SIGNALP(RUN_SIGNALP.out.gff3.collect())
-    emit:
-        merged = MERGE_SIGNALP.out.csv
-}
-
-process RUN_SIGNALP {
-    tag        "${locustag}"
-    label      'signalp'
-    publishDir "${params.outdir}/signalp", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.signalp.gff3.gz"),         emit: gff3
-        path("${basename}.signalp.results.txt.gz"),  emit: results
-
-    script:
-    """
-    module load signalp/6-gpu
-    OUTD=\$(mktemp -d)
-    signalp6 -od \$OUTD -org euk --mode fast -format txt \\
-        -fasta ${proteins} --write_procs ${task.cpus} -bs 100
-    pigz -c \$OUTD/output.gff3             > ${basename}.signalp.gff3.gz
-    pigz -c \$OUTD/prediction_results.txt  > ${basename}.signalp.results.txt.gz
-    rm -rf \$OUTD
-    """
-
-    stub:
-    """
-    printf '##gff-version 3\\n' | gzip > ${basename}.signalp.gff3.gz
-    printf '# SignalP-6.0\\n'   | gzip > ${basename}.signalp.results.txt.gz
     """
 }
 
@@ -302,43 +411,6 @@ process MERGE_SIGNALP {
     """
 }
 
-// ── TMHMM ─────────────────────────────────────────────────────────────────────
-workflow TMHMM {
-    take: ch
-    main:
-        RUN_TMHMM(ch)
-        MERGE_TMHMM(RUN_TMHMM.out.short_tsv.collect())
-    emit:
-        merged = MERGE_TMHMM.out.csv
-}
-
-process RUN_TMHMM {
-    tag        "${locustag}"
-    label      'tmhmm'
-    publishDir "${params.outdir}/tmhmm", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.tmhmm_short.tsv.gz"),   emit: short_tsv
-        path("${basename}.tmhmm_results.tsv.gz"), emit: full_tsv
-
-    script:
-    """
-    module load tmhmm
-    tmhmm --noplot         < ${proteins} > ${basename}.tmhmm_results.tsv
-    tmhmm --short --noplot < ${proteins} > ${basename}.tmhmm_short.tsv
-    pigz ${basename}.tmhmm_results.tsv ${basename}.tmhmm_short.tsv
-    """
-
-    stub:
-    """
-    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_results.tsv.gz
-    printf '# TMHMM\\n' | gzip > ${basename}.tmhmm_short.tsv.gz
-    """
-}
-
 process MERGE_TMHMM {
     label      'merge'
     publishDir "${params.tables}", mode: 'copy'
@@ -362,43 +434,6 @@ process MERGE_TMHMM {
     """
 }
 
-// ── TargetP ───────────────────────────────────────────────────────────────────
-workflow TARGETP {
-    take: ch
-    main:
-        RUN_TARGETP(ch)
-        MERGE_TARGETP(RUN_TARGETP.out.summary.collect())
-    emit:
-        merged = MERGE_TARGETP.out.csv
-}
-
-process RUN_TARGETP {
-    tag        "${locustag}"
-    label      'targetp'
-    publishDir "${params.outdir}/targetP", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}_summary.targetp2.gz"), emit: summary
-
-    script:
-    """
-    TMPD=\$(mktemp -d)
-    module load targetp
-    targetp -batch 50 -tmp \$TMPD -format short \\
-        -fasta ${proteins} -org non-pl -prefix ${basename}
-    pigz -f ${basename}_summary.targetp2
-    rm -rf \$TMPD
-    """
-
-    stub:
-    """
-    printf '# TargetP-2.0\\n' | gzip > ${basename}_summary.targetp2.gz
-    """
-}
-
 process MERGE_TARGETP {
     label      'merge'
     publishDir "${params.tables}", mode: 'copy'
@@ -419,52 +454,6 @@ process MERGE_TARGETP {
     stub:
     """
     printf 'species_prefix,protein_id,prediction,probability,cleavage_position_start,cleavage_position_end,cleavage_probability,motif\\n' | gzip > targetP.csv.gz
-    """
-}
-
-// ── IDP (AIUPred) ─────────────────────────────────────────────────────────────
-workflow IDP {
-    take: ch
-    main:
-        RUN_IDP(ch)
-        MERGE_IDP(
-            RUN_IDP.out.idp_csv.collect(),
-            RUN_IDP.out.idp_summary_csv.collect()
-        )
-    emit:
-        merged_idp     = MERGE_IDP.out.idp
-        merged_summary = MERGE_IDP.out.summary
-}
-
-process RUN_IDP {
-    tag        "${locustag}"
-    label      'idp'
-    publishDir "${params.outdir}/aiupred", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.aiupred.txt.gz"),     emit: raw
-        path("${basename}.idp.csv.gz"),         emit: idp_csv
-        path("${basename}.idp_summary.csv.gz"), emit: idp_summary_csv
-
-    script:
-    """
-    module load aiupred
-    aiupred.py -i ${proteins} -o ${basename}.aiupred.txt
-    pigz ${basename}.aiupred.txt
-    python3 ${params.scripts}/gather_AIUPred.py ${basename}.aiupred.txt.gz \\
-        --outfile      ${basename}.idp.csv \\
-        --outfilesum   ${basename}.idp_summary.csv
-    pigz ${basename}.idp.csv ${basename}.idp_summary.csv
-    """
-
-    stub:
-    """
-    printf '' | gzip > ${basename}.aiupred.txt.gz
-    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${basename}.idp.csv.gz
-    printf 'protein_id,idp_status\\n'                                     | gzip > ${basename}.idp_summary.csv.gz
     """
 }
 
@@ -501,40 +490,6 @@ process MERGE_IDP {
     """
 }
 
-// ── WoLF PSORT ────────────────────────────────────────────────────────────────
-workflow WOLFPSORT {
-    take: ch
-    main:
-        RUN_WOLFPSORT(ch)
-        MERGE_WOLFPSORT(RUN_WOLFPSORT.out.results.collect())
-    emit:
-        merged = MERGE_WOLFPSORT.out.csv
-}
-
-process RUN_WOLFPSORT {
-    tag        "${locustag}"
-    label      'wolfpsort'
-    publishDir "${params.outdir}/wolfpsort", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.wolfpsort.results.txt.gz"), emit: results
-
-    script:
-    """
-    module load wolfpsort
-    cat ${proteins} | runWolfPsortSummary fungi > ${basename}.wolfpsort.results.txt
-    pigz ${basename}.wolfpsort.results.txt
-    """
-
-    stub:
-    """
-    printf '# WoLF PSORT\\n' | gzip > ${basename}.wolfpsort.results.txt.gz
-    """
-}
-
 process MERGE_WOLFPSORT {
     label      'merge'
     publishDir "${params.tables}", mode: 'copy'
@@ -555,40 +510,6 @@ process MERGE_WOLFPSORT {
     stub:
     """
     printf 'species_prefix,protein_id,localization,score\\n' | gzip > wolfpsort.csv.gz
-    """
-}
-
-// ── predGPI ───────────────────────────────────────────────────────────────────
-workflow PREDGPI {
-    take: ch
-    main:
-        RUN_PREDGPI(ch)
-        MERGE_PREDGPI(RUN_PREDGPI.out.gff3.collect())
-    emit:
-        merged = MERGE_PREDGPI.out.csv
-}
-
-process RUN_PREDGPI {
-    tag        "${locustag}"
-    label      'predgpi'
-    publishDir "${params.outdir}/predgpi", mode: 'copy'
-
-    input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
-
-    output:
-        path("${basename}.predgpi.gff3.gz"), emit: gff3
-
-    script:
-    """
-    module load predgpi
-    predgpi.py -f ${proteins} -m gff3 -o ${basename}.predgpi.gff3
-    pigz ${basename}.predgpi.gff3
-    """
-
-    stub:
-    """
-    printf '##gff-version 3\\n' | gzip > ${basename}.predgpi.gff3.gz
     """
 }
 
@@ -614,6 +535,10 @@ process MERGE_PREDGPI {
     printf 'species_prefix,protein_id,source,feature,start,end,score,strand,phase,attributes\\n' | gzip > predgpi.csv.gz
     """
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// WHOLE-DATASET PROCESSES (not per-species)
+// ════════════════════════════════════════════════════════════════════════════
 
 // ── AA Frequency ──────────────────────────────────────────────────────────────
 workflow AA_FREQ {
@@ -857,8 +782,6 @@ workflow {
         .take(params.n_test > 0 ? params.n_test as int : -1)
 
     // ── Input setup: symlink predict_results files into input/ subdirs ─────────
-    // Each species proceeds to functional annotation as soon as its own
-    // symlinks are ready — no global barrier.
     def ready_ch
     if (params.run_setup) {
         SETUP_INPUT(rows_ch)
@@ -879,15 +802,149 @@ workflow {
         }
         .filter { it != null }
 
-    if (params.run_pfam)      PFAM(proteins_ch)
-    if (params.run_cazy)      CAZY(proteins_ch)
-    if (params.run_merops)    MEROPS(proteins_ch)
-    if (params.run_signalp)   SIGNALP(proteins_ch)
-    if (params.run_tmhmm)     TMHMM(proteins_ch)
-    if (params.run_targetp)   TARGETP(proteins_ch)
-    if (params.run_idp)       IDP(proteins_ch)
-    if (params.run_wolfpsort) WOLFPSORT(proteins_ch)
-    if (params.run_predgpi)   PREDGPI(proteins_ch)
+    // ── Per-species RUN steps ──────────────────────────────────────────────────
+    // storeDir means Nextflow skips a species automatically if all its output
+    // files already exist in the store directory — no -resume needed.
+    if (params.run_pfam)      RUN_PFAM(proteins_ch)
+    if (params.run_cazy)      RUN_CAZY(proteins_ch)
+    if (params.run_merops)    RUN_MEROPS(proteins_ch)
+    if (params.run_signalp)   RUN_SIGNALP(proteins_ch)
+    if (params.run_tmhmm)     RUN_TMHMM(proteins_ch)
+    if (params.run_targetp)   RUN_TARGETP(proteins_ch)
+    if (params.run_idp)       RUN_IDP(proteins_ch)
+    if (params.run_wolfpsort) RUN_WOLFPSORT(proteins_ch)
+    if (params.run_predgpi)   RUN_PREDGPI(proteins_ch)
+
+    // ── MERGE steps ────────────────────────────────────────────────────────────
+    //
+    // merge_all=true  (default): collect ALL result files from the output dirs,
+    //                            including those from previous runs.  A sync
+    //                            barrier (collect on the current run's outputs)
+    //                            ensures newly generated files are on disk before
+    //                            globbing.  If a tool was not run this session the
+    //                            barrier is an immediate Channel.of(true).
+    //                            MERGE is skipped when the glob finds no files.
+    //
+    // merge_all=false:           merge only the files produced in this run.
+    //                            MERGE is skipped when the tool was not run.
+    //
+    // skip_merge=true:           skip all MERGE steps unconditionally.
+
+    if (!params.skip_merge) {
+
+        if (params.merge_all) {
+
+            // Helper: build a gated glob channel.
+            //   sync_ch  — emits one value when the RUN step is done (or immediately)
+            //   glob     — shell-style glob relative to params.outdir
+            // Returns a channel of matching Path objects, or empty if none found.
+            def gatedGlob = { sync_ch, String glob ->
+                sync_ch
+                    .flatMap { file("${params.outdir}/${glob}") }
+                    .filter  { it.size() > 0 }   // drop the empty-list sentinel
+                    .collect()
+                    .filter  { !it.isEmpty() }    // don't invoke MERGE with []
+            }
+
+            if (params.run_pfam) {
+                def sync = RUN_PFAM.out.domtbl.collect()
+                MERGE_PFAM( gatedGlob(sync, "pfam_hmmscan/*.pfam.gz") )
+            } else {
+                MERGE_PFAM( gatedGlob(Channel.of(true), "pfam_hmmscan/*.pfam.gz") )
+            }
+
+            if (params.run_cazy) {
+                def ov_sync = RUN_CAZY.out.overview.collect()
+                def ca_sync = RUN_CAZY.out.cazymes.collect()
+                MERGE_CAZY(
+                    gatedGlob(ov_sync, "cazy/*/*.overview.tsv.gz"),
+                    gatedGlob(ca_sync, "cazy/*/*.cazymes.tsv.gz")
+                )
+            } else {
+                MERGE_CAZY(
+                    gatedGlob(Channel.of(true), "cazy/*/*.overview.tsv.gz"),
+                    gatedGlob(Channel.of(true), "cazy/*/*.cazymes.tsv.gz")
+                )
+            }
+
+            if (params.run_merops) {
+                def sync = RUN_MEROPS.out.blasttab.collect()
+                MERGE_MEROPS( gatedGlob(sync, "merops/*.blasttab.gz") )
+            } else {
+                MERGE_MEROPS( gatedGlob(Channel.of(true), "merops/*.blasttab.gz") )
+            }
+
+            if (params.run_signalp) {
+                def sync = RUN_SIGNALP.out.gff3.collect()
+                MERGE_SIGNALP( gatedGlob(sync, "signalp/*.signalp.gff3.gz") )
+            } else {
+                MERGE_SIGNALP( gatedGlob(Channel.of(true), "signalp/*.signalp.gff3.gz") )
+            }
+
+            if (params.run_tmhmm) {
+                def sync = RUN_TMHMM.out.short_tsv.collect()
+                MERGE_TMHMM( gatedGlob(sync, "tmhmm/*.tmhmm_short.tsv.gz") )
+            } else {
+                MERGE_TMHMM( gatedGlob(Channel.of(true), "tmhmm/*.tmhmm_short.tsv.gz") )
+            }
+
+            if (params.run_targetp) {
+                def sync = RUN_TARGETP.out.summary.collect()
+                MERGE_TARGETP( gatedGlob(sync, "targetP/*_summary.targetp2.gz") )
+            } else {
+                MERGE_TARGETP( gatedGlob(Channel.of(true), "targetP/*_summary.targetp2.gz") )
+            }
+
+            if (params.run_idp) {
+                def idp_sync = RUN_IDP.out.idp_csv.collect()
+                def sum_sync = RUN_IDP.out.idp_summary_csv.collect()
+                MERGE_IDP(
+                    gatedGlob(idp_sync, "aiupred/*.idp.csv.gz"),
+                    gatedGlob(sum_sync, "aiupred/*.idp_summary.csv.gz")
+                )
+            } else {
+                MERGE_IDP(
+                    gatedGlob(Channel.of(true), "aiupred/*.idp.csv.gz"),
+                    gatedGlob(Channel.of(true), "aiupred/*.idp_summary.csv.gz")
+                )
+            }
+
+            if (params.run_wolfpsort) {
+                def sync = RUN_WOLFPSORT.out.results.collect()
+                MERGE_WOLFPSORT( gatedGlob(sync, "wolfpsort/*.wolfpsort.results.txt.gz") )
+            } else {
+                MERGE_WOLFPSORT( gatedGlob(Channel.of(true), "wolfpsort/*.wolfpsort.results.txt.gz") )
+            }
+
+            if (params.run_predgpi) {
+                def sync = RUN_PREDGPI.out.gff3.collect()
+                MERGE_PREDGPI( gatedGlob(sync, "predgpi/*.predgpi.gff3.gz") )
+            } else {
+                MERGE_PREDGPI( gatedGlob(Channel.of(true), "predgpi/*.predgpi.gff3.gz") )
+            }
+
+        } else {
+            // merge_all=false: merge only the outputs produced in this run.
+            if (params.run_pfam)
+                MERGE_PFAM(RUN_PFAM.out.domtbl.collect())
+            if (params.run_cazy)
+                MERGE_CAZY(RUN_CAZY.out.overview.collect(), RUN_CAZY.out.cazymes.collect())
+            if (params.run_merops)
+                MERGE_MEROPS(RUN_MEROPS.out.blasttab.collect())
+            if (params.run_signalp)
+                MERGE_SIGNALP(RUN_SIGNALP.out.gff3.collect())
+            if (params.run_tmhmm)
+                MERGE_TMHMM(RUN_TMHMM.out.short_tsv.collect())
+            if (params.run_targetp)
+                MERGE_TARGETP(RUN_TARGETP.out.summary.collect())
+            if (params.run_idp)
+                MERGE_IDP(RUN_IDP.out.idp_csv.collect(), RUN_IDP.out.idp_summary_csv.collect())
+            if (params.run_wolfpsort)
+                MERGE_WOLFPSORT(RUN_WOLFPSORT.out.results.collect())
+            if (params.run_predgpi)
+                MERGE_PREDGPI(RUN_PREDGPI.out.gff3.collect())
+        }
+    }
 
     if (params.run_aa_freq)    AA_FREQ()
     if (params.run_codon_freq) CODON_FREQ()
