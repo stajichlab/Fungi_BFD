@@ -1,5 +1,6 @@
 GCA_029267275.1_ASM2926727v1,All contigs too small
 GCA_982397245.1_T46-F,Entirely Bacteria
+GCA_000091065.2_ASM9106v2,Too Small for Yeast genome
 GCA_029232285.1_Ca_Agmasoma_carcini_1,Microsporidia
 GCA_029231695.1_Cm_Agmasoma_carcini_1,Microsporidia
 GCA_043388365.1_UoE_Agrylli_1,Microsporidia
