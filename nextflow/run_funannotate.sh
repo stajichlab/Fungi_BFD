@@ -10,6 +10,7 @@
 # Common overrides:
 #   sbatch nextflow/run_funannotate.sh --run_annotate true
 #   sbatch nextflow/run_funannotate.sh --n_test 2 --only_clean true
+#   sbatch nextflow/run_funannotate.sh --stop_after_sra_fetch true
 #   sbatch nextflow/run_funannotate.sh --run_repeatmasker false
 
 set -euo pipefail

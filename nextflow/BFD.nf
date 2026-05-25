@@ -615,6 +615,137 @@ process MERGE_PREDGPI {
     """
 }
 
+// ── AA Frequency ──────────────────────────────────────────────────────────────
+workflow AA_FREQ {
+    main:
+        CALC_AA_FREQ()
+    emit:
+        csv = CALC_AA_FREQ.out.csv
+}
+
+process CALC_AA_FREQ {
+    label      'genestats'
+    publishDir "${params.tables}", mode: 'copy'
+
+    output:
+        path("aa_freq.csv.gz"), emit: csv
+
+    script:
+    """
+    module load biopython
+    python3 ${params.scripts}/calculate_AA_freq.py \\
+        -d ${params.pep_dir} -o aa_freq.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,amino_acid,frequency\\n' | gzip > aa_freq.csv.gz
+    """
+}
+
+// ── Codon Frequency ───────────────────────────────────────────────────────────
+workflow CODON_FREQ {
+    main:
+        CALC_CODON_FREQ()
+    emit:
+        csv = CALC_CODON_FREQ.out.csv
+}
+
+process CALC_CODON_FREQ {
+    label      'genestats'
+    publishDir "${params.tables}", mode: 'copy'
+
+    output:
+        path("codon_freq.csv.gz"), emit: csv
+
+    script:
+    """
+    module load biopython
+    python3 ${params.scripts}/calculate_codon_freq.py \\
+        -d ${params.cds_dir} -o codon_freq.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,codon,frequency\\n' | gzip > codon_freq.csv.gz
+    """
+}
+
+// ── Intergenic Distances ──────────────────────────────────────────────────────
+workflow INTERGENIC {
+    main:
+        CALC_INTERGENIC()
+    emit:
+        csv = CALC_INTERGENIC.out.csv
+}
+
+process CALC_INTERGENIC {
+    label      'genestats'
+    publishDir "${params.tables}", mode: 'copy'
+
+    output:
+        path("gene_intergenic_distances.csv.gz"), emit: csv
+
+    script:
+    """
+    python3 ${params.scripts}/calculate_intergenic.py \\
+        -g ${params.gff_dir} -o .
+    pigz gene_pairwise_distances.csv
+    mv gene_pairwise_distances.csv.gz gene_intergenic_distances.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,left_gene,right_gene,distance\\n' | gzip > gene_intergenic_distances.csv.gz
+    """
+}
+
+// ── Gene Statistics ───────────────────────────────────────────────────────────
+workflow GENE_STATS {
+    main:
+        CALC_GENE_STATS()
+    emit:
+        gene_info        = CALC_GENE_STATS.out.gene_info
+        gene_exons       = CALC_GENE_STATS.out.gene_exons
+        gene_CDS         = CALC_GENE_STATS.out.gene_CDS
+        gene_introns     = CALC_GENE_STATS.out.gene_introns
+        gene_transcripts = CALC_GENE_STATS.out.gene_transcripts
+        gene_trnas       = CALC_GENE_STATS.out.gene_trnas
+        gene_proteins    = CALC_GENE_STATS.out.gene_proteins
+}
+
+process CALC_GENE_STATS {
+    label      'genestats'
+    publishDir "${params.tables}", mode: 'copy'
+
+    output:
+        path("gene_info.csv.gz"),        emit: gene_info
+        path("gene_exons.csv.gz"),       emit: gene_exons
+        path("gene_CDS.csv.gz"),         emit: gene_CDS
+        path("gene_introns.csv.gz"),     emit: gene_introns
+        path("gene_transcripts.csv.gz"), emit: gene_transcripts
+        path("gene_trnas.csv.gz"),       emit: gene_trnas
+        path("gene_proteins.csv.gz"),    emit: gene_proteins
+
+    script:
+    """
+    module load biopython
+    python3 ${params.scripts}/build_genestats_table.py \\
+        -g ${params.gff_dir} \\
+        -d ${params.genome_dir} \\
+        -o .
+    pigz gene_info.csv gene_exons.csv gene_CDS.csv gene_introns.csv \\
+         gene_transcripts.csv gene_trnas.csv gene_proteins.csv
+    """
+
+    stub:
+    """
+    for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
+        printf 'id\\n' | gzip > \${f}.csv.gz
+    done
+    """
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN WORKFLOW
 // ════════════════════════════════════════════════════════════════════════════
@@ -650,4 +781,9 @@ workflow {
     if (params.run_idp)       IDP(proteins_ch)
     if (params.run_wolfpsort) WOLFPSORT(proteins_ch)
     if (params.run_predgpi)   PREDGPI(proteins_ch)
+
+    if (params.run_aa_freq)    AA_FREQ()
+    if (params.run_codon_freq) CODON_FREQ()
+    if (params.run_intergenic) INTERGENIC()
+    if (params.run_gene_stats) GENE_STATS()
 }
