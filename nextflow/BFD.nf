@@ -613,6 +613,7 @@ process CALC_INTERGENIC {
 
     script:
     """
+    module load biopython
     python3 ${params.scripts}/calculate_intergenic.py \\
         -g ${params.gff_dir} -o .
     pigz gene_pairwise_distances.csv
@@ -654,6 +655,9 @@ process CALC_GENE_STATS {
 
     script:
     """
+    source /etc/profile.d/modules.sh 2>/dev/null || true
+    module load miniconda3
+    eval "\$(conda shell.bash hook)"
     module load biopython
     python3 ${params.scripts}/build_genestats_table.py \\
         -g ${params.gff_dir} \\
@@ -678,37 +682,35 @@ process CALC_GENE_STATS {
 workflow SETUP_INPUT {
     take: ch   // tuple(locustag, basename, species, strain)
     main:
-        SETUP_SYMLINKS(ch)
+        // Write all locustag+basename pairs to a TSV file for the bash loop
+        rows_file = ch
+            .map { locustag, basename, species, strain -> "${locustag}\t${basename}" }
+            .collectFile(name: 'setup_rows.tsv', newLine: true)
+        SETUP_SYMLINKS(rows_file)
+        // Re-emit original rows gated by process completion
+        done_ch = SETUP_SYMLINKS.out.done
+            .combine(ch)
+            .map { _flag, locustag, basename, species, strain ->
+                tuple(locustag, basename, species, strain)
+            }
     emit:
-        done = SETUP_SYMLINKS.out.done
+        done = done_ch
 }
 
 process SETUP_SYMLINKS {
-    tag   "${locustag}"
     label 'setup'
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain)
+        path(rows_file)
 
     output:
-        tuple val(locustag), val(basename), val(species), val(strain), emit: done
-        path ".setup_done_${locustag}", emit: marker
+        val(true), emit: done
 
     script:
     """
-    src="${params.genome_annotation}/${basename}/predict_results"
-    misc="${params.genome_annotation}/${basename}/predict_misc"
-
-    if [ ! -d "\$src" ]; then
-        echo "[WARN] predict_results not found for ${basename}: \$src" >&2
-        touch .setup_done_${locustag}
-        exit 0
-    fi
-
     mkdir -p "${params.pep_dir}" "${params.cds_dir}" "${params.gff_dir}" \\
              "${params.genome_dir}" "${params.trna_dir}"
 
-    # Create symlink only if missing or broken
     make_link() {
         local target=\$1 linkname=\$2
         if [ ! -e "\$target" ]; then
@@ -723,25 +725,48 @@ process SETUP_SYMLINKS {
         fi
     }
 
-    make_link "\$src/${basename}.proteins.fa"        "${params.pep_dir}/${basename}.proteins.fa"
-    make_link "\$src/${basename}.cds-transcripts.fa" "${params.cds_dir}/${basename}.cds-transcripts.fa"
-    make_link "\$src/${basename}.gff3"               "${params.gff_dir}/${basename}.gff3"
-    make_link "\$src/${basename}.scaffolds.fa"       "${params.genome_dir}/${basename}.scaffolds.fa"
+    while IFS=\$'\\t' read -r locustag basename; do
+        src="${params.genome_annotation}/\${basename}/predict_results"
+        misc="${params.genome_annotation}/\${basename}/predict_misc"
 
-    if [ -f "\$misc/trnascan.no-overlaps.gff3" ]; then
-        make_link "\$misc/trnascan.no-overlaps.gff3" "${params.trna_dir}/${basename}.trna.gff3"
-    else
-        echo "[INFO] no trnascan GFF3 for ${basename}, skipping trna symlink"
-    fi
+        if [ ! -d "\$src" ]; then
+            echo "[WARN] predict_results not found for \${basename}: \$src" >&2
+            continue
+        fi
 
-    touch .setup_done_${locustag}
+        make_link "\$src/\${basename}.proteins.fa"        "${params.pep_dir}/\${basename}.proteins.fa"
+        make_link "\$src/\${basename}.cds-transcripts.fa" "${params.cds_dir}/\${basename}.cds-transcripts.fa"
+        make_link "\$src/\${basename}.gff3"               "${params.gff_dir}/\${basename}.gff3"
+        make_link "\$src/\${basename}.scaffolds.fa"       "${params.genome_dir}/\${basename}.scaffolds.fa"
+
+        if [ -f "\$misc/trnascan.no-overlaps.gff3" ]; then
+            make_link "\$misc/trnascan.no-overlaps.gff3" "${params.trna_dir}/\${basename}.trna.gff3"
+        else
+            echo "[INFO] no trnascan GFF3 for \${basename}, skipping trna symlink"
+        fi
+    done < ${rows_file}
     """
 
     stub:
     """
-    echo "[STUB] SETUP_SYMLINKS for ${basename} (${locustag})"
-    touch .setup_done_${locustag}
+    echo "[STUB] SETUP_SYMLINKS: \$(wc -l < ${rows_file}) species"
     """
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Build a gated glob channel.
+//   sync_ch — emits one value when the RUN step is done (or Channel.of(true))
+//   glob    — shell-style glob relative to params.outdir
+// Returns a channel of matching Path objects, or empty if none found.
+def gatedGlob(sync_ch, String glob) {
+    sync_ch
+        .flatMap { files("${params.outdir}/${glob}") }
+        .filter  { it.size() > 0 }
+        .collect()
+        .filter  { !it.isEmpty() }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -833,18 +858,6 @@ workflow {
     if (!params.skip_merge) {
 
         if (params.merge_all) {
-
-            // Helper: build a gated glob channel.
-            //   sync_ch  — emits one value when the RUN step is done (or immediately)
-            //   glob     — shell-style glob relative to params.outdir
-            // Returns a channel of matching Path objects, or empty if none found.
-            def gatedGlob = { sync_ch, String glob ->
-                sync_ch
-                    .flatMap { file("${params.outdir}/${glob}") }
-                    .filter  { it.size() > 0 }   // drop the empty-list sentinel
-                    .collect()
-                    .filter  { !it.isEmpty() }    // don't invoke MERGE with []
-            }
 
             if (params.run_pfam) {
                 def sync = RUN_PFAM.out.domtbl.collect()

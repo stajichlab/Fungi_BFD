@@ -175,11 +175,128 @@ process MASKREPEAT_TANTAN_RUN {
     """
 }
 
-// Search NCBI SRA for paired-end RNA-seq runs for this taxon and download up to
-// params.max_rnaseq_runs sets.  All downloaded pairs are concatenated (per-accession
-// order) into two species-named files cached in rnaseq_reads/ via storeDir.
-// Empty files (0 bytes) are written when no RNA-seq data is found so the cache is
-// populated and FUNANNOTATE_TRAIN can detect the no-data case without re-querying.
+// Query NCBI SRA for available paired-end RNA-seq accessions per species.
+// Lightweight: runs the esearch/efetch query only — no downloading.
+// Records up to 5 candidates (sorted by spot count desc) in a per-species CSV.
+// storeDir caches results so re-runs skip the network query.
+// To invalidate the cache for a species, delete rnaseq_reads/sra_query/<species_tag>.sra_query.csv
+process SRA_QUERY {
+    tag "$species_tag"
+
+    storeDir "${launchDir}/rnaseq_reads/sra_query"
+
+    cpus   1
+    memory '4 GB'
+    time   '30m'
+
+    input:
+    tuple val(species_tag), val(taxonid)
+
+    output:
+    tuple val(species_tag), path("${species_tag}.sra_query.csv"), emit: query_result
+
+    script:
+    """
+    set -euo pipefail
+    module load ncbi_edirect
+
+    printf 'species_tag,taxonid,sra_accession,spots\n' > ${species_tag}.sra_query.csv
+
+    esearch -db sra \\
+        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])" | \\
+        efetch -format runinfo > _runinfo.tmp
+
+    awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s\\n", \$1, \$4}' _runinfo.tmp | \\
+        sort -t',' -k2 -rn | \\
+        head -n 5 | \\
+        while IFS=',' read -r acc spots; do
+            printf '%s,%s,%s,%s\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots"
+        done >> ${species_tag}.sra_query.csv
+
+    rm -f _runinfo.tmp
+    NHITS=\$(awk 'END{print NR-1}' ${species_tag}.sra_query.csv)
+    echo "[INFO] Found \$NHITS SRA accessions for ${species_tag} (taxonid=${taxonid})"
+    """
+
+    stub:
+    """
+    printf 'species_tag,taxonid,sra_accession,spots\n' > ${species_tag}.sra_query.csv
+    printf '%s,%s,SRR000001,1000000\n' "${species_tag}" "${taxonid}" >> ${species_tag}.sra_query.csv
+    echo "[STUB] SRA_QUERY for ${species_tag}"
+    """
+}
+
+// Merge all per-species SRA query CSVs into a single named manifest.
+// Output: {stem}.rnaseq_sra.csv written alongside the input samples file.
+// Columns: species_tag, taxonid, sra_accession, spots
+process COLLECT_SRA_QUERY {
+    publishDir { file(params.samples).parent.toAbsolutePath().toString() }, mode: 'copy'
+
+    cpus   1
+    memory '1 GB'
+    time   '10m'
+
+    input:
+    path(query_csvs)
+    val(stem)
+
+    output:
+    path("${stem}.rnaseq_sra.csv"), emit: manifest
+
+    script:
+    """
+    printf 'species_tag,taxonid,sra_accession,spots\n' > ${stem}.rnaseq_sra.csv
+    for f in ${query_csvs}; do
+        tail -n +2 "\$f" >> ${stem}.rnaseq_sra.csv
+    done
+    NSPECIES=\$(awk -F',' 'NR>1{print \$1}' ${stem}.rnaseq_sra.csv | sort -u | wc -l)
+    NACCESSIONS=\$(awk 'NR>1' ${stem}.rnaseq_sra.csv | wc -l)
+    echo "[INFO] ${stem}.rnaseq_sra.csv: \$NACCESSIONS accessions across \$NSPECIES species with RNA-seq data"
+    """
+
+    stub:
+    """
+    printf 'species_tag,taxonid,sra_accession,spots\n' > ${stem}.rnaseq_sra.csv
+    """
+}
+
+// Write zero-byte paired FASTQ placeholder files for species with no SRA data.
+// Called only for species whose SRA_QUERY CSV has no data rows, avoiding a
+// SLURM job allocation for what would be an immediate empty-file write.
+process WRITE_EMPTY_READS {
+    tag "$species_tag"
+
+    storeDir "${launchDir}/rnaseq_reads"
+
+    cpus   1
+    memory '1 GB'
+    time   '5m'
+
+    input:
+    val(species_tag)
+
+    output:
+    tuple val(species_tag), path("${species_tag}_norm_R1.fastq.gz"), path("${species_tag}_norm_R2.fastq.gz"), emit: reads
+
+    script:
+    """
+    : > ${species_tag}_norm_R1.fastq.gz
+    : > ${species_tag}_norm_R2.fastq.gz
+    echo "[INFO] No SRA data for ${species_tag}; created empty read placeholders"
+    """
+
+    stub:
+    """
+    : > ${species_tag}_norm_R1.fastq.gz
+    : > ${species_tag}_norm_R2.fastq.gz
+    """
+}
+
+// Download and normalize up to params.max_rnaseq_runs SRA accessions for species
+// that have RNA-seq data. Accessions are read from the pre-queried per-species CSV
+// produced by SRA_QUERY, so no NCBI network call is made here.
+// Only invoked for species with data rows in their SRA_QUERY CSV; WRITE_EMPTY_READS
+// handles the no-data case at the channel level.
 process SRA_FETCH {
     tag "$species_tag"
 
@@ -190,14 +307,13 @@ process SRA_FETCH {
     time   '2h'
 
     input:
-    tuple val(species_tag), val(taxonid)
+    tuple val(species_tag), path(sra_query_csv)
 
     output:
     tuple val(species_tag), path("${species_tag}_norm_R1.fastq.gz"), path("${species_tag}_norm_R2.fastq.gz"), emit: reads
 
     script:
     """
-    module load ncbi_edirect
     module load sratoolkit
     module load parallel-fastq-dump
     module load fastp
@@ -208,14 +324,12 @@ process SRA_FETCH {
     : > ${species_tag}_norm_R1.fastq.gz
     : > ${species_tag}_norm_R2.fastq.gz
 
-    ACCESSIONS=\$(esearch -db sra \
-        -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])" | \
-        efetch -format runinfo | \
-        awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {print \$1}' | \
-        sort -u | head -n ${params.max_rnaseq_runs} || true)
+    # Read pre-queried accessions from SRA_QUERY CSV (up to max_rnaseq_runs).
+    ACCESSIONS=\$(awk -F',' 'NR>1 {print \$3}' ${sra_query_csv} | head -n ${params.max_rnaseq_runs} | tr '\n' ' ')
+    TAXONID=\$(awk -F',' 'NR==2 {print \$2; exit}' ${sra_query_csv})
 
-    if [ -z "\$ACCESSIONS" ]; then
-        echo "[INFO] No paired-end RNA-seq runs found for ${species_tag} (taxonid=${taxonid})"
+    if [ -z "\$(echo \$ACCESSIONS | tr -d ' ')" ]; then
+        echo "[INFO] No paired-end RNA-seq runs found for ${species_tag} (no accessions in query CSV)"
     else
         echo "[INFO] SRA accessions for ${species_tag}: \$ACCESSIONS"
         TMPDIR=\${SCRATCH:-/tmp}
@@ -232,6 +346,7 @@ process SRA_FETCH {
             if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
                 # if we could run these in parallel?
                 parallel -j 2 ${params.fastq_hdr_script} --read {} reads/\${ACC}_{}.fastq.gz \
+		\\| head -n ${params.max_rnaseq_reads} \\|
                     \\| pigz -c \\>\\> \$TMPDIR/${species_tag}_R{}.fastq.gz  ::: 1 2
                 rm reads/\${ACC}_[12].fastq.gz
             else
@@ -267,7 +382,7 @@ process SRA_FETCH {
             printf "species_tag\ttaxonid\taccessions\ttimestamp\n" > "\$MANIFEST"
         fi
         printf "%s\t%s\t%s\t%s\n" \
-            "${species_tag}" "${taxonid}" \
+            "${species_tag}" "\$TAXONID" \
             "\$(echo \$ACCESSIONS | tr '[:space:]' ',' | sed 's/,\$//')" \
             "\$(date -Iseconds)" >> "\$MANIFEST"
     fi
@@ -277,7 +392,7 @@ process SRA_FETCH {
     """
     : > ${species_tag}_norm_R1.fastq.gz
     : > ${species_tag}_norm_R2.fastq.gz
-    echo "[STUB] SRA_FETCH noop for ${species_tag} (taxonid=${taxonid})"
+    echo "[STUB] SRA_FETCH for ${species_tag}"
     """
 }
 
@@ -873,6 +988,7 @@ workflow {
         // funannotate train on the representative assembly and archives Trinity-GG, trimmed, and
         // normalized reads to rnaseq_data/; all other strains run FUNANNOTATE_TRAIN --trinity.
         def predict_input_ch
+        def reads_ch = Channel.empty()
         if (params.run_sra_fetch) {
             // Build per-species input: group assemblies, keep first taxonid per species.
             def sra_input = predict_genome_ch
@@ -883,7 +999,29 @@ workflow {
                 .groupTuple(by: 0)
                 .map { species_tag, taxonids -> tuple(species_tag, taxonids[0]) }
 
-            SRA_FETCH(sra_input)
+            // Step 1: Lightweight per-species SRA query (cacheable via storeDir)
+            SRA_QUERY(sra_input)
+
+            // Step 2: Collect all per-species results into {stem}.rnaseq_sra.csv
+            def stem = file(params.samples).baseName
+            COLLECT_SRA_QUERY(
+                SRA_QUERY.out.query_result.map { _stag, csv -> csv }.collect(),
+                stem
+            )
+
+            if (!params.stop_after_sra_query) {
+            // Step 3: Branch — species with hits go to SRA_FETCH; species without hits
+            // get zero-byte placeholder files written by WRITE_EMPTY_READS without a
+            // SLURM job for download.
+            def branched_sra = SRA_QUERY.out.query_result
+                .branch {
+                    has_data: it[1].readLines().size() > 1
+                    no_data:  true
+                }
+
+            SRA_FETCH(branched_sra.has_data)
+            WRITE_EMPTY_READS(branched_sra.no_data.map { stag, _csv -> stag })
+            reads_ch = SRA_FETCH.out.reads.mix(WRITE_EMPTY_READS.out.reads)
 
             if (!params.stop_after_sra_fetch) {
             // Build per-assembly channel keyed by species_tag with SRA reads joined.
@@ -892,7 +1030,7 @@ workflow {
                     def species_tag = species.replaceAll(/\s+/, '_')
                     tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa)
                 }
-                .combine(SRA_FETCH.out.reads, by: 0)
+                .combine(reads_ch, by: 0)
 
             // RNASEQ_PREPARE: run funannotate train --stop_after_trinity once per species on
             // the representative (first) assembly, then cache the Trinity-GG FASTA in rnaseq_data/
@@ -946,6 +1084,7 @@ workflow {
             FUNANNOTATE_TRAIN(train_todo)
             predict_input_ch = FUNANNOTATE_TRAIN.out.mix(train_done).mix(predict_no_rnaseq)
             } // end if (!params.stop_after_sra_fetch)
+            } // end if (!params.stop_after_sra_query)
         } else {
             predict_input_ch = predict_genome_ch
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, _taxonid ->
@@ -953,7 +1092,7 @@ workflow {
                 }
         }
 
-        if (!params.stop_after_sra_fetch || !params.run_sra_fetch) {
+        if ((!params.stop_after_sra_fetch && !params.stop_after_sra_query) || !params.run_sra_fetch) {
         def predict_ch = predict_input_ch
             .filter { out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa ->
                 def f = file("${params.target}/${out}/predict_results/${out}.gbk")
@@ -1053,7 +1192,7 @@ workflow {
                         def species_tag = species.replaceAll(/\s+/, '_')
                         tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable)
                     }
-                    .combine(SRA_FETCH.out.reads, by: 0)
+                    .combine(reads_ch, by: 0)
                     .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2 ->
                         tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2)
                     }
