@@ -23,6 +23,6 @@ sumstats() {
 }
 
 export -f sumstats
-mkdir -p results/asm_reports
+mkdir -p results/genome_stats/asm_reports
 find "$INFOLDER" -maxdepth 1 -name "*.masked.fasta" \
-  | parallel -j "$JOBS" sumstats {} results/asm_reports
+  | parallel -j "$JOBS" sumstats {} results/genome_stats/asm_reports

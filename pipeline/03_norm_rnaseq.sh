@@ -59,6 +59,8 @@ fi
 BASENAME=$(basename "${R1}" _R1.fastq.gz)
 TEMP_NORM_R1="${TMPDIR}/${BASENAME}_norm_R1.fastq.gz"
 TEMP_NORM_R2="${TMPDIR}/${BASENAME}_norm_R2.fastq.gz"
+FILT_R1="${TMPDIR}/${BASENAME}_trunc_R1.fastq.gz"
+FILT_R2="${TMPDIR}/${BASENAME}_trunc_R2.fastq.gz"
 NORM_R1="${READDIR}/${BASENAME}_norm_R1.fastq.gz"
 NORM_R2="${READDIR}/${BASENAME}_norm_R2.fastq.gz"
 
@@ -71,12 +73,15 @@ echo "[INFO] Processing: ${BASENAME}"
 echo "[INFO]   R1: ${R1}"
 echo "[INFO]   R2: ${R2}"
 
+# -- Step 0: filter read length issues ---
+
+scripts/enforce_seqpair_readlen in="${R1}" in2="${R2}" \
+	out="${FILT_R1}" out2="${FILT_R2}" minlen=75 
 # ── Step 1: bbnorm coverage normalization ────────────────────────────────────
 echo "[INFO] Running bbnorm for ${BASENAME}..."
-bbnorm.sh \
-    in="${R1}"  in2="${R2}" \
+bbnorm.sh target=30 ecc=t \
+	in="${FILT_R1}"  in2="${FILT_R2}" \
     out="${TEMP_NORM_R1}" out2="${TEMP_NORM_R2}" \
-    target=30 \
     threads="${CPUS}" -Xmx${MEM_GB}g
 FASTP_HTML="${TMPDIR}/${BASENAME}_fastp.html"
 FASTP_JSON="${TMPDIR}/${BASENAME}_fastp.json"
