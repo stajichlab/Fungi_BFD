@@ -537,29 +537,55 @@ process MERGE_PREDGPI {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// WHOLE-DATASET PROCESSES (not per-species)
+// PER-GENOME STATISTICS PROCESSES  (storeDir-cached per LOCUSTAG)
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── AA Frequency ──────────────────────────────────────────────────────────────
-workflow AA_FREQ {
-    main:
-        CALC_AA_FREQ()
-    emit:
-        csv = CALC_AA_FREQ.out.csv
-}
-
 process CALC_AA_FREQ {
-    label      'genestats'
-    publishDir "${params.tables}", mode: 'copy'
+    label    'genestats'
+    tag      locustag
+    storeDir "${params.genome_stats_outdir}/aa_freq"
+
+    input:
+    tuple val(locustag), path(proteins_faa)
 
     output:
-        path("aa_freq.csv.gz"), emit: csv
+    path "${locustag}.aa_freq.csv.gz", emit: csv
 
     script:
     """
     module load biopython
     python3 ${params.scripts}/calculate_AA_freq.py \\
-        -d ${params.pep_dir} -o aa_freq.csv.gz
+        ${proteins_faa} -o ${locustag}.aa_freq.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${locustag}.aa_freq.csv.gz
+    """
+}
+
+process MERGE_AA_FREQ {
+    label      'merge'
+    publishDir path: {
+        params.taxon
+            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
+            : "${params.tables}/All_Taxa"
+    }, mode: 'copy'
+
+    input:
+    path 'inputs/*'
+
+    output:
+    path "aa_freq.csv.gz", emit: csv
+
+    script:
+    """
+    first=1
+    for f in inputs/*.aa_freq.csv.gz; do
+        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+        else zcat "\$f" | tail -n +2; fi
+    done | gzip > aa_freq.csv.gz
     """
 
     stub:
@@ -569,25 +595,51 @@ process CALC_AA_FREQ {
 }
 
 // ── Codon Frequency ───────────────────────────────────────────────────────────
-workflow CODON_FREQ {
-    main:
-        CALC_CODON_FREQ()
-    emit:
-        csv = CALC_CODON_FREQ.out.csv
-}
-
 process CALC_CODON_FREQ {
-    label      'genestats'
-    publishDir "${params.tables}", mode: 'copy'
+    label    'genestats'
+    tag      locustag
+    storeDir "${params.genome_stats_outdir}/codon_freq"
+
+    input:
+    tuple val(locustag), path(cds_faa)
 
     output:
-        path("codon_freq.csv.gz"), emit: csv
+    path "${locustag}.codon_freq.csv.gz", emit: csv
 
     script:
     """
     module load biopython
     python3 ${params.scripts}/calculate_codon_freq.py \\
-        -d ${params.cds_dir} -o codon_freq.csv.gz
+        ${cds_faa} -o ${locustag}.codon_freq.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,codon,frequency\\n' | gzip > ${locustag}.codon_freq.csv.gz
+    """
+}
+
+process MERGE_CODON_FREQ {
+    label      'merge'
+    publishDir path: {
+        params.taxon
+            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
+            : "${params.tables}/All_Taxa"
+    }, mode: 'copy'
+
+    input:
+    path 'inputs/*'
+
+    output:
+    path "codon_freq.csv.gz", emit: csv
+
+    script:
+    """
+    first=1
+    for f in inputs/*.codon_freq.csv.gz; do
+        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+        else zcat "\$f" | tail -n +2; fi
+    done | gzip > codon_freq.csv.gz
     """
 
     stub:
@@ -597,27 +649,53 @@ process CALC_CODON_FREQ {
 }
 
 // ── Intergenic Distances ──────────────────────────────────────────────────────
-workflow INTERGENIC {
-    main:
-        CALC_INTERGENIC()
-    emit:
-        csv = CALC_INTERGENIC.out.csv
-}
-
 process CALC_INTERGENIC {
-    label      'genestats'
-    publishDir "${params.tables}", mode: 'copy'
+    label    'genestats'
+    tag      locustag
+    storeDir "${params.genome_stats_outdir}/intergenic_stats"
+
+    input:
+    tuple val(locustag), path(gff_file)
 
     output:
-        path("gene_intergenic_distances.csv.gz"), emit: csv
+    path "${locustag}.gene_intergenic_distances.csv.gz", emit: csv
 
     script:
     """
     module load biopython
     python3 ${params.scripts}/calculate_intergenic.py \\
-        -g ${params.gff_dir} -o .
+        ${gff_file} -o .
     pigz gene_pairwise_distances.csv
-    mv gene_pairwise_distances.csv.gz gene_intergenic_distances.csv.gz
+    mv gene_pairwise_distances.csv.gz ${locustag}.gene_intergenic_distances.csv.gz
+    """
+
+    stub:
+    """
+    printf 'species_prefix,left_gene,right_gene,distance\\n' | gzip > ${locustag}.gene_intergenic_distances.csv.gz
+    """
+}
+
+process MERGE_INTERGENIC {
+    label      'merge'
+    publishDir path: {
+        params.taxon
+            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
+            : "${params.tables}/All_Taxa"
+    }, mode: 'copy'
+
+    input:
+    path 'inputs/*'
+
+    output:
+    path "gene_intergenic_distances.csv.gz", emit: csv
+
+    script:
+    """
+    first=1
+    for f in inputs/*.gene_intergenic_distances.csv.gz; do
+        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+        else zcat "\$f" | tail -n +2; fi
+    done | gzip > gene_intergenic_distances.csv.gz
     """
 
     stub:
@@ -627,44 +705,75 @@ process CALC_INTERGENIC {
 }
 
 // ── Gene Statistics ───────────────────────────────────────────────────────────
-workflow GENE_STATS {
-    main:
-        CALC_GENE_STATS()
-    emit:
-        gene_info        = CALC_GENE_STATS.out.gene_info
-        gene_exons       = CALC_GENE_STATS.out.gene_exons
-        gene_CDS         = CALC_GENE_STATS.out.gene_CDS
-        gene_introns     = CALC_GENE_STATS.out.gene_introns
-        gene_transcripts = CALC_GENE_STATS.out.gene_transcripts
-        gene_trnas       = CALC_GENE_STATS.out.gene_trnas
-        gene_proteins    = CALC_GENE_STATS.out.gene_proteins
-}
-
 process CALC_GENE_STATS {
-    label      'genestats'
-    publishDir "${params.tables}", mode: 'copy'
+    label    'genestats'
+    tag      locustag
+    storeDir "${params.genome_stats_outdir}/gene_stats"
+
+    input:
+    tuple val(locustag), path(gff_file), path(dna_file)
 
     output:
-        path("gene_info.csv.gz"),        emit: gene_info
-        path("gene_exons.csv.gz"),       emit: gene_exons
-        path("gene_CDS.csv.gz"),         emit: gene_CDS
-        path("gene_introns.csv.gz"),     emit: gene_introns
-        path("gene_transcripts.csv.gz"), emit: gene_transcripts
-        path("gene_trnas.csv.gz"),       emit: gene_trnas
-        path("gene_proteins.csv.gz"),    emit: gene_proteins
+    path "${locustag}.gene_info.csv.gz",        emit: gene_info
+    path "${locustag}.gene_exons.csv.gz",       emit: gene_exons
+    path "${locustag}.gene_CDS.csv.gz",         emit: gene_CDS
+    path "${locustag}.gene_introns.csv.gz",     emit: gene_introns
+    path "${locustag}.gene_transcripts.csv.gz", emit: gene_transcripts
+    path "${locustag}.gene_trnas.csv.gz",       emit: gene_trnas
+    path "${locustag}.gene_proteins.csv.gz",    emit: gene_proteins
 
     script:
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
     module load biopython
     python3 ${params.scripts}/build_genestats_table.py \\
-        -g ${params.gff_dir} \\
-        -d ${params.genome_dir} \\
+        ${gff_file} \\
+        -d . \\
         -o .
     pigz gene_info.csv gene_exons.csv gene_CDS.csv gene_introns.csv \\
          gene_transcripts.csv gene_trnas.csv gene_proteins.csv
+    for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
+        mv \${f}.csv.gz ${locustag}.\${f}.csv.gz
+    done
+    """
+
+    stub:
+    """
+    for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
+        printf 'id\\n' | gzip > ${locustag}.\${f}.csv.gz
+    done
+    """
+}
+
+process MERGE_GENE_STATS {
+    label      'merge'
+    publishDir path: {
+        params.taxon
+            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
+            : "${params.tables}/All_Taxa"
+    }, mode: 'copy'
+
+    input:
+    path 'inputs/*'
+
+    output:
+    path "gene_info.csv.gz",        emit: gene_info
+    path "gene_exons.csv.gz",       emit: gene_exons
+    path "gene_CDS.csv.gz",         emit: gene_CDS
+    path "gene_introns.csv.gz",     emit: gene_introns
+    path "gene_transcripts.csv.gz", emit: gene_transcripts
+    path "gene_trnas.csv.gz",       emit: gene_trnas
+    path "gene_proteins.csv.gz",    emit: gene_proteins
+
+    script:
+    """
+    for type in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
+        first=1
+        for f in inputs/*.\${type}.csv.gz; do
+            if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+            else zcat "\$f" | tail -n +2; fi
+        done | gzip > \${type}.csv.gz
+    done
     """
 
     stub:
@@ -769,6 +878,16 @@ def gatedGlob(sync_ch, String glob) {
         .filter  { !it.isEmpty() }
 }
 
+// Like gatedGlob but roots the glob in params.genome_stats_outdir instead.
+// Used for merge_all=true when no --taxon filter is active.
+def gatedGlobStats(sync_ch, String glob) {
+    sync_ch
+        .flatMap { files("${params.genome_stats_outdir}/${glob}") }
+        .filter  { it.size() > 0 }
+        .collect()
+        .filter  { !it.isEmpty() }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN WORKFLOW
 // ════════════════════════════════════════════════════════════════════════════
@@ -826,6 +945,28 @@ workflow {
             return tuple(locustag, basename, species, strain, prot)
         }
         .filter { it != null }
+
+    // ── Per-genome statistics input channels ───────────────────────────────────
+    aa_freq_ch = ready_ch.map { locustag, basename, species, strain ->
+        def f = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
+        f.exists() ? tuple(locustag, f) : null
+    }.filter { it != null }
+
+    codon_freq_ch = ready_ch.map { locustag, basename, species, strain ->
+        def f = file("${params.cds_dir}/${basename}.cds-transcripts.fa", glob: false)
+        f.exists() ? tuple(locustag, f) : null
+    }.filter { it != null }
+
+    intergenic_ch = ready_ch.map { locustag, basename, species, strain ->
+        def f = file("${params.gff_dir}/${basename}.gff3", glob: false)
+        f.exists() ? tuple(locustag, f) : null
+    }.filter { it != null }
+
+    gene_stats_ch = ready_ch.map { locustag, basename, species, strain ->
+        def gff = file("${params.gff_dir}/${basename}.gff3", glob: false)
+        def dna = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
+        (gff.exists() && dna.exists()) ? tuple(locustag, gff, dna) : null
+    }.filter { it != null }
 
     // ── Per-species RUN steps ──────────────────────────────────────────────────
     // storeDir means Nextflow skips a species automatically if all its output
@@ -959,8 +1100,66 @@ workflow {
         }
     }
 
-    if (params.run_aa_freq)    AA_FREQ()
-    if (params.run_codon_freq) CODON_FREQ()
-    if (params.run_intergenic) INTERGENIC()
-    if (params.run_gene_stats) GENE_STATS()
+    // ── Per-genome statistics + MERGE ──────────────────────────────────────────
+    // When merge_all=true and no --taxon is active, glob ALL files from storeDir
+    // so that species not in this run's samples.csv are still included.
+    // When --taxon is set, always use only current-run outputs (already filtered).
+    def use_glob = params.merge_all && !params.taxon
+
+    if (params.run_aa_freq)    CALC_AA_FREQ(aa_freq_ch)
+    if (params.run_codon_freq) CALC_CODON_FREQ(codon_freq_ch)
+    if (params.run_intergenic) CALC_INTERGENIC(intergenic_ch)
+    if (params.run_gene_stats) CALC_GENE_STATS(gene_stats_ch)
+
+    if (!params.skip_merge) {
+        if (use_glob) {
+            if (params.run_aa_freq) {
+                MERGE_AA_FREQ(gatedGlobStats(CALC_AA_FREQ.out.csv.collect(), "aa_freq/*.aa_freq.csv.gz"))
+            } else {
+                MERGE_AA_FREQ(gatedGlobStats(Channel.of(true), "aa_freq/*.aa_freq.csv.gz"))
+            }
+            if (params.run_codon_freq) {
+                MERGE_CODON_FREQ(gatedGlobStats(CALC_CODON_FREQ.out.csv.collect(), "codon_freq/*.codon_freq.csv.gz"))
+            } else {
+                MERGE_CODON_FREQ(gatedGlobStats(Channel.of(true), "codon_freq/*.codon_freq.csv.gz"))
+            }
+            if (params.run_intergenic) {
+                MERGE_INTERGENIC(gatedGlobStats(CALC_INTERGENIC.out.csv.collect(), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
+            } else {
+                MERGE_INTERGENIC(gatedGlobStats(Channel.of(true), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
+            }
+            if (params.run_gene_stats) {
+                MERGE_GENE_STATS(gatedGlobStats(
+                    CALC_GENE_STATS.out.gene_info
+                        .mix(CALC_GENE_STATS.out.gene_exons)
+                        .mix(CALC_GENE_STATS.out.gene_CDS)
+                        .mix(CALC_GENE_STATS.out.gene_introns)
+                        .mix(CALC_GENE_STATS.out.gene_transcripts)
+                        .mix(CALC_GENE_STATS.out.gene_trnas)
+                        .mix(CALC_GENE_STATS.out.gene_proteins)
+                        .collect(),
+                    "gene_stats/*.csv.gz"
+                ))
+            } else {
+                MERGE_GENE_STATS(gatedGlobStats(Channel.of(true), "gene_stats/*.csv.gz"))
+            }
+        } else {
+            // current-run outputs only (merge_all=false, or --taxon active)
+            if (params.run_aa_freq)    MERGE_AA_FREQ(CALC_AA_FREQ.out.csv.collect())
+            if (params.run_codon_freq) MERGE_CODON_FREQ(CALC_CODON_FREQ.out.csv.collect())
+            if (params.run_intergenic) MERGE_INTERGENIC(CALC_INTERGENIC.out.csv.collect())
+            if (params.run_gene_stats) {
+                MERGE_GENE_STATS(
+                    CALC_GENE_STATS.out.gene_info
+                        .mix(CALC_GENE_STATS.out.gene_exons)
+                        .mix(CALC_GENE_STATS.out.gene_CDS)
+                        .mix(CALC_GENE_STATS.out.gene_introns)
+                        .mix(CALC_GENE_STATS.out.gene_transcripts)
+                        .mix(CALC_GENE_STATS.out.gene_trnas)
+                        .mix(CALC_GENE_STATS.out.gene_proteins)
+                        .collect()
+                )
+            }
+        }
+    }
 }

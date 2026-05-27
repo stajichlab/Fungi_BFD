@@ -226,6 +226,95 @@ process SRA_QUERY {
     """
 }
 
+// Batched SRA query: handles params.sra_query_batch_size species per SLURM job.
+// maxForks 4 caps concurrent jobs to avoid overwhelming NCBI.
+// Per-species esearch/efetch is retried up to 3 times inline with exponential
+// backoff before writing an empty CSV.  Existing per-species CSVs already
+// present in rnaseq_reads/sra_query/ are reused without re-querying.
+process SRA_QUERY_BATCH {
+    tag "${species_tags[0]}_+${species_tags.size() - 1}_more"
+
+    publishDir "${launchDir}/rnaseq_reads/sra_query", mode: 'copy', overwrite: false
+
+    maxForks 4
+    cpus   1
+    memory '4 GB'
+    time   '4h'
+
+    input:
+    tuple val(species_tags), val(taxonids)
+
+    output:
+    path("*.sra_query.csv"), emit: query_results
+
+    script:
+    def cache_dir  = "${launchDir}/rnaseq_reads/sra_query"
+    def batch_args = [species_tags, taxonids].transpose()
+                         .collect { st, tid -> "${st}\\t${tid}" }
+                         .join('\\n')
+    """
+    set -uo pipefail
+    module load ncbi_edirect
+
+    printf '${batch_args}\\n' > batch_input.tsv
+
+    query_species() {
+        local stag="\$1" tid="\$2" attempt
+
+        for attempt in 1 2 3; do
+            rm -f "_runinfo_\${stag}.tmp"
+            if timeout 120 bash -c \\
+                    "esearch -db sra -query 'txid\${tid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])' | efetch -format runinfo" \\
+                    > "_runinfo_\${stag}.tmp"; then
+                return 0
+            fi
+            echo "[WARN] Attempt \${attempt}/3 failed or timed out for \${stag}"
+            [ "\${attempt}" -lt 3 ] && sleep \$((attempt * 30))
+        done
+        rm -f "_runinfo_\${stag}.tmp"
+        return 1
+    }
+
+    while IFS=\$(printf '\\t') read -r species_tag taxonid; do
+        cached="${cache_dir}/\${species_tag}.sra_query.csv"
+        if [ -f "\$cached" ]; then
+            cp "\$cached" "\${species_tag}.sra_query.csv"
+            echo "[INFO] Reusing cached result for \${species_tag}"
+            continue
+        fi
+
+        if query_species "\${species_tag}" "\${taxonid}"; then
+            printf 'species_tag,taxonid,sra_accession,spots\\n' > "\${species_tag}.sra_query.csv"
+            awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s\\n", \$1, \$4}' "_runinfo_\${species_tag}.tmp" | \\
+                sort -t',' -k2 -rn | \\
+                head -n 5 | \\
+                while IFS=',' read -r acc spots; do
+                    printf '%s,%s,%s,%s\\n' "\${species_tag}" "\${taxonid}" "\$acc" "\$spots"
+                done >> "\${species_tag}.sra_query.csv"
+            rm -f "_runinfo_\${species_tag}.tmp"
+            NHITS=\$(awk 'END{print NR-1}' "\${species_tag}.sra_query.csv")
+            echo "[INFO] Found \$NHITS SRA accessions for \${species_tag} (taxonid=\${taxonid})"
+        else
+            printf 'species_tag,taxonid,sra_accession,spots\\n' > "\${species_tag}.sra_query.csv"
+            echo "[WARN] All 3 attempts failed for \${species_tag}; writing empty CSV"
+        fi
+    done < batch_input.tsv
+    """
+
+    stub:
+    def stub_args = [species_tags, taxonids].transpose()
+                        .collect { st, tid -> "${st}\\t${tid}" }
+                        .join('\\n')
+    """
+    printf '${stub_args}\\n' > batch_input.tsv
+    while IFS=\$(printf '\\t') read -r species_tag taxonid; do
+        printf 'species_tag,taxonid,sra_accession,spots\\n' > "\${species_tag}.sra_query.csv"
+        printf '%s,%s,SRR000001,1000000\\n' "\${species_tag}" "\${taxonid}" >> "\${species_tag}.sra_query.csv"
+    done < batch_input.tsv
+    echo "[STUB] SRA_QUERY_BATCH (${species_tags.size()} species)"
+    """
+}
+
 // Merge all per-species SRA query CSVs into a single named manifest.
 // Output: {stem}.rnaseq_sra.csv written alongside the input samples file.
 // Columns: species_tag, taxonid, sra_accession, spots
@@ -999,13 +1088,21 @@ workflow {
                 .groupTuple(by: 0)
                 .map { species_tag, taxonids -> tuple(species_tag, taxonids[0]) }
 
-            // Step 1: Lightweight per-species SRA query (cacheable via storeDir)
-            SRA_QUERY(sra_input)
+            // Step 1: Batch ~params.sra_query_batch_size species per SLURM job, max 4 concurrent.
+            def sra_batched = sra_input
+                .collate(params.sra_query_batch_size)
+                .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+            SRA_QUERY_BATCH(sra_batched)
+
+            // Re-map batch glob outputs back to per-species (species_tag, csv) tuples.
+            def sra_query_results = SRA_QUERY_BATCH.out.query_results
+                .flatten()
+                .map { csv -> tuple(csv.baseName.replaceAll(/\.sra_query$/, ''), csv) }
 
             // Step 2: Collect all per-species results into {stem}.rnaseq_sra.csv
             def stem = file(params.samples).baseName
             COLLECT_SRA_QUERY(
-                SRA_QUERY.out.query_result.map { _stag, csv -> csv }.collect(),
+                sra_query_results.map { _stag, csv -> csv }.collect(),
                 stem
             )
 
@@ -1013,7 +1110,7 @@ workflow {
             // Step 3: Branch — species with hits go to SRA_FETCH; species without hits
             // get zero-byte placeholder files written by WRITE_EMPTY_READS without a
             // SLURM job for download.
-            def branched_sra = SRA_QUERY.out.query_result
+            def branched_sra = sra_query_results
                 .branch {
                     has_data: it[1].readLines().size() > 1
                     no_data:  true
