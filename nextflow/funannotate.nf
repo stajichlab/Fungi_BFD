@@ -1134,6 +1134,8 @@ workflow {
             // so all other strains share it. Normalized reads stay in rnaseq_reads/ (SRA_FETCH storeDir).
             // pasa.gff3 is NOT produced here (--stop_after_trinity stops before PASA);
             // it is produced by FUNANNOTATE_TRAIN for every strain including the representative.
+            // Species whose representative R1 is zero-length (no SRA reads found) skip RNASEQ_PREPARE
+            // entirely; an empty trinity FASTA is written locally without submitting a SLURM job.
             def repr_ch = assembly_with_reads
                 .groupTuple(by: 0)
                 .map { species_tag, outs, asmids, species_list, strains, locustags,
@@ -1141,13 +1143,30 @@ workflow {
                     tuple(species_tag, outs[0], asmids[0], species_list[0], strains[0],
                           locustags[0], buscos[0], hlens[0], ttables[0], genomes[0], r1s[0], r2s[0])
                 }
-            RNASEQ_PREPARE(repr_ch)
+
+            def repr_branched = repr_ch.branch {
+                has_reads: it[10].size() > 0   // r1 is element [10]; zero-byte → no SRA reads
+                no_reads:  true
+            }
+
+            RNASEQ_PREPARE(repr_branched.has_reads)
+
+            // For species with no RNA-seq reads, write an empty trinity FASTA to rnaseq_data/
+            // in the driver process (no SLURM job) and emit it directly as a shared channel item.
+            def empty_shared_ch = repr_branched.no_reads
+                .map { species_tag, _out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2 ->
+                    def empty_fa = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
+                    if (!empty_fa.exists()) empty_fa.text = ''
+                    tuple(species_tag, empty_fa)
+                }
+
+            def shared_ch = RNASEQ_PREPARE.out.shared.mix(empty_shared_ch)
 
             // Join shared Trinity from rnaseq_data back to every assembly for FUNANNOTATE_TRAIN.
             // Normalized reads (r1/r2) come from SRA_FETCH via assembly_with_reads; they are NOT
             // re-emitted by RNASEQ_PREPARE (they live in rnaseq_reads/ via storeDir).
             def train_input = assembly_with_reads
-                .combine(RNASEQ_PREPARE.out.shared, by: 0)
+                .combine(shared_ch, by: 0)
                 .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, trinity_fa ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, trinity_fa)
                 }
