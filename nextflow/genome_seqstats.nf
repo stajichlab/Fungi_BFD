@@ -327,7 +327,7 @@ workflow {
         .take(params.n_test > 0 ? params.n_test as int : -1)
 
     // protein FASTA channel for AA freq
-    if (params.run_aa_freq) {
+    if (params.run_aa_freq.toBoolean()) {
         def prot_ch = rows_ch.map { locustag, basename, species, strain ->
             def prot = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
             if (!prot.exists()) {
@@ -340,7 +340,7 @@ workflow {
     }
 
     // CDS FASTA channel for codon freq
-    if (params.run_codon_freq) {
+    if (params.run_codon_freq.toBoolean()) {
         def cds_ch = rows_ch.map { locustag, basename, species, strain ->
             def cds = file("${params.cds_dir}/${basename}.cds-transcripts.fa", glob: false)
             if (!cds.exists()) {
@@ -353,7 +353,7 @@ workflow {
     }
 
     // GFF3 + genome channel for gene structure tables
-    if (params.run_gene_stats) {
+    if (params.run_gene_stats.toBoolean()) {
         def gff_ch = rows_ch.map { locustag, basename, species, strain ->
             def gff    = file("${params.gff_dir}/${basename}.gff3",           glob: false)
             def genome = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
@@ -371,7 +371,7 @@ workflow {
     }
 
     // line-indexed channel for chrom info (one job per samples.csv row)
-    if (params.run_chrom_info) {
+    if (params.run_chrom_info.toBoolean()) {
         def chrom_ch = Channel
             .fromPath(params.samples)
             .splitCsv(header: true)

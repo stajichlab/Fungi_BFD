@@ -95,14 +95,14 @@ workflow {
         .filter { out, _asmid ->
             def proteins = file("${params.target}/${out}/predict_results/${out}.proteins.fa")
             if (!proteins.exists()) {
-                if (params.debug) log.info "Skipping ${out}: no proteins FASTA found"
+                if (params.debug.toBoolean()) log.info "Skipping ${out}: no proteins FASTA found"
                 return false
             }
             return true
         }
         .filter { out, _asmid ->
             if (file("${params.target}/${out}/annotate_misc/iprscan.xml").exists()) {
-                if (params.debug) log.info "Skipping ${out}: iprscan.xml already exists"
+                if (params.debug.toBoolean()) log.info "Skipping ${out}: iprscan.xml already exists"
                 return false
             }
             return true

@@ -927,7 +927,7 @@ workflow {
 
     // ── Input setup: symlink predict_results files into input/ subdirs ─────────
     def ready_ch
-    if (params.run_setup) {
+    if (params.run_setup.toBoolean()) {
         SETUP_INPUT(rows_ch)
         ready_ch = SETUP_INPUT.out.done
     } else {
@@ -971,15 +971,15 @@ workflow {
     // ── Per-species RUN steps ──────────────────────────────────────────────────
     // storeDir means Nextflow skips a species automatically if all its output
     // files already exist in the store directory — no -resume needed.
-    if (params.run_pfam)      RUN_PFAM(proteins_ch)
-    if (params.run_cazy)      RUN_CAZY(proteins_ch)
-    if (params.run_merops)    RUN_MEROPS(proteins_ch)
-    if (params.run_signalp)   RUN_SIGNALP(proteins_ch)
-    if (params.run_tmhmm)     RUN_TMHMM(proteins_ch)
-    if (params.run_targetp)   RUN_TARGETP(proteins_ch)
-    if (params.run_idp)       RUN_IDP(proteins_ch)
-    if (params.run_wolfpsort) RUN_WOLFPSORT(proteins_ch)
-    if (params.run_predgpi)   RUN_PREDGPI(proteins_ch)
+    if (params.run_pfam.toBoolean())      RUN_PFAM(proteins_ch)
+    if (params.run_cazy.toBoolean())      RUN_CAZY(proteins_ch)
+    if (params.run_merops.toBoolean())    RUN_MEROPS(proteins_ch)
+    if (params.run_signalp.toBoolean())   RUN_SIGNALP(proteins_ch)
+    if (params.run_tmhmm.toBoolean())     RUN_TMHMM(proteins_ch)
+    if (params.run_targetp.toBoolean())   RUN_TARGETP(proteins_ch)
+    if (params.run_idp.toBoolean())       RUN_IDP(proteins_ch)
+    if (params.run_wolfpsort.toBoolean()) RUN_WOLFPSORT(proteins_ch)
+    if (params.run_predgpi.toBoolean())   RUN_PREDGPI(proteins_ch)
 
     // ── MERGE steps ────────────────────────────────────────────────────────────
     //
@@ -996,18 +996,18 @@ workflow {
     //
     // skip_merge=true:           skip all MERGE steps unconditionally.
 
-    if (!params.skip_merge) {
+    if (!params.skip_merge.toBoolean()) {
 
-        if (params.merge_all) {
+        if (params.merge_all.toBoolean()) {
 
-            if (params.run_pfam) {
+            if (params.run_pfam.toBoolean()) {
                 def sync = RUN_PFAM.out.domtbl.collect()
                 MERGE_PFAM( gatedGlob(sync, "pfam_hmmscan/*.pfam.gz") )
             } else {
                 MERGE_PFAM( gatedGlob(Channel.of(true), "pfam_hmmscan/*.pfam.gz") )
             }
 
-            if (params.run_cazy) {
+            if (params.run_cazy.toBoolean()) {
                 def ov_sync = RUN_CAZY.out.overview.collect()
                 def ca_sync = RUN_CAZY.out.cazymes.collect()
                 MERGE_CAZY(
@@ -1021,35 +1021,35 @@ workflow {
                 )
             }
 
-            if (params.run_merops) {
+            if (params.run_merops.toBoolean()) {
                 def sync = RUN_MEROPS.out.blasttab.collect()
                 MERGE_MEROPS( gatedGlob(sync, "merops/*.blasttab.gz") )
             } else {
                 MERGE_MEROPS( gatedGlob(Channel.of(true), "merops/*.blasttab.gz") )
             }
 
-            if (params.run_signalp) {
+            if (params.run_signalp.toBoolean()) {
                 def sync = RUN_SIGNALP.out.gff3.collect()
                 MERGE_SIGNALP( gatedGlob(sync, "signalp/*.signalp.gff3.gz") )
             } else {
                 MERGE_SIGNALP( gatedGlob(Channel.of(true), "signalp/*.signalp.gff3.gz") )
             }
 
-            if (params.run_tmhmm) {
+            if (params.run_tmhmm.toBoolean()) {
                 def sync = RUN_TMHMM.out.short_tsv.collect()
                 MERGE_TMHMM( gatedGlob(sync, "tmhmm/*.tmhmm_short.tsv.gz") )
             } else {
                 MERGE_TMHMM( gatedGlob(Channel.of(true), "tmhmm/*.tmhmm_short.tsv.gz") )
             }
 
-            if (params.run_targetp) {
+            if (params.run_targetp.toBoolean()) {
                 def sync = RUN_TARGETP.out.summary.collect()
                 MERGE_TARGETP( gatedGlob(sync, "targetP/*_summary.targetp2.gz") )
             } else {
                 MERGE_TARGETP( gatedGlob(Channel.of(true), "targetP/*_summary.targetp2.gz") )
             }
 
-            if (params.run_idp) {
+            if (params.run_idp.toBoolean()) {
                 def idp_sync = RUN_IDP.out.idp_csv.collect()
                 def sum_sync = RUN_IDP.out.idp_summary_csv.collect()
                 MERGE_IDP(
@@ -1063,14 +1063,14 @@ workflow {
                 )
             }
 
-            if (params.run_wolfpsort) {
+            if (params.run_wolfpsort.toBoolean()) {
                 def sync = RUN_WOLFPSORT.out.results.collect()
                 MERGE_WOLFPSORT( gatedGlob(sync, "wolfpsort/*.wolfpsort.results.txt.gz") )
             } else {
                 MERGE_WOLFPSORT( gatedGlob(Channel.of(true), "wolfpsort/*.wolfpsort.results.txt.gz") )
             }
 
-            if (params.run_predgpi) {
+            if (params.run_predgpi.toBoolean()) {
                 def sync = RUN_PREDGPI.out.gff3.collect()
                 MERGE_PREDGPI( gatedGlob(sync, "predgpi/*.predgpi.gff3.gz") )
             } else {
@@ -1079,23 +1079,23 @@ workflow {
 
         } else {
             // merge_all=false: merge only the outputs produced in this run.
-            if (params.run_pfam)
+            if (params.run_pfam.toBoolean())
                 MERGE_PFAM(RUN_PFAM.out.domtbl.collect())
-            if (params.run_cazy)
+            if (params.run_cazy.toBoolean())
                 MERGE_CAZY(RUN_CAZY.out.overview.collect(), RUN_CAZY.out.cazymes.collect())
-            if (params.run_merops)
+            if (params.run_merops.toBoolean())
                 MERGE_MEROPS(RUN_MEROPS.out.blasttab.collect())
-            if (params.run_signalp)
+            if (params.run_signalp.toBoolean())
                 MERGE_SIGNALP(RUN_SIGNALP.out.gff3.collect())
-            if (params.run_tmhmm)
+            if (params.run_tmhmm.toBoolean())
                 MERGE_TMHMM(RUN_TMHMM.out.short_tsv.collect())
-            if (params.run_targetp)
+            if (params.run_targetp.toBoolean())
                 MERGE_TARGETP(RUN_TARGETP.out.summary.collect())
-            if (params.run_idp)
+            if (params.run_idp.toBoolean())
                 MERGE_IDP(RUN_IDP.out.idp_csv.collect(), RUN_IDP.out.idp_summary_csv.collect())
-            if (params.run_wolfpsort)
+            if (params.run_wolfpsort.toBoolean())
                 MERGE_WOLFPSORT(RUN_WOLFPSORT.out.results.collect())
-            if (params.run_predgpi)
+            if (params.run_predgpi.toBoolean())
                 MERGE_PREDGPI(RUN_PREDGPI.out.gff3.collect())
         }
     }
@@ -1104,31 +1104,31 @@ workflow {
     // When merge_all=true and no --taxon is active, glob ALL files from storeDir
     // so that species not in this run's samples.csv are still included.
     // When --taxon is set, always use only current-run outputs (already filtered).
-    def use_glob = params.merge_all && !params.taxon
+    def use_glob = params.merge_all.toBoolean() && !params.taxon
 
-    if (params.run_aa_freq)    CALC_AA_FREQ(aa_freq_ch)
-    if (params.run_codon_freq) CALC_CODON_FREQ(codon_freq_ch)
-    if (params.run_intergenic) CALC_INTERGENIC(intergenic_ch)
-    if (params.run_gene_stats) CALC_GENE_STATS(gene_stats_ch)
+    if (params.run_aa_freq.toBoolean())    CALC_AA_FREQ(aa_freq_ch)
+    if (params.run_codon_freq.toBoolean()) CALC_CODON_FREQ(codon_freq_ch)
+    if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
+    if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
 
-    if (!params.skip_merge) {
+    if (!params.skip_merge.toBoolean()) {
         if (use_glob) {
-            if (params.run_aa_freq) {
+            if (params.run_aa_freq.toBoolean()) {
                 MERGE_AA_FREQ(gatedGlobStats(CALC_AA_FREQ.out.csv.collect(), "aa_freq/*.aa_freq.csv.gz"))
             } else {
                 MERGE_AA_FREQ(gatedGlobStats(Channel.of(true), "aa_freq/*.aa_freq.csv.gz"))
             }
-            if (params.run_codon_freq) {
+            if (params.run_codon_freq.toBoolean()) {
                 MERGE_CODON_FREQ(gatedGlobStats(CALC_CODON_FREQ.out.csv.collect(), "codon_freq/*.codon_freq.csv.gz"))
             } else {
                 MERGE_CODON_FREQ(gatedGlobStats(Channel.of(true), "codon_freq/*.codon_freq.csv.gz"))
             }
-            if (params.run_intergenic) {
+            if (params.run_intergenic.toBoolean()) {
                 MERGE_INTERGENIC(gatedGlobStats(CALC_INTERGENIC.out.csv.collect(), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
             } else {
                 MERGE_INTERGENIC(gatedGlobStats(Channel.of(true), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
             }
-            if (params.run_gene_stats) {
+            if (params.run_gene_stats.toBoolean()) {
                 MERGE_GENE_STATS(gatedGlobStats(
                     CALC_GENE_STATS.out.gene_info
                         .mix(CALC_GENE_STATS.out.gene_exons)
@@ -1145,10 +1145,10 @@ workflow {
             }
         } else {
             // current-run outputs only (merge_all=false, or --taxon active)
-            if (params.run_aa_freq)    MERGE_AA_FREQ(CALC_AA_FREQ.out.csv.collect())
-            if (params.run_codon_freq) MERGE_CODON_FREQ(CALC_CODON_FREQ.out.csv.collect())
-            if (params.run_intergenic) MERGE_INTERGENIC(CALC_INTERGENIC.out.csv.collect())
-            if (params.run_gene_stats) {
+            if (params.run_aa_freq.toBoolean())    MERGE_AA_FREQ(CALC_AA_FREQ.out.csv.collect())
+            if (params.run_codon_freq.toBoolean()) MERGE_CODON_FREQ(CALC_CODON_FREQ.out.csv.collect())
+            if (params.run_intergenic.toBoolean()) MERGE_INTERGENIC(CALC_INTERGENIC.out.csv.collect())
+            if (params.run_gene_stats.toBoolean()) {
                 MERGE_GENE_STATS(
                     CALC_GENE_STATS.out.gene_info
                         .mix(CALC_GENE_STATS.out.gene_exons)

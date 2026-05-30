@@ -265,7 +265,7 @@ process SRA_QUERY_BATCH {
             rm -f "_runinfo_\${stag}.tmp"
             if timeout 120 bash -c \\
                     "esearch -db sra -query 'txid\${tid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])' | efetch -format runinfo" \\
-                    > "_runinfo_\${stag}.tmp"; then
+                    < /dev/null > "_runinfo_\${stag}.tmp"; then
                 return 0
             fi
             echo "[WARN] Attempt \${attempt}/3 failed or timed out for \${stag}"
@@ -726,7 +726,7 @@ process FUNANNOTATE_PREDICT {
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
 
-    if [ "${params.debug}" = "true" ]; then
+    if [ "${params.debug.toBoolean()}" = "true" ]; then
         echo "[DEBUG] out          = ${out}"
         echo "[DEBUG] asmid        = ${asmid}"
         echo "[DEBUG] species      = ${species}"
@@ -1022,13 +1022,13 @@ workflow {
                 log.warn "Missing genome for ${out} (asmid=${asmid}): ${gz}"
                 return false
             }
-            if (params.debug) {
+            if (params.debug.toBoolean()) {
                 log.info "Queuing ${out}: genome=${gz} (${gz.size()} bytes)"
             }
             return true
         }
 
-    if (params.debug) {
+    if (params.debug.toBoolean()) {
         jobs.view { t -> "[CHANNEL] Submitting: out=${t[0]}, asmid=${t[1]}, transl_table=${t[7]}, gz=${t[8]}" }
     }
 
@@ -1038,7 +1038,7 @@ workflow {
     def taxondb_ch = SETUP_TAXONDB.out.ready.map { params.taxondb }
     GENOME_CLEAN(jobs.combine(taxondb_ch))
 
-    if (!params.only_clean) {
+    if (!params.only_clean.toBoolean()) {
         // Convert path output to absolute-path string so downstream val(genome_fa) processes
         // can reference the file directly without Nextflow re-staging it per-process.
         def clean_genome_ch = GENOME_CLEAN.out.genome
@@ -1052,7 +1052,7 @@ workflow {
         // the tantan soft-masked genome (default) or the clean unmasked genome
         // (--run_repeatmasker false).
         def predict_genome_ch
-        if (params.run_repeatmasker) {
+        if (params.run_repeatmasker.toBoolean()) {
             MASKREPEAT_TANTAN_RUN(clean_genome_ch)
             predict_genome_ch = MASKREPEAT_TANTAN_RUN.out.masked
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, masked_fa, taxonid ->
@@ -1065,7 +1065,7 @@ workflow {
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
                     def masked = file("${launchDir}/input_clean_genomes/${asmid}.masked.fasta")
                     def use_fa = masked.exists() ? masked.toString() : genome_fa
-                    if (params.debug) {
+                    if (params.debug.toBoolean()) {
                         log.info "[DEBUG] ${asmid}: genome_fa=${use_fa} (masked=${masked.exists()})"
                     }
                     tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, use_fa, taxonid)
@@ -1078,7 +1078,7 @@ workflow {
         // normalized reads to rnaseq_data/; all other strains run FUNANNOTATE_TRAIN --trinity.
         def predict_input_ch
         def reads_ch = Channel.empty()
-        if (params.run_sra_fetch) {
+        if (params.run_sra_fetch.toBoolean()) {
             // Build per-species input: group assemblies, keep first taxonid per species.
             def sra_input = predict_genome_ch
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
@@ -1106,7 +1106,7 @@ workflow {
                 stem
             )
 
-            if (!params.stop_after_sra_query) {
+            if (!params.stop_after_sra_query.toBoolean()) {
             // Step 3: Branch — species with hits go to SRA_FETCH; species without hits
             // get zero-byte placeholder files written by WRITE_EMPTY_READS without a
             // SLURM job for download.
@@ -1120,7 +1120,7 @@ workflow {
             WRITE_EMPTY_READS(branched_sra.no_data.map { stag, _csv -> stag })
             reads_ch = SRA_FETCH.out.reads.mix(WRITE_EMPTY_READS.out.reads)
 
-            if (!params.stop_after_sra_fetch) {
+            if (!params.stop_after_sra_fetch.toBoolean()) {
             // Build per-assembly channel keyed by species_tag with SRA reads joined.
             def assembly_with_reads = predict_genome_ch
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
@@ -1208,7 +1208,7 @@ workflow {
                 }
         }
 
-        if ((!params.stop_after_sra_fetch && !params.stop_after_sra_query) || !params.run_sra_fetch) {
+        if ((!params.stop_after_sra_fetch.toBoolean() && !params.stop_after_sra_query.toBoolean()) || !params.run_sra_fetch.toBoolean()) {
         def predict_ch = predict_input_ch
             .filter { out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa ->
                 def f = file("${params.target}/${out}/predict_results/${out}.gbk")
@@ -1251,7 +1251,7 @@ workflow {
         // the metadata tuple while encoding the dependency edge in the channel DAG.
         def annotate_ready_ch = postpredict
 
-        if (params.run_antismash) {
+        if (params.run_antismash.toBoolean()) {
             def as_todo = annotate_ready_ch.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt ->
                 def asDir = file("${params.target}/${out}/antismash_local")
                 !(asDir.isDirectory() && asDir.list()?.any { it.endsWith('.json') || it.endsWith('.json.gz') })
@@ -1268,7 +1268,7 @@ workflow {
             annotate_ready_ch = as_completed.mix(as_done)
         }
 
-        if (params.run_interpro) {
+        if (params.run_interpro.toBoolean()) {
             def ipr_todo = annotate_ready_ch.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt ->
                 !file("${params.target}/${out}/annotate_misc/iprscan.xml").exists()
             }
@@ -1283,7 +1283,7 @@ workflow {
             annotate_ready_ch = ipr_completed.mix(ipr_done)
         }
 
-        if (params.run_signalp) {
+        if (params.run_signalp.toBoolean()) {
             def sp_todo = annotate_ready_ch.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt ->
                 !file("${params.target}/${out}/annotate_misc/signalp.results.txt").exists()
             }
@@ -1298,8 +1298,8 @@ workflow {
             annotate_ready_ch = sp_completed.mix(sp_done)
         }
 
-        if (params.run_update) {
-            if (params.run_sra_fetch) {
+        if (params.run_update.toBoolean()) {
+            if (params.run_sra_fetch.toBoolean()) {
                 // UPDATE runs from predict results in parallel with antismash/interpro/signalp.
                 // Reads are joined from SRA_FETCH (storeDir-cached, so prior-run reads are reused).
                 // The join on upd_signal gates annotate_ready_ch so ANNOTATE waits for UPDATE.
@@ -1332,7 +1332,7 @@ workflow {
             }
         }
 
-        if (params.run_annotate) {
+        if (params.run_annotate.toBoolean()) {
             FUNANNOTATE_ANNOTATE(annotate_ready_ch.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt ->
                 def f = file("${params.target}/${out}/annotate_results/${out}.gbk")
                 !f.exists() || f.size() == 0

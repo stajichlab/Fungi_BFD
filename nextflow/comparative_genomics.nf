@@ -296,7 +296,7 @@ process DIAMOND_BLASTP {
     path "blastp.tsv", emit: blastp_tsv
 
     script:
-    def sens_flag = params.diamond_more_sensitive ? '--more-sensitive' : '--sensitive'
+    def sens_flag = params.diamond_more_sensitive.toBoolean() ? '--more-sensitive' : '--sensitive'
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load diamond
@@ -395,7 +395,7 @@ process ORTHOFINDER_RUN {
     path "orthofinder_out", emit: out_dir
 
     script:
-    def msa_flag = params.orthofinder_msa ? '-M msa' : ''
+    def msa_flag = params.orthofinder_msa.toBoolean() ? '-M msa' : ''
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load orthofinder
@@ -476,15 +476,15 @@ workflow {
 
     PREPARE_COMPARATIVE()
 
-    if (params.run_mmseqs2) {
+    if (params.run_mmseqs2.toBoolean()) {
         CLUSTER_MMSEQS2(PREPARE_COMPARATIVE.out.proteins_dir)
     }
 
-    if (params.run_mcl) {
+    if (params.run_mcl.toBoolean()) {
         CLUSTER_MCL(PREPARE_COMPARATIVE.out.proteins_dir)
     }
 
-    if (params.run_orthofinder) {
+    if (params.run_orthofinder.toBoolean()) {
         CLUSTER_ORTHOFINDER(PREPARE_COMPARATIVE.out.proteins_dir)
     }
 }
