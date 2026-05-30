@@ -38,7 +38,7 @@ process RUN_PFAM {
         tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
 
     output:
-        path("${basename}.pfam.gz"),    emit: domtbl
+        path("${basename}.domtblout.gz"),    emit: domtbl
         path("${basename}.tblout.gz"),  emit: tblout
 
     script:
@@ -53,15 +53,15 @@ process RUN_PFAM {
     fi
     module load db-pfam
     ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali --cpu ${task.cpus} \\
-        --domtbl    ${basename}.pfam \\
+        --domtbl    ${basename}.domtblout \\
         --tblout    ${basename}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
-    pigz ${basename}.pfam ${basename}.tblout
+    pigz ${basename}.domtblout ${basename}.tblout
     """
 
     stub:
     """
-    printf '#\\n' | gzip > ${basename}.pfam.gz
+    printf '#\\n' | gzip > ${basename}.domtblout.gz
     printf '' | gzip     > ${basename}.tblout.gz
     """
 }
@@ -888,6 +888,22 @@ def gatedGlobStats(sync_ch, String glob) {
         .filter  { !it.isEmpty() }
 }
 
+// Delete storeDir output files that are older than inputFile so Nextflow re-runs
+// the process instead of using the stale cached result.  Only deletes files that
+// actually exist and are strictly older; missing or equal-timestamp files are left
+// alone.  Logs every deletion.
+def clearIfStale(inputFile, List storedOutputs) {
+    if (!inputFile.exists()) return
+    def inputMtime = inputFile.lastModified()   // follows symlinks via Java NIO default
+    def stale = storedOutputs.findAll { f -> f.exists() && f.lastModified() < inputMtime }
+    if (!stale.isEmpty()) {
+        stale.each { f ->
+            f.delete()
+            log.info "Deleted stale cached output (input newer): ${f}"
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN WORKFLOW
 // ════════════════════════════════════════════════════════════════════════════
@@ -971,15 +987,78 @@ workflow {
     // ── Per-species RUN steps ──────────────────────────────────────────────────
     // storeDir means Nextflow skips a species automatically if all its output
     // files already exist in the store directory — no -resume needed.
-    if (params.run_pfam.toBoolean())      RUN_PFAM(proteins_ch)
-    if (params.run_cazy.toBoolean())      RUN_CAZY(proteins_ch)
-    if (params.run_merops.toBoolean())    RUN_MEROPS(proteins_ch)
-    if (params.run_signalp.toBoolean())   RUN_SIGNALP(proteins_ch)
-    if (params.run_tmhmm.toBoolean())     RUN_TMHMM(proteins_ch)
-    if (params.run_targetp.toBoolean())   RUN_TARGETP(proteins_ch)
-    if (params.run_idp.toBoolean())       RUN_IDP(proteins_ch)
-    if (params.run_wolfpsort.toBoolean()) RUN_WOLFPSORT(proteins_ch)
-    if (params.run_predgpi.toBoolean())   RUN_PREDGPI(proteins_ch)
+    // clearIfStale() deletes storeDir outputs that are older than the input
+    // proteins file, so a re-annotated genome forces a re-run of every tool.
+    if (params.run_pfam.toBoolean())
+        RUN_PFAM(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/pfam_hmmscan/${basename}.domtblout.gz"),
+                file("${params.outdir}/pfam_hmmscan/${basename}.tblout.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_cazy.toBoolean())
+        RUN_CAZY(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/cazy/${basename}/${basename}.overview.tsv.gz"),
+                file("${params.outdir}/cazy/${basename}/${basename}.cazymes.tsv.gz"),
+                file("${params.outdir}/cazy/${basename}/${basename}.substrates.tsv.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_merops.toBoolean())
+        RUN_MEROPS(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/merops/${basename}.blasttab.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_signalp.toBoolean())
+        RUN_SIGNALP(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/signalp/${basename}.signalp.gff3.gz"),
+                file("${params.outdir}/signalp/${basename}.signalp.results.txt.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_tmhmm.toBoolean())
+        RUN_TMHMM(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/tmhmm/${basename}.tmhmm_short.tsv.gz"),
+                file("${params.outdir}/tmhmm/${basename}.tmhmm_results.tsv.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_targetp.toBoolean())
+        RUN_TARGETP(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/targetP/${basename}_summary.targetp2.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_idp.toBoolean())
+        RUN_IDP(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/aiupred/${basename}.aiupred.txt.gz"),
+                file("${params.outdir}/aiupred/${basename}.idp.csv.gz"),
+                file("${params.outdir}/aiupred/${basename}.idp_summary.csv.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_wolfpsort.toBoolean())
+        RUN_WOLFPSORT(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/wolfpsort/${basename}.wolfpsort.results.txt.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
+    if (params.run_predgpi.toBoolean())
+        RUN_PREDGPI(proteins_ch.map { locustag, basename, sp, st, prot ->
+            clearIfStale(prot, [
+                file("${params.outdir}/predgpi/${basename}.predgpi.gff3.gz")
+            ])
+            tuple(locustag, basename, sp, st, prot)
+        })
 
     // ── MERGE steps ────────────────────────────────────────────────────────────
     //
@@ -1002,9 +1081,9 @@ workflow {
 
             if (params.run_pfam.toBoolean()) {
                 def sync = RUN_PFAM.out.domtbl.collect()
-                MERGE_PFAM( gatedGlob(sync, "pfam_hmmscan/*.pfam.gz") )
+                MERGE_PFAM( gatedGlob(sync, "pfam_hmmscan/*.domtblout.gz") )
             } else {
-                MERGE_PFAM( gatedGlob(Channel.of(true), "pfam_hmmscan/*.pfam.gz") )
+                MERGE_PFAM( gatedGlob(Channel.of(true), "pfam_hmmscan/*.domtblout.gz") )
             }
 
             if (params.run_cazy.toBoolean()) {
@@ -1106,7 +1185,11 @@ workflow {
     // When --taxon is set, always use only current-run outputs (already filtered).
     def use_glob = params.merge_all.toBoolean() && !params.taxon
 
-    if (params.run_aa_freq.toBoolean())    CALC_AA_FREQ(aa_freq_ch)
+    if (params.run_aa_freq.toBoolean())
+        CALC_AA_FREQ(aa_freq_ch.map { locustag, prot ->
+            clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")])
+            tuple(locustag, prot)
+        })
     if (params.run_codon_freq.toBoolean()) CALC_CODON_FREQ(codon_freq_ch)
     if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
     if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
