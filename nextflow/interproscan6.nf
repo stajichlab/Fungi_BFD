@@ -101,8 +101,10 @@ workflow {
             return true
         }
         .filter { out, _asmid ->
-            if (file("${params.target}/${out}/annotate_misc/iprscan.xml").exists()) {
-                if (params.debug.toBoolean()) log.info "Skipping ${out}: iprscan.xml already exists"
+            def xml   = file("${params.target}/${out}/annotate_misc/iprscan.xml")
+            def prot  = file("${params.target}/${out}/predict_results/${out}.proteins.fa")
+            if (xml.exists() && xml.lastModified() >= prot.lastModified()) {
+                if (params.debug.toBoolean()) log.info "Skipping ${out}: iprscan.xml exists and is current"
                 return false
             }
             return true

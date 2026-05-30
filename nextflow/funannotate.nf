@@ -443,9 +443,11 @@ process SRA_FETCH {
             fi
         done
         rm -rf reads
-	${launchDir}/scripts/enforce_seqpair_readlen in=\$TMPDIR/${species_tag}_R1.fastq.gz \
+        ENFORCE="${launchDir}/scripts/enforce_seqpair_readlen"
+        [[ -x "\$ENFORCE" ]] || { echo "[ERROR] enforce_seqpair_readlen not found or not executable at \$ENFORCE"; exit 1; }
+        "\$ENFORCE" in=\$TMPDIR/${species_tag}_R1.fastq.gz \
 	in2=\$TMPDIR/${species_tag}_R2.fastq.gz out=\$TMPDIR/${species_tag}_trunc_R1.fastq.gz \
-	out2=\$TMPDIR/${species_tag}_trunc_R2.fastq.gz minlen=75
+	out2=\$TMPDIR/${species_tag}_trunc_R2.fastq.gz minlen=75 || { echo "[ERROR] enforce_seqpair_readlen failed for ${species_tag}"; exit 1; }
         bbnorm.sh in=\$TMPDIR/${species_tag}_trunc_R1.fastq.gz in2=\$TMPDIR/${species_tag}_trunc_R2.fastq.gz \
             out1=\$TMPDIR/${species_tag}_norm_R1.fastq.gz \
             out2=\$TMPDIR/${species_tag}_norm_R2.fastq.gz target=30 ecc=t
