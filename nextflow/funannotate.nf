@@ -607,11 +607,23 @@ process FUNANNOTATE_TRAIN {
         exit 0
     fi
 
-    # ── Skip if training output already present ───────────────────────────────
+    # ── Skip if training output already present and rnaseq is not newer than GBK ──
     TRAIN_GFF3="${params.target}/${out}/training/funannotate_train.pasa.gff3"
+    PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
     if [ -f "\$TRAIN_GFF3" ]; then
-        echo "[INFO] Training already complete for ${out}; skipping"
-        exit 0
+        RETRAIN=0
+        if [ -f "\$PREDICT_GBK" ] && [ -s "${r1}" ]; then
+            # Re-train if the rnaseq R1 is newer than the existing prediction GBK.
+            if [ "${r1}" -nt "\$PREDICT_GBK" ]; then
+                echo "[INFO] RNAseq reads newer than predict GBK for ${out}; retraining"
+                rm -rf "${params.target}/${out}/training"
+                RETRAIN=1
+            fi
+        fi
+        if [ \$RETRAIN -eq 0 ]; then
+            echo "[INFO] Training already complete for ${out}; skipping"
+            exit 0
+        fi
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
@@ -959,6 +971,21 @@ process FUNANNOTATE_ANNOTATE {
     """
 }
 
+def staleRnaseq(String out, String species) {
+    def species_tag = species.replaceAll(/\s+/, '_')
+    def gbk = file("${params.target}/${out}/predict_results/${out}.gbk")
+    if (!gbk.exists() || gbk.size() == 0) return false  // predict hasn't run yet; normal path handles it
+    def r1      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_R1.fastq.gz")
+    def trinity = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
+    def r1_newer      = r1.exists()      && r1.size() > 0      && r1.lastModified()      > gbk.lastModified()
+    def trinity_newer = trinity.exists() && trinity.size() > 0 && trinity.lastModified() > gbk.lastModified()
+    if (r1_newer || trinity_newer) {
+        log.info "stale prediction for ${out}: rnaseq/trinity newer than GBK — scheduling retrain+repredict"
+        return true
+    }
+    return false
+}
+
 workflow {
     def suppressSet = (params.suppress && file(params.suppress).exists())
         ? file(params.suppress).readLines()
@@ -987,10 +1014,19 @@ workflow {
         taxonFilter = { row -> true }
     }
 
+    // ── ASMID filter ──────────────────────────────────────────────────────────
+    def asmidFilter = params.asmid
+        ? { row -> row.ASMID?.trim() == (params.asmid as String).trim() }
+        : { row -> true }
+    if (params.asmid) {
+        log.info "ASMID filter: processing only '${params.asmid}'"
+    }
+
     // ── Prediction pipeline ───────────────────────────────────────────────────
     def jobs = channel.fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
+        .filter(asmidFilter)
         .map { row ->
             def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
             def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
@@ -1182,17 +1218,17 @@ workflow {
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
                 }
 
-            // Skip TRAIN at the channel level when pasa.gff3 already exists and is non-empty.
-            // pasa.gff3 is produced by FUNANNOTATE_TRAIN (not RNASEQ_PREPARE) for every strain,
-            // including the representative. Size check guards against zero-byte incomplete files.
-            def train_todo = branched.has_rnaseq.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
+            // Skip TRAIN at the channel level when pasa.gff3 already exists and is non-empty,
+            // UNLESS the rnaseq R1 or trinity FASTA is newer than the existing prediction GBK
+            // (staleRnaseq), in which case we re-run training so predict can be refreshed too.
+            def train_todo = branched.has_rnaseq.filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
                 def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
-                !gff3.exists() || gff3.size() == 0
+                !gff3.exists() || gff3.size() == 0 || staleRnaseq(out as String, sp as String)
             }
             def train_done = branched.has_rnaseq
-                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
+                .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
                     def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
-                    gff3.exists() && gff3.size() > 0
+                    gff3.exists() && gff3.size() > 0 && !staleRnaseq(out as String, sp as String)
                 }
                 .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
@@ -1210,9 +1246,9 @@ workflow {
 
         if ((!params.stop_after_sra_fetch.toBoolean() && !params.stop_after_sra_query.toBoolean()) || !params.run_sra_fetch.toBoolean()) {
         def predict_ch = predict_input_ch
-            .filter { out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa ->
+            .filter { out, _asmid, sp, _st, _lt, _bl, _hl, _tt, _gfa ->
                 def f = file("${params.target}/${out}/predict_results/${out}.gbk")
-                !f.exists() || f.size() == 0
+                !f.exists() || f.size() == 0 || staleRnaseq(out as String, sp as String)
             }
         FUNANNOTATE_PREDICT(predict_ch)
 
@@ -1223,6 +1259,7 @@ workflow {
         def postpredict = channel.fromPath(params.samples)
             .splitCsv(header: true)
             .filter(taxonFilter)
+            .filter(asmidFilter)
             .map { row ->
                 def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
                 def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')

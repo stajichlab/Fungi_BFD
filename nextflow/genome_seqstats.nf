@@ -309,6 +309,14 @@ workflow {
         taxonFilter = { row -> true }
     }
 
+    // ── ASMID filter ───────────────────────────────────────────────────────────
+    def asmidFilter = params.asmid
+        ? { row -> row.ASMID?.trim() == (params.asmid as String).trim() }
+        : { row -> true }
+    if (params.asmid) {
+        log.info "ASMID filter: processing only '${params.asmid}'"
+    }
+
     // ── shared sample channel ──────────────────────────────────────────────
     // Builds tuple(locustag, basename, species, strain, <file>) per sample,
     // skipping rows whose input file is absent.
@@ -317,6 +325,7 @@ workflow {
         .fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
+        .filter(asmidFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
             def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
@@ -376,7 +385,7 @@ workflow {
             .fromPath(params.samples)
             .splitCsv(header: true)
             .withIndex()   // emits [row, 0-based index]; filter after to preserve original CSV row numbers
-            .filter { row, idx -> taxonFilter(row) }
+            .filter { row, idx -> taxonFilter(row) && asmidFilter(row) }
             .map { row, idx ->
                 def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
                 tuple(idx, locustag)
