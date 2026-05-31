@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def count_mask_stats(fasta_path):
+    """Return (num_scaffolds, total_bases, masked_bases) for a softmasked FASTA file."""
     num_scaffolds = 0
     total_bases = 0
     masked_bases = 0
@@ -33,10 +34,12 @@ def count_mask_stats(fasta_path):
 
 
 def fmt(n):
+    """Format an integer with thousands separators."""
     return f"{n:,}"
 
 
 def main():
+    """Print scaffold count, assembly size, and softmasked repeat percentage for a FASTA file."""
     parser = argparse.ArgumentParser(
         description="Report softmask (lowercase) statistics for a FASTA file."
     )

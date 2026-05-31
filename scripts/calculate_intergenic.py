@@ -15,7 +15,7 @@ def parse_gff_get_distances(gff, debug=False):
         gff (str): Path to the GFF file to be parsed.
         debug (bool, optional): If True, enables debug mode which prints additional information and limits the number of processed genes. Defaults to False.
     Returns:
-        array: An array of intergenic distances
+        list: A list of [left_gene, right_gene, distance] entries sorted by chrom then start position
     Raises:
         ValueError: If the GFF file contains invalid or unexpected data.
     Notes:
@@ -91,6 +91,7 @@ def parse_gff_get_distances(gff, debug=False):
 
 
 def main():
+    """Compute pairwise intergenic distances from GFF3 file(s) and write a CSV to the output directory."""
     if len(sys.argv) < 2:
         print("Usage: python calculate_intergenic.py gff or -d <dir>")
         sys.exit(1)

@@ -19,6 +19,7 @@ from itertools import zip_longest
 
 
 def open_fastq(path, mode="r"):
+    """Open a plain or gzipped FASTQ file for reading or writing (mode 'r'/'w')."""
     if path.endswith(".gz"):
         return gzip.open(path, mode + "t")
     return open(path, mode)
@@ -45,14 +46,12 @@ def base_name(read_name):
 
 
 def write_record(fh, name, seq, plus, qual):
+    """Write a single FASTQ record (4 lines) to fh."""
     fh.write(f"{name}\n{seq}\n{plus}\n{qual}\n")
 
 
 def parse_kv_args(argv):
-    """
-    Accept both --flag style and key=value style arguments.
-    Returns a namespace with: in1, in2, out1, out2, minlen, stats.
-    """
+    """Accept argv in either --flag or BBTools key=value style; return a namespace with in1, in2, out1, out2, minlen, stats."""
     # Pre-process argv to convert key=value to --key value
     converted = []
     for token in argv:
@@ -100,6 +99,7 @@ def default_output(path, suffix="_trunc"):
 
 
 def main():
+    """Filter and truncate paired-end FASTQ reads to a uniform length, discarding pairs shorter than minlen."""
     args = parse_kv_args(sys.argv[1:])
 
     if args.out1 is None:

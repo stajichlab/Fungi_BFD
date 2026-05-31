@@ -8,6 +8,7 @@ import sys
 
 
 def open_fastq(path):
+    """Open a plain or gzipped FASTQ file for reading, or return stdin if path is None."""
     if path is None:
         return sys.stdin
     if path.endswith(".gz"):
@@ -16,6 +17,7 @@ def open_fastq(path):
 
 
 def fix_headers(infile, read_num):
+    """Strip description from each FASTQ header in infile and append /{read_num}, writing to stdout."""
     suffix = f"/{read_num}"
     fh = open_fastq(infile)
     try:
@@ -35,6 +37,7 @@ def fix_headers(infile, read_num):
 
 
 def main():
+    """Parse arguments and run fix_headers to rewrite FASTQ headers with /1 or /2 suffixes."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fastq", nargs="?", default=None, help="Input FASTQ file (plain or gzipped); omit to read from stdin")
     parser.add_argument(

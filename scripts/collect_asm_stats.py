@@ -9,6 +9,7 @@ import re
 import configparser
 
 def load_samples(fh):
+    """Return a list of row dicts from an open CSV file handle fh."""
     samples = []
     reader = csv.DictReader(fh)
     for row in reader:
@@ -16,6 +17,7 @@ def load_samples(fh):
     return samples
 
 def main():
+    """Read per-genome .stats.txt files and write a CSV of assembly statistics joined with samples metadata."""
     parser = argparse.ArgumentParser(description="Collect precomputed genome asm stats into a table",
                                     epilog='Example: collect_asm_stats.py')
     parser.add_argument("-d","--genomedir", default="genomes", help="Directory with genomes with pre-computed .stats.txt file")

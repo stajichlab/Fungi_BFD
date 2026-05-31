@@ -43,6 +43,7 @@ COLUMNS = [
 
 
 def parse_stats(path):
+    """Parse a .stats.txt file and return a dict of normalized field names to values."""
     stats = {}
     with open(path) as fh:
         for line in fh:
@@ -57,6 +58,7 @@ def parse_stats(path):
 
 
 def load_samples(path):
+    """Return a dict mapping ASMID → {SPECIES, STRAIN} from the samples CSV at path."""
     samples = {}
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
@@ -70,6 +72,7 @@ def load_samples(path):
 
 
 def main():
+    """Join asm stats files with samples metadata and write a TSV summary to tables/asm_stats.tsv."""
     os.makedirs("tables", exist_ok=True)
 
     samples = load_samples(SAMPLES_CSV)

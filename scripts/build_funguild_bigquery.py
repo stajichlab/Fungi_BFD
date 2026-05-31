@@ -6,11 +6,13 @@ import argparse
 import re
 
 def load_json(file_path):
+    """Load and return the FunGuild JSON database from file_path."""
     with open(file_path, 'r') as fh:
         data = json.load(fh)
     return data
 
 def load_samples(file_path):
+    """Return a list of row dicts read from the samples CSV at file_path."""
     samples = []
     with open(file_path, 'r') as fh:
         reader = csv.DictReader(fh)

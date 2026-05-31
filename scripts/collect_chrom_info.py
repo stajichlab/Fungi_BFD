@@ -7,6 +7,7 @@ import sys
 from Bio import SeqIO
 
 def load_samples(fh, line_start=None, set_size=1):
+    """Return up to set_size rows from CSV file handle fh starting at row line_start (0-based); returns all rows when line_start is None."""
     samples = []
     reader = csv.DictReader(fh)
     n = 0
@@ -19,6 +20,7 @@ def load_samples(fh, line_start=None, set_size=1):
     return samples
 
 def main():
+    """Read genome FASTA files and write per-scaffold GC content and masking statistics to a CSV."""
     parser = argparse.ArgumentParser(description="Collect per chrom stats into a table to support gene density computation",
                                     epilog='Example: collect_chrom_info.py')
     parser.add_argument("-d","--genomedir", default="genomes", help="Directory with genomes *.scaffolds.fa files")

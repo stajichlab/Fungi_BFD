@@ -6,6 +6,7 @@ import os
 import gzip
 
 def process_hmmsearch_domtbl_file(fh, csvout):
+    """Parse hmmsearch --domtblout lines from fh, write one CSV row per domain hit to csvout, and return the count of rows written."""
     i = 0
     for line in fh:
         if line.startswith("#"):
@@ -45,7 +46,8 @@ def process_hmmsearch_domtbl_file(fh, csvout):
         i += 1
     return i
 
-def main():    
+def main():
+    """Convert hmmsearch domtblout files (plain or gzipped) to a single long-form CSV with one row per domain hit."""
     parser = argparse.ArgumentParser(description="Convert Pfam TSV from Toronto to long form one line per domain",
                                     epilog='Example: pfamtsv_to_long.py')
     parser.add_argument("-i","--indir", help="Directory with pfam results pre-computed TSV files")

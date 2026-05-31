@@ -14,26 +14,23 @@ import gzip
 import argparse
 from itertools import groupby
 def average(lst):
-    """
-    Calculate the average of a list of numbers.
-    """
+    """Return the mean of lst, or 0 if lst is empty."""
     if len(lst) == 0:
         return 0
     return sum(lst) / len(lst)
 
 def scores_to_idpstatus(iupred_scores, min_length=30):
+    """Return (disordered_residues, total_residues); a protein is disordered if any run of scores>=0.5 exceeds min_length."""
     disordered_residues = 0
     all_residues = 0
-    if max([sum([1 for _ in y]) if x == 1 else 0 for x, y in groupby([1 if x>=0.5 else 0 for x in iupred_scores])]) > 30:
+    if max([sum([1 for _ in y]) if x == 1 else 0 for x, y in groupby([1 if x>=0.5 else 0 for x in iupred_scores])]) > min_length:
         disordered_protein = 1
         disordered_residues += sum([1 for x in iupred_scores if x>=0.5])
     all_residues += len(iupred_scores)
     return disordered_residues, all_residues
 
 def scores_to_idp_regions(iupred_scores, min_length=30):
-    """
-    Convert IUPred scores to IDP regions.
-    """
+    """Return list of (start, end, length, mean_score) tuples for runs of scores>=0.5; length filtering is left to the caller."""
     idp_regions = []
     current_start = None
     for i, score in enumerate(iupred_scores):
@@ -57,9 +54,7 @@ def scores_to_idp_regions(iupred_scores, min_length=30):
     return idp_regions
 
 def parse_iupred_file(iupred_file):
-    """
-    Parse IUPred file and return a list of scores.
-    """
+    """Parse a gzipped IUPred output file and return a dict mapping sequence name → [idpstatus, idp_regions]."""
     iupred_scores = []
     
     with gzip.open(iupred_file, 'rt') as f:
@@ -95,6 +90,7 @@ def parse_iupred_file(iupred_file):
     return score_set
 
 def main():
+    """Parse AIUPred result files and write per-region and per-protein IDP summary CSVs."""
     if len(sys.argv) < 2:
         print("Usage: python gather_AIUPred.py iupred.ouput.txt.gz or -d <dir>")
         sys.exit(1)

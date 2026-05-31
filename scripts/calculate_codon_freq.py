@@ -11,12 +11,13 @@ import time
 
 
 def validate(seq, alphabet="ACGT"):
-    """Checks that a sequence only contains values from an alphabet"""
+    """Return True if seq contains only characters from alphabet (default ACGT)."""
     alphabet = set(alphabet)
     leftover = set(seq.upper()) - alphabet
     return not leftover
 
 def calculate_codon_frequencies(fasta_file):
+    """Return (species_prefix, {codon: frequency}) computed across all CDS sequences in fasta_file; non-ACGT codons are skipped."""
     codon_counter = Counter()
     total_codons = 0
     species = None
@@ -35,6 +36,7 @@ def calculate_codon_frequencies(fasta_file):
     return (species,codon_frequencies)
 
 def main():
+    """Compute per-species codon frequencies from CDS FASTA files and write a gzipped CSV."""
     if len(sys.argv) < 2:
         print("Usage: python calculate_codon_freq.py <fasta_file> or -d <dir>")
         sys.exit(1)

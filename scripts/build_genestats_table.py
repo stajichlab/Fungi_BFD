@@ -45,6 +45,7 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
     Args:
         gff (str): Path to the GFF file to be parsed.
         dna (str, optional): Path to the DNA FASTA file. If provided, DNA sequences will be indexed and used to calculate GC content. Defaults to an empty string.
+        codon_table (int, optional): NCBI genetic code table number used for CDS translation. Defaults to 1 (standard code).
         debug (bool, optional): If True, enables debug mode which prints additional information and limits the number of processed genes. Defaults to False.
     Returns:
         dict: A dictionary containing gene data, where keys are gene IDs and values are dictionaries with gene statistics and transcript information.
@@ -436,13 +437,14 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
 
 
 def main():
+    """Parse GFF3/genome pairs and write gene, transcript, exon, CDS, intron, protein, and tRNA CSV tables."""
     if len(sys.argv) < 2:
-        print("Usage: python gff_build_big_query.py gff or -d <dir>")
+        print("Usage: python build_genestats_table.py gff or -d <dir>")
         sys.exit(1)
 
     parser = argparse.ArgumentParser(
         description="Calculate gene stats from GFF file(s)",
-        epilog="Example: gff_build_big_query.py gff_file.gff -d dna_dir -p pep_dir",
+        epilog="Example: build_genestats_table.py gff_file.gff -d dna_dir -p pep_dir",
     )
     parser.add_argument("gff_file", nargs="*", help="Input GFF file(s)")
     parser.add_argument("-g", "--gff_dir", help="GFF files dir")
@@ -471,7 +473,7 @@ def main():
     parser.add_argument(
         "-o",
         "--outdir",
-        default="bigquery",
+        default="tables",
         help="Output folder for gene info, exons, introns, transcripts, proteins",
     )
     args = parser.parse_args()
@@ -637,8 +639,8 @@ def main():
                     trnacsv.writerow(
                         [
                             genename,
-                            gene["tRNA_amino_acid"],
-                            gene["tRNA_codon"]
+                            gene.get("tRNA_amino_acid", ""),
+                            gene.get("tRNA_codon", "")
                         ]
                     )
                 # consider saving space by only encoding strand on the gene level

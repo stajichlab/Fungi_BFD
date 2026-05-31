@@ -15,6 +15,7 @@ import re
 
 outdir = 'tables'
 def merops(indir="results/function/merops",force=False):
+    """Collect MEROPS BLAST tabular results from indir into a gzipped CSV."""
     # load MEROPS data
     outfile = os.path.join(outdir,os.path.basename(indir) + ".csv.gz")
     if os.path.exists(outfile) and not force:
@@ -34,6 +35,7 @@ def merops(indir="results/function/merops",force=False):
                         writer.writerow(newrow)
 
 def cazy_overview(indir="results/function/cazy",force=False):
+    """Collect run_dbcan overview TSV files from indir into a gzipped CSV."""
     # load CAZY data
     outfile = os.path.join(outdir,os.path.basename(indir) + ".overview.csv.gz")
     if os.path.exists(outfile) and not force:
@@ -55,6 +57,7 @@ def cazy_overview(indir="results/function/cazy",force=False):
                         writer.writerow(newrow)
 
 def cazy_hmm(indir="results/function/cazy",force=False):
+    """Collect run_dbcan HMM cazymes TSV files from indir into a gzipped CSV."""
     # load CAZY data
     outfile = os.path.join(outdir,os.path.basename(indir) + ".cazymes_hmm.csv.gz")
     if os.path.exists(outfile) and not force:
@@ -77,6 +80,7 @@ def cazy_hmm(indir="results/function/cazy",force=False):
                         writer.writerow(newrow)
 
 def signalp(indir="results/function/signalp",force=False):
+    """Collect SignalP GFF3 output files from indir into a gzipped CSV of signal peptide predictions."""
     # load signalp data
     outfile = os.path.join(outdir,os.path.basename(indir) + ".signal_peptide.csv.gz")
     if os.path.exists(outfile) and not force:
@@ -98,6 +102,7 @@ def signalp(indir="results/function/signalp",force=False):
                         writer.writerow(newrow)
 
 def tmhmm(indir="results/function/tmhmm",force=False):
+    """Collect TMHMM short-format result files from indir into a gzipped CSV; skips proteins with 0 predicted helices."""
     outfile = os.path.join(outdir,os.path.basename(indir) + ".csv.gz")
     if os.path.exists(outfile) and not force:
         return
@@ -123,6 +128,7 @@ def tmhmm(indir="results/function/tmhmm",force=False):
                         writer.writerow(newrow)
 
 def wolfpsort(indir="results/function/wolfpsort",force=False,onlybest=True):
+    """Collect WoLF PSORT result files from indir into a gzipped CSV; when onlybest=True, only the top-ranked localization per protein is kept."""
     outfile = os.path.join(outdir,os.path.basename(indir) + ".csv.gz")
     if os.path.exists(outfile) and not force:
         return
@@ -163,6 +169,7 @@ def wolfpsort(indir="results/function/wolfpsort",force=False,onlybest=True):
 # This is encoded as a zero vector of length 200 with 1 in the cleavage site position.
 
 def targetp(indir="results/function/targetP",force=False):
+    """Collect TargetP2 summary files from indir into a gzipped CSV; skips proteins predicted as noTP."""
     outfile = os.path.join(outdir,os.path.basename(indir) + ".csv.gz")
     if os.path.exists(outfile) and not force:
         return
@@ -205,9 +212,11 @@ def targetp(indir="results/function/targetP",force=False):
                         writer.writerow(datarow)
 
 def kegg(indir="results/function/kegg",force=False):
+    """Placeholder — KEGG annotation collection not yet implemented."""
     print('not running yet')
 
 def busco(indir="results/stats/busco",force=False):
+    """Placeholder — BUSCO result collection not yet implemented."""
     print('not running yet')
 
 

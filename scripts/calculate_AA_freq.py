@@ -11,6 +11,7 @@ import time
 
 
 def calculate_aa_frequencies(fasta_file):
+    """Return (species_prefix, {aa: frequency}) computed across all protein sequences in fasta_file."""
     aa_counter = Counter()
     total_aa = 0
     species = None
@@ -24,6 +25,7 @@ def calculate_aa_frequencies(fasta_file):
     return (species,aa_frequencies)
 
 def main():
+    """Compute per-species amino acid frequencies from protein FASTA files and write a gzipped CSV."""
     if len(sys.argv) < 2:
         print("Usage: python calculate_AA_freq.py <fasta_file> or -d <dir>")
         sys.exit(1)
