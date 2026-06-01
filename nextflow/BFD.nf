@@ -541,27 +541,34 @@ process MERGE_PREDGPI {
 // ════════════════════════════════════════════════════════════════════════════
 
 // ── AA Frequency ──────────────────────────────────────────────────────────────
-process CALC_AA_FREQ {
-    label    'genestats'
-    tag      locustag
-    storeDir "${params.genome_stats_outdir}/aa_freq"
+// Accepts a batch of genomes (collated list of [locustag, prot] pairs) in one
+// job to amortise SLURM startup overhead.  publishDir mirrors the old storeDir
+// path so downstream glob-based merges keep working.
+process BATCH_AA_FREQ {
+    label      'genestats'
+    publishDir "${params.genome_stats_outdir}/aa_freq", mode: 'copy'
 
     input:
-    tuple val(locustag), path(proteins_faa)
+    tuple val(locustags), path(prots)
 
     output:
-    path "${locustag}.aa_freq.csv.gz", emit: csv
+    path "*.aa_freq.csv.gz", emit: csv
 
     script:
+    def tagList  = locustags instanceof List ? locustags : [locustags]
+    def protList = prots     instanceof List ? prots     : [prots]
+    def cmds = [tagList, protList].transpose().collect { tag, prot ->
+        "python3 ${params.scripts}/calculate_AA_freq.py ${prot.name} -o ${tag}.aa_freq.csv.gz"
+    }.join('\n')
     """
     module load biopython
-    python3 ${params.scripts}/calculate_AA_freq.py \\
-        ${proteins_faa} -o ${locustag}.aa_freq.csv.gz
+    ${cmds}
     """
 
     stub:
+    def tagList = locustags instanceof List ? locustags : [locustags]
     """
-    printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${locustag}.aa_freq.csv.gz
+    ${ tagList.collect { "printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${it}.aa_freq.csv.gz" }.join('\n') }
     """
 }
 
@@ -595,27 +602,31 @@ process MERGE_AA_FREQ {
 }
 
 // ── Codon Frequency ───────────────────────────────────────────────────────────
-process CALC_CODON_FREQ {
-    label    'genestats'
-    tag      locustag
-    storeDir "${params.genome_stats_outdir}/codon_freq"
+process BATCH_CODON_FREQ {
+    label      'genestats'
+    publishDir "${params.genome_stats_outdir}/codon_freq", mode: 'copy'
 
     input:
-    tuple val(locustag), path(cds_faa)
+    tuple val(locustags), path(prots)
 
     output:
-    path "${locustag}.codon_freq.csv.gz", emit: csv
+    path "*.codon_freq.csv.gz", emit: csv
 
     script:
+    def tagList  = locustags instanceof List ? locustags : [locustags]
+    def protList = prots     instanceof List ? prots     : [prots]
+    def cmds = [tagList, protList].transpose().collect { tag, prot ->
+        "python3 ${params.scripts}/calculate_codon_freq.py ${prot.name} -o ${tag}.codon_freq.csv.gz"
+    }.join('\n')
     """
     module load biopython
-    python3 ${params.scripts}/calculate_codon_freq.py \\
-        ${cds_faa} -o ${locustag}.codon_freq.csv.gz
+    ${cmds}
     """
 
     stub:
+    def tagList = locustags instanceof List ? locustags : [locustags]
     """
-    printf 'species_prefix,codon,frequency\\n' | gzip > ${locustag}.codon_freq.csv.gz
+    ${ tagList.collect { "printf 'species_prefix,codon,frequency\\n' | gzip > ${it}.codon_freq.csv.gz" }.join('\n') }
     """
 }
 
@@ -842,7 +853,7 @@ process SETUP_SYMLINKS {
             echo "[WARN] predict_results not found for \${basename}: \$src" >&2
             continue
         fi
-
+	echo "symlinking from \$src/\${basename}.proteins.fa"
         make_link "\$src/\${basename}.proteins.fa"        "${params.pep_dir}/\${basename}.proteins.fa"
         make_link "\$src/\${basename}.cds-transcripts.fa" "${params.cds_dir}/\${basename}.cds-transcripts.fa"
         make_link "\$src/\${basename}.gff3"               "${params.gff_dir}/\${basename}.gff3"
@@ -934,7 +945,7 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
+            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '').replace(':', ' ')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
             tuple(locustag, basename, species, strain)
@@ -1185,24 +1196,45 @@ workflow {
     // When --taxon is set, always use only current-run outputs (already filtered).
     def use_glob = params.merge_all.toBoolean() && !params.taxon
 
-    if (params.run_aa_freq.toBoolean())
-        CALC_AA_FREQ(aa_freq_ch.map { locustag, prot ->
-            clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")])
-            tuple(locustag, prot)
-        })
-    if (params.run_codon_freq.toBoolean()) CALC_CODON_FREQ(codon_freq_ch)
+    // Pre-filter genomes whose output already exists (after staleness check) so
+    // only genuinely missing results are submitted as SLURM jobs.  Items are
+    // collated into batches of freq_batch_size to amortise job-startup overhead.
+    if (params.run_aa_freq.toBoolean()) {
+        def aa_batch_ch = aa_freq_ch
+            .map { locustag, prot ->
+                clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")])
+                file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz").exists()
+                    ? null : tuple(locustag, prot)
+            }
+            .filter { it != null }
+            .collate(params.freq_batch_size as int)
+            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+        BATCH_AA_FREQ(aa_batch_ch)
+    }
+    if (params.run_codon_freq.toBoolean()) {
+        def codon_batch_ch = codon_freq_ch
+            .map { locustag, prot ->
+                clearIfStale(prot, [file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz")])
+                file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz").exists()
+                    ? null : tuple(locustag, prot)
+            }
+            .filter { it != null }
+            .collate(params.freq_batch_size as int)
+            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+        BATCH_CODON_FREQ(codon_batch_ch)
+    }
     if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
     if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
 
     if (!params.skip_merge.toBoolean()) {
         if (use_glob) {
             if (params.run_aa_freq.toBoolean()) {
-                MERGE_AA_FREQ(gatedGlobStats(CALC_AA_FREQ.out.csv.collect(), "aa_freq/*.aa_freq.csv.gz"))
+                MERGE_AA_FREQ(gatedGlobStats(BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([]), "aa_freq/*.aa_freq.csv.gz"))
             } else {
                 MERGE_AA_FREQ(gatedGlobStats(Channel.of(true), "aa_freq/*.aa_freq.csv.gz"))
             }
             if (params.run_codon_freq.toBoolean()) {
-                MERGE_CODON_FREQ(gatedGlobStats(CALC_CODON_FREQ.out.csv.collect(), "codon_freq/*.codon_freq.csv.gz"))
+                MERGE_CODON_FREQ(gatedGlobStats(BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([]), "codon_freq/*.codon_freq.csv.gz"))
             } else {
                 MERGE_CODON_FREQ(gatedGlobStats(Channel.of(true), "codon_freq/*.codon_freq.csv.gz"))
             }
@@ -1227,9 +1259,31 @@ workflow {
                 MERGE_GENE_STATS(gatedGlobStats(Channel.of(true), "gene_stats/*.csv.gz"))
             }
         } else {
-            // current-run outputs only (merge_all=false, or --taxon active)
-            if (params.run_aa_freq.toBoolean())    MERGE_AA_FREQ(CALC_AA_FREQ.out.csv.collect())
-            if (params.run_codon_freq.toBoolean()) MERGE_CODON_FREQ(CALC_CODON_FREQ.out.csv.collect())
+            // current-run outputs only (merge_all=false, or --taxon active).
+            // Build file lists from expected storeDir paths (covers cached + new),
+            // gated on batch completion so newly-published files are visible.
+            if (params.run_aa_freq.toBoolean()) {
+                def aa_sync    = BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([])
+                def aa_paths   = aa_freq_ch.map { locustag, _ ->
+                    file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")
+                }.collect()
+                MERGE_AA_FREQ(
+                    aa_sync.combine(aa_paths)
+                           .map { _s, files -> files.findAll { it.exists() } }
+                           .filter { !it.isEmpty() }
+                )
+            }
+            if (params.run_codon_freq.toBoolean()) {
+                def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([])
+                def codon_paths = codon_freq_ch.map { locustag, _ ->
+                    file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz")
+                }.collect()
+                MERGE_CODON_FREQ(
+                    codon_sync.combine(codon_paths)
+                              .map { _s, files -> files.findAll { it.exists() } }
+                              .filter { !it.isEmpty() }
+                )
+            }
             if (params.run_intergenic.toBoolean()) MERGE_INTERGENIC(CALC_INTERGENIC.out.csv.collect())
             if (params.run_gene_stats.toBoolean()) {
                 MERGE_GENE_STATS(
