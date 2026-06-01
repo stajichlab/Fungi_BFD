@@ -84,7 +84,7 @@ workflow {
         .map { row ->
             def species = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
             def strain  = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
-            strain = strain.replaceAll(/;.*$/, '').trim()
+            strain = strain.replaceAll(/;.*$/, '').trim().replace(':', ' ')
             def out     = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_')
             def asmid   = row.ASMID?.trim()
             tuple(out, asmid)

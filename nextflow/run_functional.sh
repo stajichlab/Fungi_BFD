@@ -23,7 +23,7 @@ NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run nextflow/BFD.nf \
     -c nextflow/nextflow.config \
     -profile BFD \
-    --run_pfam true \
+    --run_pfam false \
     --run_cazy false \
     --run_merops false \
     --run_signalp false \

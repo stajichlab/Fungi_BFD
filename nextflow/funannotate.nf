@@ -126,8 +126,10 @@ process GENOME_CLEAN {
         ${params.clean_script} --len ${params.min_contig_len} > ${asmid}.fa
     echo "[INFO] Clean genome written: ${asmid}.fa (\$(du -sh ${asmid}.fa | cut -f1))"
     pigz \$SCRATCH/${asmid}.purge.fasta
-    pigz \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv
-    mv \$SCRATCH/${asmid}.purge.fasta.gz \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv.gz ${launchDir}/input_clean_genomes/clean/
+    [ -f \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv ] && pigz \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv
+    mv \$SCRATCH/${asmid}.purge.fasta.gz ${launchDir}/input_clean_genomes/clean/
+    [ -f \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv.gz ] && \
+        mv \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv.gz ${launchDir}/input_clean_genomes/clean/
     """
 
     stub:
@@ -200,17 +202,18 @@ process SRA_QUERY {
     set -euo pipefail
     module load ncbi_edirect
 
-    printf 'species_tag,taxonid,sra_accession,spots\n' > ${species_tag}.sra_query.csv
+    printf 'species_tag,taxonid,sra_accession,spots,platform\n' > ${species_tag}.sra_query.csv
 
     esearch -db sra \\
         -query "txid${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])" | \\
         efetch -format runinfo > _runinfo.tmp
 
-    awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s\\n", \$1, \$4}' _runinfo.tmp | \\
+    # col 1=Run, col 4=spots, col 13=LibraryStrategy, col 16=LibraryLayout, col 19=Platform
+    awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s,%s\\n", \$1, \$4, \$19}' _runinfo.tmp | \\
         sort -t',' -k2 -rn | \\
         head -n 5 | \\
-        while IFS=',' read -r acc spots; do
-            printf '%s,%s,%s,%s\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots"
+        while IFS=',' read -r acc spots platform; do
+            printf '%s,%s,%s,%s,%s\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots" "\$platform"
         done >> ${species_tag}.sra_query.csv
 
     rm -f _runinfo.tmp
@@ -220,8 +223,8 @@ process SRA_QUERY {
 
     stub:
     """
-    printf 'species_tag,taxonid,sra_accession,spots\n' > ${species_tag}.sra_query.csv
-    printf '%s,%s,SRR000001,1000000\n' "${species_tag}" "${taxonid}" >> ${species_tag}.sra_query.csv
+    printf 'species_tag,taxonid,sra_accession,spots,platform\n' > ${species_tag}.sra_query.csv
+    printf '%s,%s,SRR000001,1000000,ILLUMINA\n' "${species_tag}" "${taxonid}" >> ${species_tag}.sra_query.csv
     echo "[STUB] SRA_QUERY for ${species_tag}"
     """
 }
@@ -277,19 +280,20 @@ process SRA_QUERY_BATCH {
 
     while IFS=\$(printf '\\t') read -r species_tag taxonid; do
         cached="${cache_dir}/\${species_tag}.sra_query.csv"
-        if [ -f "\$cached" ]; then
+        if [ -s "\$cached" ]; then
             cp "\$cached" "\${species_tag}.sra_query.csv"
             echo "[INFO] Reusing cached result for \${species_tag}"
             continue
         fi
 
         if query_species "\${species_tag}" "\${taxonid}"; then
-            printf 'species_tag,taxonid,sra_accession,spots\\n' > "\${species_tag}.sra_query.csv"
-            awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s\\n", \$1, \$4}' "_runinfo_\${species_tag}.tmp" | \\
+            printf 'species_tag,taxonid,sra_accession,spots,platform\\n' > "\${species_tag}.sra_query.csv"
+            # col 1=Run, col 4=spots, col 13=LibraryStrategy, col 16=LibraryLayout, col 19=Platform
+            awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s,%s\\n", \$1, \$4, \$19}' "_runinfo_\${species_tag}.tmp" | \\
                 sort -t',' -k2 -rn | \\
                 head -n 5 | \\
-                while IFS=',' read -r acc spots; do
-                    printf '%s,%s,%s,%s\\n' "\${species_tag}" "\${taxonid}" "\$acc" "\$spots"
+                while IFS=',' read -r acc spots platform; do
+                    printf '%s,%s,%s,%s,%s\\n' "\${species_tag}" "\${taxonid}" "\$acc" "\$spots" "\$platform"
                 done >> "\${species_tag}.sra_query.csv"
             rm -f "_runinfo_\${species_tag}.tmp"
             NHITS=\$(awk 'END{print NR-1}' "\${species_tag}.sra_query.csv")
@@ -308,8 +312,8 @@ process SRA_QUERY_BATCH {
     """
     printf '${stub_args}\\n' > batch_input.tsv
     while IFS=\$(printf '\\t') read -r species_tag taxonid; do
-        printf 'species_tag,taxonid,sra_accession,spots\\n' > "\${species_tag}.sra_query.csv"
-        printf '%s,%s,SRR000001,1000000\\n' "\${species_tag}" "\${taxonid}" >> "\${species_tag}.sra_query.csv"
+        printf 'species_tag,taxonid,sra_accession,spots,platform\\n' > "\${species_tag}.sra_query.csv"
+        printf '%s,%s,SRR000001,1000000,ILLUMINA\\n' "\${species_tag}" "\${taxonid}" >> "\${species_tag}.sra_query.csv"
     done < batch_input.tsv
     echo "[STUB] SRA_QUERY_BATCH (${species_tags.size()} species)"
     """
@@ -317,7 +321,7 @@ process SRA_QUERY_BATCH {
 
 // Merge all per-species SRA query CSVs into a single named manifest.
 // Output: {stem}.rnaseq_sra.csv written alongside the input samples file.
-// Columns: species_tag, taxonid, sra_accession, spots
+// Columns: species_tag, taxonid, sra_accession, spots, platform
 process COLLECT_SRA_QUERY {
     publishDir { file(params.samples).parent.toAbsolutePath().toString() }, mode: 'copy'
 
@@ -334,7 +338,7 @@ process COLLECT_SRA_QUERY {
 
     script:
     """
-    printf 'species_tag,taxonid,sra_accession,spots\n' > ${stem}.rnaseq_sra.csv
+    printf 'species_tag,taxonid,sra_accession,spots,platform\n' > ${stem}.rnaseq_sra.csv
     for f in ${query_csvs}; do
         tail -n +2 "\$f" >> ${stem}.rnaseq_sra.csv
     done
@@ -345,7 +349,7 @@ process COLLECT_SRA_QUERY {
 
     stub:
     """
-    printf 'species_tag,taxonid,sra_accession,spots\n' > ${stem}.rnaseq_sra.csv
+    printf 'species_tag,taxonid,sra_accession,spots,platform\n' > ${stem}.rnaseq_sra.csv
     """
 }
 
@@ -414,11 +418,62 @@ process SRA_FETCH {
     : > ${species_tag}_norm_R2.fastq.gz
 
     # Read pre-queried accessions from SRA_QUERY CSV (up to max_rnaseq_runs).
-    ACCESSIONS=\$(awk -F',' 'NR>1 {print \$3}' ${sra_query_csv} | head -n ${params.max_rnaseq_runs} | tr '\n' ' ')
+    # Consult the project override file for per-accession actions:
+    #   skip           — exclude entirely
+    #   rename_headers — parallel-fastq-dump as normal, then seqkit renumbers headers
+    #                    with sequential integers so R1/R2 names match exactly.
+    #                    Fixes BGI/MGISEQ read-name mismatch from block-parallel splits.
+    # Accessions absent from the override file use the default parallel-fastq-dump path.
+    BLACKLIST="${launchDir}/rnaseq_blacklist.csv"
+    RAW_ACCESSIONS=\$(awk -F',' 'NR>1 {print \$3}' ${sra_query_csv} | head -n ${params.max_rnaseq_runs})
     TAXONID=\$(awk -F',' 'NR==2 {print \$2; exit}' ${sra_query_csv})
 
-    if [ -z "\$(echo \$ACCESSIONS | tr -d ' ')" ]; then
-        echo "[INFO] No paired-end RNA-seq runs found for ${species_tag} (no accessions in query CSV)"
+    # Helper: look up the explicit override action for an accession from the blacklist
+    # (col 4 = action: skip | rename_headers).  Returns empty string if not listed.
+    acc_action() {
+        local acc="\$1"
+        [ -f "\$BLACKLIST" ] && awk -F',' -v a="\$acc" 'NR>1 && \$1==a {print \$4; exit}' "\$BLACKLIST" || true
+    }
+
+    # Helper: look up sequencing platform from the per-species sra_query CSV (col 5).
+    # Returns the raw SRA platform string, e.g. BGISEQ, ILLUMINA.
+    acc_platform() {
+        local acc="\$1"
+        awk -F',' -v a="\$acc" 'NR>1 && \$3==a {print \$5; exit}' ${sra_query_csv}
+    }
+
+    # Resolve the effective download strategy for an accession:
+    #   explicit blacklist action takes precedence;
+    #   BGISEQ platform auto-maps to rename_headers;
+    #   everything else is empty (default parallel-fastq-dump path).
+    acc_strategy() {
+        local acc="\$1" action platform
+        action=\$(acc_action "\$acc")
+        if [ -n "\$action" ]; then
+            echo "\$action"
+        else
+            platform=\$(acc_platform "\$acc")
+            case "\$platform" in
+                BGISEQ|BGI*|MGI*) echo "rename_headers" ;;
+                *)                 echo "" ;;
+            esac
+        fi
+    }
+
+    # Partition accessions into skip / active.
+    ACCESSIONS=""
+    for ACC in \$RAW_ACCESSIONS; do
+        STRATEGY=\$(acc_strategy "\$ACC")
+        if [ "\$STRATEGY" = "skip" ]; then
+            echo "[INFO] Skipping blacklisted accession \$ACC for ${species_tag}"
+        else
+            ACCESSIONS="\$ACCESSIONS \$ACC"
+        fi
+    done
+    ACCESSIONS=\$(echo "\$ACCESSIONS" | xargs)   # trim whitespace
+
+    if [ -z "\$ACCESSIONS" ]; then
+        echo "[INFO] No paired-end RNA-seq runs found for ${species_tag} (no accessions in query CSV or all skipped)"
     else
         echo "[INFO] SRA accessions for ${species_tag}: \$ACCESSIONS"
         TMPDIR=\${SCRATCH:-/tmp}
@@ -426,20 +481,51 @@ process SRA_FETCH {
 
         # Download and concatenate in accession order so R1/R2 stay matched.
         for ACC in \$ACCESSIONS; do
-            echo "[INFO] Downloading \$ACC ..."
-            parallel-fastq-dump --sra-id \$ACC --threads ${task.cpus} \
-                --outdir reads/ --split-files --gzip --tmpdir \$TMPDIR || {
-                echo "[WARN] Download failed for \$ACC, skipping"
-                continue
-            }
-            if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
-                # if we could run these in parallel?
-                parallel -j 2 ${params.fastq_hdr_script} --read {} reads/\${ACC}_{}.fastq.gz \
-		\\| head -n ${params.max_rnaseq_reads} \\|
-                    \\| pigz -c \\>\\> \$TMPDIR/${species_tag}_R{}.fastq.gz  ::: 1 2
-                rm reads/\${ACC}_[12].fastq.gz
+            STRATEGY=\$(acc_strategy "\$ACC")
+            echo "[INFO] Downloading \$ACC (strategy: \${STRATEGY:-default}) ..."
+	    maxspot=""
+	    if [ ${params.max_rnaseq_spot} -gt "0" ]; then
+	   	maxspot="-X ${params.max_rnaseq_spot}"
+	    fi
+
+            if [ "\$STRATEGY" = "rename_headers" ]; then
+                # BGI/MGISEQ: parallel-fastq-dump block-splitting desynchronises spot IDs
+                # between R1 and R2.  Download identically to the default path, then pipe
+                # each file through seqkit to replace every header with a sequential integer
+                # before handing off — guarantees R1 read N and R2 read N have matching names.
+                module load seqkit
+                parallel-fastq-dump --sra-id \$ACC --threads ${task.cpus} \
+                    --outdir reads/ --split-files --gzip --tmpdir \$TMPDIR || {
+                    echo "[WARN] Download failed for \$ACC (\$maxspot), skipping"
+                    continue
+                }
+                if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
+                    seqkit replace -j ${task.cpus} -p '.+' -r '{nr}' reads/\${ACC}_1.fastq.gz \
+                        | ${params.fastq_hdr_script} --read 1 /dev/stdin \
+                            --max-reads ${params.max_rnaseq_reads} \
+                        | pigz -c >> \$TMPDIR/${species_tag}_R1.fastq.gz
+                    seqkit replace -j ${task.cpus} -p '.+' -r '{nr}' reads/\${ACC}_2.fastq.gz \
+                        | ${params.fastq_hdr_script} --read 2 /dev/stdin \
+                            --max-reads ${params.max_rnaseq_reads} \
+                        | pigz -c >> \$TMPDIR/${species_tag}_R2.fastq.gz
+                    rm reads/\${ACC}_[12].fastq.gz
+                else
+                    echo "[WARN] Missing pair for \$ACC after download, skipping"
+                fi
             else
-                echo "[WARN] Missing pair for \$ACC after download, skipping"
+                parallel-fastq-dump --sra-id \$ACC --threads ${task.cpus} \
+                    --outdir reads/ --split-files \$maxspot --gzip --tmpdir \$TMPDIR || {
+                    echo "[WARN] Download failed for \$ACC (\$maxspot), skipping"
+                    continue
+                }
+                if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
+                    parallel -j 2 ${params.fastq_hdr_script} --read {} reads/\${ACC}_{}.fastq.gz \
+		    --max-reads ${params.max_rnaseq_reads} \
+		    \\| pigz -c \\>\\> \$TMPDIR/${species_tag}_R{}.fastq.gz  ::: 1 2
+                    rm reads/\${ACC}_[12].fastq.gz
+                else
+                    echo "[WARN] Missing pair for \$ACC after download, skipping"
+                fi
             fi
         done
         rm -rf reads
@@ -973,6 +1059,102 @@ process FUNANNOTATE_ANNOTATE {
     """
 }
 
+process FUNANNOTATE_UPDATE {
+    tag "$out"
+
+    cpus   16
+    memory '96 GB'
+    time   '48h'
+
+    input:
+    tuple val(out), val(asmid), val(species), val(strain), val(locustag),
+          val(busco_lineage), val(header_length), val(transl_table),
+          path(r1), path(r2)
+
+    output:
+    tuple val(out), val(asmid), val(species), val(strain), val(locustag),
+          val(busco_lineage), val(header_length), val(transl_table)
+
+    script:
+    def pasa_db_arg = "--pasa_db sqlite"
+    """
+    # ── Skip if no reads (empty marker file from SRA_FETCH) ──────────────────
+    if [ ! -s "${r1}" ]; then
+        echo "[INFO] No RNAseq reads for ${out}, skipping funannotate update"
+        exit 0
+    fi
+
+    source /etc/profile.d/modules.sh 2>/dev/null || true
+    module load miniconda3
+    eval "\$(conda shell.bash hook)"
+    module load funannotate
+
+    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export FUNANNOTATE_DB=${params.funannotate_db}
+    TMPDIR=\${SCRATCH:-/tmp}
+    export PASACONF=""
+    pasa_db_arg="--pasa_db sqlite"
+    # ── Optional per-task MariaDB for PASA ────────────────────────────────────
+    if [ "${params.pasa_mysql}" = "true" ]; then
+        MYSQL_SCRATCH=${params.target}/${out}/training/mysql_db
+        if [ ! -f \$MYSQL_SCRATCH/mysql/conf/my.cnf ]; then
+            echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
+            mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
+            rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
+                { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
+            cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
+                { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
+        fi
+        MYHOSTNAME=\$(hostname -s)
+        PORT=\$(shuf -i3000-4999 -n1)
+        export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
+        cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
+        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
+        perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
+        export SINGULARITY_BINDPATH=\$TMPDIR,\$MYSQL_SCRATCH/mysql_db
+        stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
+        trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
+        trap "stop_mysqldb" EXIT
+        module load singularity
+        singularity instance start --writable-tmpfs \\
+            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
+            ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
+        pasa_db_arg="--pasa_db mysql"
+        sleep 5
+    fi
+
+    # Link training data into work dir so funannotate update finds it at the relative path it expects.
+    mkdir -p ${out}
+    if [ -d "${params.target}/${out}/training" ]; then
+        ln -sfn "${params.target}/${out}/training" "${out}/training"
+    fi
+
+    # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
+    # funannotate update will still run its internal alignment step against these.
+    echo "[INFO] Running funannotate update for ${out}"
+    funannotate update -i ${params.target}/${out} \\
+        --left ${r1} --right ${r2} \\
+        --cpus ${task.cpus} \\
+        \$pasa_db_arg
+    if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi
+    echo "[INFO] stopped mysql"
+    EXPECTED="${params.target}/${out}/update_results/${out}.gbk"
+    if [ ! -f "\$EXPECTED" ]; then
+        echo "ERROR: funannotate update did not produce expected GBK: \$EXPECTED" >&2
+        exit 1
+    fi
+    """
+
+    stub:
+    """
+    echo "[STUB] FUNANNOTATE_UPDATE stub for ${out} (r1=${r1}, r2=${r2})"
+    mkdir -p ${params.target}/${out}/update_results
+    touch ${params.target}/${out}/update_results/${out}.tbl
+    touch ${params.target}/${out}/update_results/${out}.gbk
+    touch ${params.target}/${out}/update_results/${out}.gff3
+    """
+}
+
 def staleRnaseq(String out, String species) {
     def species_tag = species.replaceAll(/\s+/, '_')
     def gbk = file("${params.target}/${out}/predict_results/${out}.gbk")
@@ -1032,7 +1214,7 @@ workflow {
         .map { row ->
             def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
             def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
-            strain = strain.replaceAll(/;.*$/, '').trim()
+            strain = strain.replaceAll(/;.*$/, '').trim().replace(':', ' ')
             def out           = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_').replaceAll(/[\[\]\*\?\{\}]/, '_')
             def asmid         = row.ASMID?.trim()
             def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
@@ -1265,7 +1447,7 @@ workflow {
             .map { row ->
                 def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
                 def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
-                strain = strain.replaceAll(/;.*$/, '').trim()
+                strain = strain.replaceAll(/;.*$/, '').trim().replace(':', ' ')
                 def out           = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_').replaceAll(/[\[\]\*\?\{\}]/, '_')
                 def asmid         = row.ASMID?.trim()
                 def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
@@ -1381,98 +1563,3 @@ workflow {
     }
 }
 
-process FUNANNOTATE_UPDATE {
-    tag "$out"
-
-    cpus   16
-    memory '96 GB'
-    time   '48h'
-
-    input:
-    tuple val(out), val(asmid), val(species), val(strain), val(locustag),
-          val(busco_lineage), val(header_length), val(transl_table),
-          path(r1), path(r2)
-
-    output:
-    tuple val(out), val(asmid), val(species), val(strain), val(locustag),
-          val(busco_lineage), val(header_length), val(transl_table)
-
-    script:
-    def pasa_db_arg = "--pasa_db sqlite"
-    """
-    # ── Skip if no reads (empty marker file from SRA_FETCH) ──────────────────
-    if [ ! -s "${r1}" ]; then
-        echo "[INFO] No RNAseq reads for ${out}, skipping funannotate update"
-        exit 0
-    fi
-
-    source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate
-
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
-    TMPDIR=\${SCRATCH:-/tmp}
-    export PASACONF=""
-    pasa_db_arg="--pasa_db sqlite"
-    # ── Optional per-task MariaDB for PASA ────────────────────────────────────
-    if [ "${params.pasa_mysql}" = "true" ]; then
-        MYSQL_SCRATCH=${params.target}/${out}/training/mysql_db
-        if [ ! -f \$MYSQL_SCRATCH/conf/my.cnf ]; then
-            echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
-            mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
-            rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
-                { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
-            cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
-                { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
-        fi
-        MYHOSTNAME=\$(hostname -s)
-        PORT=\$(shuf -i3000-4999 -n1)
-        export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
-        cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
-        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
-        perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
-        export SINGULARITY_BINDPATH=\$TMPDIR,\$MYSQL_SCRATCH/db
-        stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
-        trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
-        trap "stop_mysqldb" EXIT
-        module load singularity
-        singularity instance start --writable-tmpfs \\
-            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
-            ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
-        pasa_db_arg="--pasa_db mysql"
-        sleep 5
-    fi
-
-    # Link training data into work dir so funannotate update finds it at the relative path it expects.
-    mkdir -p ${out}
-    if [ -d "${params.target}/${out}/training" ]; then
-        ln -sfn "${params.target}/${out}/training" "${out}/training"
-    fi
-
-    # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
-    # funannotate update will still run its internal alignment step against these.
-    echo "[INFO] Running funannotate update for ${out}"
-    funannotate update -i ${params.target}/${out} \\
-        --left ${r1} --right ${r2} \\
-        --cpus ${task.cpus} \\
-        \$pasa_db_arg
-    if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi
-    echo "[INFO] stopped mysql"
-    EXPECTED="${params.target}/${out}/update_results/${out}.gbk"
-    if [ ! -f "\$EXPECTED" ]; then
-        echo "ERROR: funannotate update did not produce expected GBK: \$EXPECTED" >&2
-        exit 1
-    fi
-    """
-
-    stub:
-    """
-    echo "[STUB] FUNANNOTATE_UPDATE stub for ${out} (r1=${r1}, r2=${r2})"
-    mkdir -p ${params.target}/${out}/update_results
-    touch ${params.target}/${out}/update_results/${out}.tbl
-    touch ${params.target}/${out}/update_results/${out}.gbk
-    touch ${params.target}/${out}/update_results/${out}.gff3
-    """
-}

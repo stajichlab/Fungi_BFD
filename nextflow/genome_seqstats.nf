@@ -328,7 +328,7 @@ workflow {
         .filter(asmidFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '')
+            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '').replace(':', ' ')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
             [locustag, basename, species, strain]
