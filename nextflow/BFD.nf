@@ -1264,7 +1264,7 @@ workflow {
             // gated on batch completion so newly-published files are visible.
             if (params.run_aa_freq.toBoolean()) {
                 def aa_sync    = BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([])
-                def aa_paths   = aa_freq_ch.map { locustag, _ ->
+                def aa_paths   = aa_freq_ch.map { locustag, _ignored ->
                     file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")
                 }.collect()
                 MERGE_AA_FREQ(
@@ -1275,7 +1275,7 @@ workflow {
             }
             if (params.run_codon_freq.toBoolean()) {
                 def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([])
-                def codon_paths = codon_freq_ch.map { locustag, _ ->
+                def codon_paths = codon_freq_ch.map { locustag, _ignored ->
                     file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz")
                 }.collect()
                 MERGE_CODON_FREQ(
