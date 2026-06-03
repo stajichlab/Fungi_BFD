@@ -854,7 +854,7 @@ process FUNANNOTATE_PREDICT {
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
-        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table}
+        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark 
 
     EXPECTED_GBK="${out}/predict_results/${out}.gbk"
     if [ ! -f "\$EXPECTED_GBK" ]; then
@@ -1308,16 +1308,30 @@ workflow {
                 .groupTuple(by: 0)
                 .map { species_tag, taxonids -> tuple(species_tag, taxonids[0]) }
 
-            // Step 1: Batch ~params.sra_query_batch_size species per SLURM job, max 4 concurrent.
-            def sra_batched = sra_input
-                .collate(params.sra_query_batch_size)
-                .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
-            SRA_QUERY_BATCH(sra_batched)
-
-            // Re-map batch glob outputs back to per-species (species_tag, csv) tuples.
-            def sra_query_results = SRA_QUERY_BATCH.out.query_results
-                .flatten()
-                .map { csv -> tuple(csv.baseName.replaceAll(/\.sra_query$/, ''), csv) }
+            // Step 1: query or reuse cached per-species SRA query results.
+            // skip_sra_query=true reads existing CSVs from rnaseq_reads/sra_query/ directly,
+            // bypassing SRA_QUERY_BATCH entirely (no SLURM jobs submitted).
+            def sra_query_results
+            if (params.skip_sra_query.toBoolean()) {
+                sra_query_results = sra_input
+                    .map { species_tag, _taxonid ->
+                        def csv = file("${launchDir}/rnaseq_reads/sra_query/${species_tag}.sra_query.csv")
+                        if (!csv.exists()) {
+                            log.warn "skip_sra_query: no cached CSV for ${species_tag} — skipping this species"
+                            return null
+                        }
+                        tuple(species_tag, csv)
+                    }
+                    .filter { it != null }
+            } else {
+                def sra_batched = sra_input
+                    .collate(params.sra_query_batch_size)
+                    .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+                SRA_QUERY_BATCH(sra_batched)
+                sra_query_results = SRA_QUERY_BATCH.out.query_results
+                    .flatten()
+                    .map { csv -> tuple(csv.baseName.replaceAll(/\.sra_query$/, ''), csv) }
+            }
 
             // Step 2: Collect all per-species results into {stem}.rnaseq_sra.csv
             def stem = file(params.samples).baseName

@@ -1207,7 +1207,7 @@ workflow {
                     ? null : tuple(locustag, prot)
             }
             .filter { it != null }
-            .collate(params.freq_batch_size as int)
+            .buffer(size: params.freq_batch_size as int, remainder: true)
             .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
         BATCH_AA_FREQ(aa_batch_ch)
     }
@@ -1219,7 +1219,7 @@ workflow {
                     ? null : tuple(locustag, prot)
             }
             .filter { it != null }
-            .collate(params.freq_batch_size as int)
+            .buffer(size: params.freq_batch_size as int, remainder: true)
             .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
         BATCH_CODON_FREQ(codon_batch_ch)
     }
