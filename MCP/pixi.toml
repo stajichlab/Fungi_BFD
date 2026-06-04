@@ -1,0 +1,19 @@
+[workspace]
+name = "protein-mcp"
+version = "0.1.0"
+description = "BFD protein/genome DuckDB + MCP server"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = ">=3.11"
+duckdb = ">=1.1"
+scipy = ">=1.13"
+
+[pypi-dependencies]
+mcp = { version = ">=1.0", extras = ["cli"] }
+
+[tasks]
+build-db = { cmd = "bash scripts/build_duckdb.sh", description = "Build DuckDB from tables/ (submit as SLURM job or run interactively)" }
+serve = { cmd = "python mcp_server.py", description = "Start MCP server (stdio)" }
+check = { cmd = "python -c \"import duckdb, mcp; print('imports OK')\"", description = "Verify dependencies" }
