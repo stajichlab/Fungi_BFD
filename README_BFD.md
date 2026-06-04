@@ -73,12 +73,15 @@ SETUP_INPUT              Create symlinks in input/ pointing to funannotate predi
     │
     ▼
  ┌──────────────────────────────────────────────────────────────────────────┐
- │  Whole-dataset bulk jobs (one SLURM job each, reads entire input/ dir)  │
+ │  Per-genome statistics                                                   │
  │                                                                          │
- │  CALC_AA_FREQ       calculate_AA_freq.py → tables/aa_freq.csv.gz        │
- │  CALC_CODON_FREQ    calculate_codon_freq.py → tables/codon_freq.csv.gz  │
- │  CALC_INTERGENIC    calculate_intergenic.py → tables/gene_intergenic…   │
- │  CALC_GENE_STATS    build_genestats_table.py → tables/gene_*.csv.gz     │
+ │  BATCH_AA_FREQ    calculate_AA_freq.py   → genome_stats/aa_freq/        │
+ │  BATCH_CODON_FREQ calculate_codon_freq.py → genome_stats/codon_freq/    │
+ │    Both: genomes already computed are skipped; remaining are collated    │
+ │    into batches of freq_batch_size (default 50) per SLURM job.          │
+ │                                                                          │
+ │  CALC_INTERGENIC  calculate_intergenic.py → genome_stats/intergenic/    │
+ │  CALC_GENE_STATS  build_genestats_table.py → genome_stats/gene_stats/   │
  └──────────────────────────────────────────────────────────────────────────┘
     │
     ▼
@@ -190,9 +193,23 @@ logs/nextflow/
 | `--run_codon_freq` | `true` | Compute per-species codon frequencies |
 | `--run_intergenic` | `true` | Compute intergenic distances |
 | `--run_gene_stats` | `true` | Build gene structure tables from GFF3 |
+| `--freq_batch_size` | `50` | Genomes per SLURM job for AA/codon frequency batching |
 | `--merge_all` | `true` | MERGE from all files in results/ (not just current run) |
 | `--skip_merge` | `false` | Skip all MERGE steps |
 | `--pfam_nodes` | `1` | SLURM nodes per hmmscan job (`>1` enables MPI mode) |
+
+### Strain ID sanitizing
+
+When a row is read from `samples.csv` the `STRAIN` field is normalised before use:
+
+1. Leading/trailing whitespace stripped.
+2. Quotes (`'` `"`) removed.
+3. Only the first `;`-delimited token is kept (some entries list synonyms).
+4. **Colons (`:`) replaced with a space** — e.g. `CBS:123` → `CBS 123`.
+
+The cleaned strain is then joined to the species name (`{SPECIES}_{STRAIN}`) and
+remaining whitespace and path-unsafe characters are collapsed to `_` to form the
+per-species `basename` used for all output file paths.
 
 ---
 
@@ -210,7 +227,7 @@ logs/nextflow/
 | `idp` | short_gpu | 4 | 48 GB | 2 h | Requires `--gres=gpu:1` |
 | `wolfpsort` | short | 4 | 8 GB | 2 h | |
 | `predgpi` | epyc | 4 | 16 GB | 4 h | |
-| `genestats` | epyc | 4 | 96 GB | 48 h | Bulk stat jobs |
+| `genestats` | epyc | 4 | 96 GB | 48 h | Batch stat jobs (AA freq, codon freq, intergenic, gene stats) |
 | `merge` | short | 4 | 24 GB | 2 h | |
 
 ---
@@ -232,9 +249,31 @@ on a fresh run without `-resume`.
 | `RUN_IDP` | `aiupred/<name>.aiupred.txt.gz`, `.idp.csv.gz`, `.idp_summary.csv.gz` all exist |
 | `RUN_WOLFPSORT` | `wolfpsort/<name>.wolfpsort.results.txt.gz` exists |
 | `RUN_PREDGPI` | `predgpi/<name>.predgpi.gff3.gz` exists |
+| `BATCH_AA_FREQ` | `results/genome_stats/aa_freq/<locustag>.aa_freq.csv.gz` exists (checked per-genome before batching) |
+| `BATCH_CODON_FREQ` | `results/genome_stats/codon_freq/<locustag>.codon_freq.csv.gz` exists (checked per-genome before batching) |
 
-To force re-running a species for a specific tool, delete its output file(s) from
-`results/function/<tool>/` before re-submitting.
+### Automatic re-run when proteins are updated
+
+Before dispatching each protein-consuming process (`RUN_*`, `BATCH_AA_FREQ`,
+`BATCH_CODON_FREQ`), the pipeline compares the modification time of the input
+proteins/CDS FASTA against the genome's cached output file.  If the output is
+**strictly older** than the input, it is deleted so the genome is included in the
+next batch job.
+
+This means re-running `funannotate.nf` for a genome automatically triggers
+re-annotation by every BFD functional tool the next time `BFD.nf` is submitted —
+no manual cache-busting required.
+
+Processes whose inputs are not proteins (`CALC_INTERGENIC`, `CALC_GENE_STATS`) are
+not affected by this check; delete their storeDir outputs manually if a re-run is needed.
+
+To force re-running a species for a specific tool regardless of timestamps, delete its
+output file(s) from `results/function/<tool>/` before re-submitting.
+
+> **Note on `-stub-run`:** the staleness check and deletions happen at workflow
+> initialisation time (inside channel operators), so they execute even under
+> `-stub-run`.  To dry-test without deletions, disable the relevant tool flags
+> (e.g. `--run_pfam false`).
 
 ---
 
@@ -330,3 +369,12 @@ See `sql/schema.sql` for all table definitions and indexes. Key tables:
 `funannotate.nf` produces `genome_annotation/<Species_Strain>/predict_results/`.
 `BFD.nf` reads from that directory via its `SETUP_INPUT` step (symlinks into `input/`).
 Always run `funannotate.nf` first, then `BFD.nf`.
+
+---
+
+## interproscan6.nf — staleness behavior
+
+`interproscan6.nf` uses a filter to skip genomes whose `annotate_misc/iprscan.xml`
+already exists.  This filter now also checks timestamps: if `predict_results/<name>.proteins.fa`
+is newer than the existing `iprscan.xml`, the genome is re-queued and InterProScan 6
+re-runs for it.  This mirrors the automatic re-run logic in `BFD.nf`.

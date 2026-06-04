@@ -19,7 +19,7 @@ Python scripts require `biopython`, `pyfaidx`, and `pybedtools` (loaded via `mod
 - `genomes/` — genome FASTA files (`*.scaffolds.fa`)
 - `gff3/` — GFF3 annotation files
 - `input/` — protein FASTA files (`*.proteins.fa`), one per species
-- `bigquery/` — intermediate CSV.gz files used to build DuckDB databases
+- `tables/` — intermediate CSV.gz files used to build DuckDB databases
 - `fungi_introns/all_fungi_introns.fa.gz` — concatenated FASTA of all intron sequences with a multi-volume BLAST database (`*.nhr`, `*.nin`, `*.nsq`) and USEARCH UDB (`*.udb`)
 
 ## Identifier Conventions
@@ -33,20 +33,20 @@ Python scripts require `biopython`, `pyfaidx`, and `pybedtools` (loaded via `mod
 ## Pipeline Architecture
 
 ### 1. Genome Statistics (`pipeline/db/00_genome_stats.sh`)
-Runs AAFTF assess on all genomes in `genomes/`, then calls `scripts/collect_asm_stats.py` to produce `bigquery/asm_stats.csv.gz`. Chromosome-level stats are collected by `scripts/collect_chrom_info.py` → `bigquery/chrom_info.csv.gz`.
+Runs AAFTF assess on all genomes in `genomes/`, then calls `scripts/collect_asm_stats.py` to produce `tables/asm_stats.csv.gz`. Chromosome-level stats are collected by `scripts/collect_chrom_info.py` → `tables/chrom_info.csv.gz`.
 
-### 2. Gene Statistics from GFF3 (`scripts/build_genestats_bigquery.py`)
-Parses GFF3 + genome FASTA to produce CSV tables in `bigquery/`:
+### 2. Gene Statistics from GFF3 (`scripts/build_genestats_tables.py`)
+Parses GFF3 + genome FASTA to produce CSV tables in `tables/`:
 - `gene_info.csv.gz`, `gene_transcripts.csv.gz`, `gene_exons.csv.gz`, `gene_CDS.csv.gz`
 - `gene_introns.csv.gz` (includes splice sites, GC content, codon position/frame, sequence)
 - `gene_proteins.csv.gz`, `gene_trnas.csv.gz`
 
-Usage: `python scripts/build_genestats_bigquery.py -g gff3/ -d genomes/ -o bigquery/`
+Usage: `python scripts/build_genestats_table.py -g gff3/ -d genomes/ -o tables/`
 
 Amino acid and codon usage frequencies are computed separately:
 ```bash
-python scripts/calculate_AA_freq.py    → bigquery/aa_freq.csv.gz
-python scripts/calculate_codon_freq.py → bigquery/codon_freq.csv.gz
+python scripts/calculate_AA_freq.py    → tables/aa_freq.csv.gz
+python scripts/calculate_codon_freq.py → tables/codon_freq.csv.gz
 ```
 
 ### 3. Functional Annotation (`pipeline/function/`)
@@ -56,14 +56,14 @@ SLURM array jobs run tools on `input/*.proteins.fa`:
 - `05_merops.sh` — MEROPS protease family BLAST
 - `06_signalp.sh` — signal peptide prediction
 - `07_tmhmm.sh`, `07_targetp.sh`, `07_IDP_predict.sh`, `07_wolfpsort.sh`, `07_predGPI.sh` — TM helices, subcellular targeting, disorder, WoLF PSORT, GPI anchors
-- `09_summarize_function_bigquery.sh` — calls `scripts/prep_for_bigquery_load.py` to consolidate results into `bigquery/` CSV.gz files
+- `09_summarize_function_tables.sh` — calls `scripts/prep_for_tables_load.py` to consolidate results into `tables/` CSV.gz files
 
-FunGuild ecological guild annotations are fetched via `scripts/download_funguild.py` and converted to `bigquery/species_funguild.csv.gz` by `scripts/build_funguild_bigquery.py`.
+FunGuild ecological guild annotations are fetched via `scripts/download_funguild.py` and converted to `tables/species_funguild.csv.gz` by `scripts/build_funguild_tables.py`.
 
 ### 4. MMseqs2 Protein Clustering (`pipeline/`)
 - `01_cluster_mmseqs.sh` — clusters all proteins at 30% identity, 70% coverage → `results/Fungi5K_cluster.tsv.gz`
-- `02_process_cluster_pairwise.sh` — runs `scripts/mmseqs2pairwise.py` to generate per-cluster pairwise distances → `bigquery/gene_pairwise_distances.csv.gz`
-- `03_make_mmseq_orthogroups.sh` — runs `scripts/mmseqs2bigqueryload.py` and `scripts/mmseqs2orthogroups.py` → `bigquery/mmseqs_orthogroup_clusters.csv.gz`
+- `02_process_cluster_pairwise.sh` — runs `scripts/mmseqs2pairwise.py` to generate per-cluster pairwise distances → `tables/gene_pairwise_distances.csv.gz`
+- `03_make_mmseq_orthogroups.sh` — runs `scripts/mmseqs2tablesload.py` and `scripts/mmseqs2orthogroups.py` → `tables/mmseqs_orthogroup_clusters.csv.gz`
 
 ### 5. DuckDB Database Loading
 Two databases are maintained:
@@ -74,7 +74,7 @@ Two databases are maintained:
 
 Post-load processing (`pipeline/db/03_process_db.sh`) runs `scripts/Rscripts/mmseq_cluster_profile.R` and `scripts/mmseqs_genedump_to_fasta.py` to extract unannotated orthogroup proteins.
 
-Both databases are built by loading `bigquery/*.csv.gz` directly using DuckDB's `read_csv_auto()`. See `sql/schema.sql` for all table definitions and indexes.
+Both databases are built by loading `tables/*.csv.gz` directly using DuckDB's `read_csv_auto()`. See `sql/schema.sql` for all table definitions and indexes.
 
 ### 6. Phylogenetics (`Phylogeny/pipeline/`)
 Run from `Phylogeny/` directory:
@@ -104,7 +104,7 @@ sbatch pipeline/01_cluster_mmseqs.sh
 
 # Run gene stats extraction (requires biopython module)
 module load biopython
-python scripts/build_genestats_bigquery.py -g gff3/ -d genomes/ -o bigquery/
+python scripts/build_genestats_tables.py -g gff3/ -d genomes/ -o tables/
 
 # Query the functional database
 module load duckdb
