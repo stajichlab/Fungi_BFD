@@ -1,8 +1,34 @@
-# Fungi5K
+# Fungi 22k project
 
 Comparative genomics analysis of **~22k re-annotated fungal genomes** from NCBI (dataset frozen 2025-05).
-Analyzes gene structure, functional domains, protein orthology, and kingdom-wide phylogenetics across Fungi.
 
+Nextflow workflows to support automated and updating genome dataset. Synchronizing completed structure to [gs://stajichlab-fungi-bfd](gs://stajichlab-fungi-bfd)
+
+1. Downloads from [@1kfg/NCBI_Fungi](https://github.com/1KFG/NCBI_fungi) project.
+   * An automatic LOCUS_TAG prefix generated based on last 8 characters of MD5 hash of name of assembly from NCBI (for unique prefix and not-reusing NCBI LOCUS tags to avoid clashes) 
+2. Genome cleanup and contaminant removal with [@stajichlab/AAFTF](https://github.com/stajichlab/AAFTF) and [NCBI FCS-GX](https://github.com/ncbi/fcs-gx)
+3. Genome masking (for large scale using tantan for speed, if higher accuracy or TE comparison and compute allows will deploy RepeatMasker/RepeatModeler or EDTA or EarlGrey pipelines)
+4. SRA query for RNA-Seq datasets for a SPECIES is are downloaded and run through a cleanup. Downloading up to 5 RNASeq sets. Limiting each to 50M reads per to avoid too many reads unnecessary for trinity assembly
+   * Some of the issues - forcing headers to be formatted for trinity, dealing with BGI seq numbering issues
+   * Forcing length of reads to be same for FWD and REV of a pair (requried for bbnorm)
+   * custom scripts were written for this [fix_fastq_header_trinity])(https://github.com/hyphaltip/fix_fastq_header_trinity) and [enforce_seqpair_readlen](https://github.com/hyphaltip/enforce_seqpair_readlen). these will be folded into another sequence utility package later I expect
+   * Running bbnorm.sh on the read pairs instead of using trinity normalization for speed (much faster- a summary of profiling run-time and diff in trinity results should be evaluated)
+5. run Trinity through funannotate train - added a stop-after-trinity flag to funannotate to enable this. This way a single trinity transcript assembly is available to the 1-many strain assemblies for a species
+6. funannotate train will run with this trinity transcript set and normalized reads as requested producing a PASA mysqldb locally for speed and this can be reused if UPDATE is run to get UTRs
+7. funnannotate predict will run with the trained PASA models or just BUSCO models if no RNASeq. Will also skip genemark runs on genome assemblie
+   * Fungal-only swissprot proteins were extracted as the input target proteins for informing gene models to avoid running full swissprot DB which saves time when running across 20k datasets. These protein models help inform slighly the gene models when running EVM but it isn't clear how much they really elp.
+
+Command line options
+===
+* in funannotate.nf and other workflows --taxon "GENUS:Saccharomyces" to specify running on a taxonomic group. --asmid ABC123 will restrict to a specific assembly.
+* --supress gives list of assembly accessions to not run on (based on previously determined criteria, eg too short, contaminated, etc) allows skipping without having to edit samples.csv file, can skip microsporidia this way for example
+
+
+Goals
+=====
+ * BFD workflow runs protein annotation, summary stats on assemblies, codon usage, 
+ * [todo] Deploy RHIEPA as devleoped in [@alanmoses](https://github.com/alanmoses) lab
+ * [todo] phyling runs on 
 ---
 
 ## Repository layout
@@ -129,6 +155,10 @@ sbatch pipeline/04_make_concatpartition.sh
 ```
 
 ---
+
+## Notes
+
+Large parts of this were written with Claude and some kimi model. These were mainly focused on porting previous bash-script arrayjob workflow to nextflow.  Logical flow and ability to keep up with nextflow language changes and some migration of logic were most easily done with these AI language help.
 
 ## Contact
 
