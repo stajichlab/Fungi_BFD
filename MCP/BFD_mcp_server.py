@@ -7,7 +7,7 @@ domain architecture, and genome characteristics stored in DuckDB.
 
 Usage:
     python BFD_mcp_server.py
-    PROTEIN_DB_PATH=/path/to/function.duckdb python BFD_mcp_server.py
+    PROTEIN_DB_PATH=/path/to/BFD.duckdb python BFD_mcp_server.py
 
 Configure in Claude Desktop (~/.claude/claude_desktop_config.json) or
 claude-code (.mcp.json) as an stdio server.

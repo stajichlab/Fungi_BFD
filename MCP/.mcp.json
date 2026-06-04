@@ -2,10 +2,10 @@
   "mcpServers": {
     "protein_db": {
       "type": "stdio",
-      "command": "/bigdata/stajichlab/shared/projects/BFD/protein_mcp/.pixi/envs/default/bin/python",
-      "args": ["/bigdata/stajichlab/shared/projects/BFD/protein_mcp/mcp_server.py"],
+      "command": "/bigdata/stajichlab/shared/projects/BFD/MCP/.pixi/envs/default/bin/python",
+      "args": ["/bigdata/stajichlab/shared/projects/BFD/MCP/BFD_mcp_server.py"],
       "env": {
-        "PROTEIN_DB_PATH": "/bigdata/stajichlab/shared/projects/BFD/protein_mcp/functionalDB/function.duckdb"
+        "PROTEIN_DB_PATH": "/bigdata/stajichlab/shared/projects/BFD/db/BFD.duckdb"
       }
     }
   }
