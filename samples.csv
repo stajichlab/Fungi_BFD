@@ -11821,7 +11821,7 @@ GCA_047729665.1_ASM4772966v1,Macrophomina phaseolina,Mph_35_R1,PRJNA953043,35725
 GCA_047844645.1_ASM4784464v1,Macrophomina phaseolina,Mph_38_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,F20D695E
 GCA_047729785.1_ASM4772978v1,Macrophomina phaseolina,Mph_40_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,F672921A
 GCA_047844705.1_ASM4784470v1,Macrophomina phaseolina,Mph_46_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,F3E6FE21
-GCA_047844625.1_ASM4784462v1,Macrophomina phaseolina,Mph_49_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,FF38F669
+GCA_047844625.1_ASM4784462v1,Macrophomina phaseolina,Mph_49_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,FF38F669A
 GCA_047844685.1_ASM4784468v1,Macrophomina phaseolina,Mph_50_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,F8275ECA
 GCA_047844725.1_ASM4784472v1,Macrophomina phaseolina,Mph_53_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,FB2C3A71
 GCA_047844805.1_ASM4784480v1,Macrophomina phaseolina,Mph_54_R1,PRJNA953043,35725,dikarya,Ascomycota,,Dothideomycetes,,Botryosphaeriales,Botryosphaeriaceae,Macrophomina,Macrophomina phaseolina,1,FF61F27E
@@ -14259,7 +14259,7 @@ GCA_964256975.1_public_SRR1531569_concoct_bin.26,Peltula cylindrica,,PRJEB77567,
 GCA_026054615.1_ASM2605461v1,Peltula sp. TS41687,Spribille 41687-TS-e1936,PRJNA833438,2939398,dikarya,Ascomycota,,Lichinomycetes,,Lichinales,Phylliscaceae,Peltula,Peltula sp. TS41687,1,F26DAD4A
 GCF_001890105.1_Aspzo1,Penicilliopsis zonata CBS 506.65,CBS 506.65,PRJNA207688,1073090,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicilliopsis,Penicilliopsis zonata,1,FC554CB3
 GCA_051944425.1_ASM5194442v1,Penicillium adametzioides,FBCC-F1417,PRJNA1118473,70094,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium adametzioides,1,F162748C
-GCF_028826965.1_ASM2882696v1,Penicillium alfredii,IBT 34128,PRJNA867151,1506179,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium alfredii,1,F3DC5624
+GCF_028826965.1_ASM2882696v1,Penicillium alfredii,IBT 34128,PRJNA867151,1506179,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium alfredii,1,F3DC5624A
 GCF_028827245.1_ASM2882724v1,Penicillium angulare,IBT 27051,PRJNA867151,116970,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium angulare,1,F0FDE551
 GCA_028826755.1_ASM2882675v1,Penicillium angulare,IBT 30069,PRJNA867151,116970,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium angulare,1,F4E6C75E
 GCA_055768845.1_ASM5576884v1,Penicillium antarcticum,F-501,PRJNA1251081,416450,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium antarcticum,1,F6EE3403
@@ -20140,7 +20140,7 @@ GCA_030558095.1_ASM3055809v1,Teunomyces funiuensis,CBS 13911,PRJNA736342,1548787
 GCA_003706565.3_ASM370656v3,Teunomyces gatunensis,NRRL Y-48064,PRJNA429441,392264,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces gatunensis,12,FB93DA84
 GCA_003706535.2_ASM370653v2,Teunomyces kruisii,NRRL Y-17087,PRJNA429441,45561,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces kruisii,12,F0699BD5
 GCA_030574955.1_ASM3057495v1,Teunomyces lycoperdinae,NRRL Y-27658,PRJNA736342,297653,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces lycoperdinae,12,F7E385CD
-GCA_030556435.1_ASM3055643v1,Teunomyces pallodes,NRRL Y-27653,PRJNA736342,348313,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces pallodes,12,FCB937CB
+GCA_030556435.1_ASM3055643v1,Teunomyces pallodes,NRRL Y-27653,PRJNA736342,348313,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces pallodes,12,FCB937CBA
 GCA_030564025.1_ASM3056402v1,Teunomyces panamensis,NRRL Y-27657,PRJNA736342,297651,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces panamensis,12,F7A58287
 GCA_030563165.1_ASM3056316v1,Teunomyces stri,NRRL Y-48063,PRJNA736342,392263,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces stri,12,F71FA92E
 GCA_030568455.1_ASM3056845v1,Teunomyces tritomae,NRRL Y-27650,PRJNA736342,348312,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Debaryomycetaceae,Teunomyces,Teunomyces tritomae,12,F2CBF359
