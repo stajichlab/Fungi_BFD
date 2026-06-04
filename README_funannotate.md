@@ -2,7 +2,7 @@
 
 Nextflow DSL2 pipeline for fungal genome prediction and annotation on SLURM HPC.
 Covers the full funannotate workflow: genome cleaning → repeat masking → RNA-seq
-download → train → predict → (optional) annotate.
+discovery → download → train → predict → (optional) annotate.
 
 Source synced from `../../../1KFG/common_annotate/pipeline/nextflow/funannotate.nf`.
 
@@ -11,8 +11,14 @@ Source synced from `../../../1KFG/common_annotate/pipeline/nextflow/funannotate.
 ## Quick start
 
 ```bash
-# Default run: clean + mask + SRA fetch + train + predict (no annotate)
+# Default run: clean + mask + SRA query + fetch + train + predict (no annotate)
 sbatch nextflow/run_funannotate.sh
+
+# Survey RNA-seq availability only (produces samples.rnaseq_sra.csv, no downloads)
+sbatch nextflow/run_funannotate.sh --stop_after_sra_query true
+
+# Stop after SRA download/normalisation (skip train/predict)
+sbatch nextflow/run_funannotate.sh --stop_after_sra_fetch true
 
 # Predict + annotate
 sbatch nextflow/run_funannotate.sh --run_annotate true
@@ -48,14 +54,39 @@ MASKREPEAT_TANTAN_RUN Soft-mask repeats with tantan via funannotate mask
     │                 (storeDir; skipped if masked file exists; skippable with
     │                  --run_repeatmasker false, falls back to clean .fa)
     ▼
-SRA_FETCH             Search NCBI SRA for paired-end RNA-seq (≥250k read pairs,
-    │                 75–300 bp, Illumina/BGI); download up to --max_rnaseq_runs sets.
-    │                 Per-accession: parallel-fastq-dump → enforce read-pair length
-    │                 → bbnorm (target=30) → fastp QC trim.
-    │                 Writes rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
-    │                 (storeDir; empty files written when no SRA data found so the
-    │                  cache is populated and downstream skips gracefully)
-    │                 (skippable with --run_sra_fetch false)
+SRA_QUERY_BATCH       Batched NCBI SRA survey — up to sra_query_batch_size species
+    │                 per SLURM job (default 100), max 10 concurrent jobs.
+    │                 Runs esearch/efetch runinfo query per species; no downloading.
+    │                 Species already cached in rnaseq_reads/sra_query/ are reused
+    │                 (file copy, no NCBI call); only uncached species are queried.
+    │                 Records up to 5 candidate accessions (sorted by spot count
+    │                 descending) in rnaseq_reads/sra_query/<species_tag>.sra_query.csv
+    │                 (publishDir copy, overwrite: false; delete CSV to re-query)
+    │                 (only runs when --run_sra_fetch true)
+    ▼
+COLLECT_SRA_QUERY     Merges all per-species query CSVs into a single named manifest
+    │                 written alongside the input samples file:
+    │                   <stem>.rnaseq_sra.csv   (e.g. samples.rnaseq_sra.csv)
+    │                 Columns: species_tag, taxonid, sra_accession, spots
+    │                 ── stop here with --stop_after_sra_query true ──
+    ▼
+    ├── (species with SRA hits)
+    │       ▼
+    │   SRA_FETCH         Download up to --max_rnaseq_runs accessions (read from
+    │       │             the per-species query CSV — no NCBI call at this stage).
+    │       │             Per-accession: parallel-fastq-dump → enforce read-pair
+    │       │             length → bbnorm (target=30) → fastp QC trim.
+    │       │             Writes rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
+    │       │             (storeDir; skipped if both files already exist)
+    │
+    └── (species with no SRA hits)
+            ▼
+        WRITE_EMPTY_READS  Writes zero-byte placeholder files without a SLURM
+                          download job:
+                          rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
+                          (storeDir; skipped if placeholder files already exist)
+    │
+    │  ── stop here with --stop_after_sra_fetch true ──
     ▼
 RNASEQ_PREPARE        Run funannotate train --stop_after_trinity on the
     │                 representative (first) assembly per species.
@@ -87,6 +118,102 @@ FUNANNOTATE_ANNOTATE  funannotate annotate — functional annotation, GO terms,
 
 ---
 
+## RNA-seq discovery and download: two-phase design
+
+The SRA workflow is split into a **lightweight query phase** (SRA_QUERY_BATCH) and a
+**heavy download phase** (SRA_FETCH). This avoids allocating large SLURM jobs for
+species that have no RNA-seq data, and makes the discovery results inspectable before
+committing to downloads.
+
+### Phase 1 — SRA_QUERY_BATCH (survey)
+
+- Groups up to `--sra_query_batch_size` unique species (default 100) per SLURM job;
+  at most 10 batch jobs run concurrently (`maxForks 10`).
+- Per species within each batch: sends a single `esearch | efetch -format runinfo`
+  call to NCBI SRA. Species already cached in `rnaseq_reads/sra_query/` are reused
+  (file copy only — no NCBI call). Only uncached species hit the network.
+- Filter criteria:
+  - `txid<taxonid>[Organism:noexp]` — exact taxon, no descendants
+  - `RNA-Seq[Strategy]`, `PAIRED[Layout]`
+  - Read length 75–300 bp
+  - Illumina or BGI platform
+  - ≥250,000 read pairs
+- Records **up to 5 candidate accessions** sorted by spot count descending
+  (largest datasets first; deterministic across re-runs).
+- Output CSV columns: `species_tag, taxonid, sra_accession, spots`
+- Results published to `rnaseq_reads/sra_query/<species_tag>.sra_query.csv`
+  (`publishDir overwrite: false`). Delete the per-species CSV to force re-query.
+- Resources: 1 CPU, 4 GB RAM, 2h per batch job (short queue); up to 2 retries.
+
+### Phase 2 — COLLECT_SRA_QUERY (merge manifest)
+
+- Concatenates all per-species CSVs into a single project-level manifest.
+- Written alongside the input samples file as `<stem>.rnaseq_sra.csv`
+  (e.g., `samples.rnaseq_sra.csv` when `--samples samples.csv`).
+- Re-generated each run from the cached per-species CSVs — always reflects the
+  current set of queried species.
+- **Use `--stop_after_sra_query true`** to halt here and inspect the manifest
+  before committing to downloads. Useful for large initial runs or when checking
+  RNA-seq coverage for a new clade.
+
+### Phase 3 — SRA_FETCH / WRITE_EMPTY_READS (download)
+
+The channel branches on whether the per-species CSV contains any data rows:
+
+- **Has accessions → SRA_FETCH**: downloads up to `--max_rnaseq_runs` accessions
+  (reads from the CSV; no NCBI query at this stage). Normalizes with bbnorm and
+  trims with fastp.
+- **No accessions → WRITE_EMPTY_READS**: writes zero-byte placeholder paired FASTQ
+  files in a single trivial job. No download queue allocation.
+
+Both branches write to `rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz` and use
+`storeDir`, so the result (data or empty) is cached identically.
+
+---
+
+## SRA query cache
+
+### How it is built
+
+On the first run with `--run_sra_fetch true`, `SRA_QUERY_BATCH` runs for every
+unique `species_tag` in the filtered sample set. Species are collated into batches of
+`sra_query_batch_size` (default 100); each batch is a single SLURM job. Within each
+batch, uncached species are queried sequentially and results written to:
+
+```
+rnaseq_reads/sra_query/<species_tag>.sra_query.csv
+```
+
+The header row is always written. If no qualifying accessions are found, the file
+contains only the header (0 data rows). Failed queries (network error, timeout) are
+retried up to 3 times with exponential backoff before an empty CSV is written.
+
+### How it is used
+
+On subsequent runs, `SRA_QUERY_BATCH` still runs for each batch, but species whose
+per-species CSV already exists in `rnaseq_reads/sra_query/` are served from the cache
+(file copy, no NCBI call). Only species without a cached CSV query NCBI.
+
+The channel branch that drives `SRA_FETCH` vs `WRITE_EMPTY_READS` is evaluated from
+the cached CSV at channel-evaluation time (`.readLines().size() > 1`). If `SRA_FETCH`
+has also already completed for a species (its `_norm_R1/R2.fastq.gz` files exist in
+`rnaseq_reads/`), it too is skipped via its own `storeDir` check.
+
+### Cache invalidation
+
+| Scope | Action |
+|---|---|
+| Single species | `rm rnaseq_reads/sra_query/<species_tag>.sra_query.csv` then re-run |
+| All species | `rm -r rnaseq_reads/sra_query/` then re-run |
+| Force re-download (keep query cache) | `rm rnaseq_reads/<species_tag>_norm_*.fastq.gz` then re-run |
+| Full SRA reset | Remove both `rnaseq_reads/sra_query/` and `rnaseq_reads/<tag>_norm_*.fastq.gz` |
+
+> **Note:** `rnaseq_reads/` is under `cleanup = true` scope in the Nextflow work
+> directory, but the actual output files live outside the work directory (storeDir),
+> so they are **not** removed by Nextflow cleanup. Delete them manually when needed.
+
+---
+
 ## Output structure
 
 ```
@@ -114,12 +241,17 @@ input_clean_genomes/
   clean/                     FCS-GX intermediates (.purge.fasta.gz, .fcs_gx-taxonomy.tsv.gz)
 
 rnaseq_reads/
-  <species_tag>_norm_R1.fastq.gz    bbnorm + fastp normalized reads
+  sra_query/
+    <species_tag>.sra_query.csv   per-species SRA survey results (cached)
+  <species_tag>_norm_R1.fastq.gz  bbnorm + fastp normalized reads (or 0-byte placeholder)
   <species_tag>_norm_R2.fastq.gz
-  rnaseq_manifest.tsv               provenance: species → SRA accessions
+  rnaseq_manifest.tsv             provenance: species → downloaded SRA accessions + timestamp
+
+<samples_stem>.rnaseq_sra.csv    merged SRA survey manifest (alongside samples.csv)
+                                  columns: species_tag, taxonid, sra_accession, spots
 
 rnaseq_data/
-  <species_tag>.trinity-GG.fasta    shared Trinity assembly per species
+  <species_tag>.trinity-GG.fasta  shared Trinity assembly per species
 
 logs/nextflow/
   funannotate_trace.txt
@@ -141,9 +273,11 @@ logs/nextflow/
 | `--suppress` | `""` | File of ASMIDs to skip (one per line, first comma-delimited field) |
 | `--only_clean` | `false` | Stop after GENOME_CLEAN |
 | `--run_repeatmasker` | `true` | Run tantan soft-masking |
-| `--run_sra_fetch` | `true` | Download RNA-seq from NCBI SRA |
-| `--stop_after_sra_fetch` | `false` | Halt after SRA_FETCH (skip train/predict) |
-| `--max_rnaseq_runs` | `4` | Max SRA accessions downloaded per species |
+| `--run_sra_fetch` | `true` | Run SRA_QUERY_BATCH + SRA_FETCH (both phases) |
+| `--stop_after_sra_query` | `false` | Halt after COLLECT_SRA_QUERY; produces `<stem>.rnaseq_sra.csv` only |
+| `--stop_after_sra_fetch` | `false` | Halt after SRA_FETCH; skip train/predict |
+| `--sra_query_batch_size` | `100` | Species per SRA_QUERY_BATCH job; reduce if batches time out |
+| `--max_rnaseq_runs` | `2` | Max accessions **downloaded** per species (SRA_FETCH honors this; SRA_QUERY_BATCH always surveys up to 5) |
 | `--run_annotate` | `false` | Run funannotate annotate after predict |
 | `--run_update` | `false` | Run funannotate update (requires `--run_sra_fetch true`) |
 | `--run_antismash` | `false` | Run antiSMASH before annotate |
@@ -164,7 +298,10 @@ logs/nextflow/
 | `SETUP_TAXONDB` | short | 1 | 1 GB | Once per deployment; storeDir-cached |
 | `GENOME_CLEAN` | highmem | 16 | 500 GB | FCS-GX loads /dev/shm/gxdb on h04/h05/h06 |
 | `MASKREPEAT_TANTAN_RUN` | short | 2 | 16 GB | |
-| `SRA_FETCH` | short → epyc | 24 | 48 → 192 GB | Retry bumps memory and queue |
+| `SRA_QUERY_BATCH` | short | 1 | 4 GB | Batched esearch/efetch; up to 10 concurrent; up to 2 retries per batch |
+| `COLLECT_SRA_QUERY` | short | 1 | 1 GB | Merges per-species CSVs; fast |
+| `WRITE_EMPTY_READS` | short | 1 | 1 GB | Zero-byte placeholder; no-data species only |
+| `SRA_FETCH` | short → epyc | 24 → 32 | 48 → 192 GB | Data species only; retry bumps memory and queue |
 | `RNASEQ_PREPARE` | epyc | 16 | 96 GB (+48 GB/retry) | Trinity-GG assembly; up to 3 retries |
 | `FUNANNOTATE_TRAIN` | epyc | 8 → 24 | 96 → 192 GB | PASA alignment; up to 3 retries |
 | `FUNANNOTATE_PREDICT` | epyc | 16 | 32 GB | |
@@ -177,34 +314,84 @@ logs/nextflow/
 
 ## Skip/cache behavior
 
-All expensive one-time steps use `storeDir`, which means Nextflow skips the process if
-all declared output files already exist on disk — even without `-resume`:
+All expensive one-time steps use `storeDir`, which means Nextflow skips the process
+if all declared output files already exist on disk — even without `-resume`:
 
-| Step | Skip condition |
-|---|---|
-| `SETUP_TAXONDB` | `taxondb/names.dmp` exists |
-| `GENOME_CLEAN` | `input_clean_genomes/<asmid>.fa` exists |
-| `MASKREPEAT_TANTAN_RUN` | `input_clean_genomes/<asmid>.masked.fasta` exists |
-| `SRA_FETCH` | `rnaseq_reads/<tag>_norm_R1.fastq.gz` exists (even if 0-byte/no data) |
-| `RNASEQ_PREPARE` | `rnaseq_data/<tag>.trinity-GG.fasta` exists |
+| Step | Cache location | Skip condition |
+|---|---|---|
+| `SETUP_TAXONDB` | `taxondb/` | `taxondb/names.dmp` exists |
+| `GENOME_CLEAN` | `input_clean_genomes/` | `<asmid>.fa` exists |
+| `MASKREPEAT_TANTAN_RUN` | `input_clean_genomes/` | `<asmid>.masked.fasta` exists |
+| `SRA_QUERY_BATCH` | `rnaseq_reads/sra_query/` | per-species CSV exists (checked inside the batch script; `publishDir overwrite: false`) |
+| `WRITE_EMPTY_READS` | `rnaseq_reads/` | `<tag>_norm_R1.fastq.gz` exists (0-byte) |
+| `SRA_FETCH` | `rnaseq_reads/` | `<tag>_norm_R1.fastq.gz` exists (non-zero) |
+| `RNASEQ_PREPARE` | `rnaseq_data/` | `<tag>.trinity-GG.fasta` exists |
 
 `FUNANNOTATE_TRAIN` and `FUNANNOTATE_PREDICT` skip via channel-level file-existence
 checks (`funannotate_train.pasa.gff3` and `predict_results/<out>.gbk`), so they also
 skip gracefully when re-running over partially completed datasets.
+
+### RNA-seq staleness detection (train + predict)
+
+The pipeline also detects when RNA-seq data has been refreshed *after* a genome was
+already predicted, and automatically re-runs training and prediction for those genomes.
+
+**What "stale" means:** A prediction is considered stale when:
+- `rnaseq_reads/<species_tag>_norm_R1.fastq.gz` is newer than
+  `genome_annotation/<out>/predict_results/<out>.gbk`, **or**
+- `rnaseq_data/<species_tag>.trinity-GG.fasta` is newer than the same GBK.
+
+In both cases the reads used to build the current prediction are no longer the most
+recent ones on disk.
+
+**How the pipeline responds:**
+
+1. At the channel level, any assembly whose prediction is stale is moved from the
+   "training complete" bucket into the "needs training" bucket, even though
+   `funannotate_train.pasa.gff3` already exists.  This forces `FUNANNOTATE_TRAIN`
+   to run for that assembly.
+
+2. Inside the `FUNANNOTATE_TRAIN` script, before the normal "training already
+   complete; skipping" guard, the script checks whether the R1 file is newer than
+   the existing GBK (`-nt` test).  If it is, the old `training/` directory is
+   deleted so funannotate runs a clean re-train rather than silently re-using stale
+   PASA output.
+
+3. At the predict channel filter, the same staleness test overrides the normal
+   "GBK exists; skip predict" guard, so `FUNANNOTATE_PREDICT` re-runs after the
+   fresh training finishes.
+
+This means a normal pipeline re-run (`nextflow run funannotate.nf -resume`) will
+automatically pick up any new RNA-seq reads without any manual intervention.
+
+`SRA_QUERY_BATCH` uses `publishDir` (not `storeDir`) — the SLURM job always runs,
+but the per-species cache check inside the script means only uncached species incur
+an NCBI query. `COLLECT_SRA_QUERY` also always re-merges the per-species CSV cache
+into a fresh `<stem>.rnaseq_sra.csv`, so the manifest always reflects the current
+run's species set.
 
 ---
 
 ## Required modules
 
 ```
-miniconda3, AAFTF, taxonkit   — genome cleaning (FCS-GX)
-funannotate                   — train, predict, annotate, mask
-fastp, BBTools                — RNA-seq QC and normalization
-sratoolkit, ncbi_edirect, parallel-fastq-dump  — SRA download
-signalp/6-gpu                 — GPU signal peptide prediction (for annotate)
-interproscan                  — domain annotation (for annotate)
-antismash                     — BGC prediction (for annotate)
-singularity                   — MariaDB container for PASA (if pasa_mysql=true)
+# Genome cleaning
+miniconda3, AAFTF, taxonkit
+
+# Repeat masking + prediction + annotation
+funannotate
+
+# SRA discovery (SRA_QUERY_BATCH only)
+ncbi_edirect
+
+# SRA download + normalisation (SRA_FETCH only)
+sratoolkit, parallel-fastq-dump, fastp, BBTools, workspace/scratch
+
+# Optional post-predict annotation
+signalp/6-gpu         — GPU signal peptide prediction
+interproscan          — domain annotation
+antismash             — BGC prediction
+singularity           — MariaDB container for PASA (if pasa_mysql=true)
 ```
 
 ---
@@ -215,3 +402,63 @@ singularity                   — MariaDB container for PASA (if pasa_mysql=true
 `BFD.nf` reads from that directory via its `SETUP_INPUT` step, which creates
 symlinks in `input/pep/`, `input/cds/`, `input/gff3/`, `input/dna/`, and `input/trna/`.
 Run `funannotate.nf` first, then `BFD.nf`.
+
+---
+
+## Cleanup script: checking for missing or outdated training
+
+`scripts/check_rnaseq_training.py` is a standalone audit tool that scans the project
+and reports every `genome_annotation/` folder that needs a (re-)training run.
+
+### When to use it
+
+Run it before submitting a pipeline job to get a plain-English summary of what is
+missing or stale, without actually executing anything:
+
+```bash
+python scripts/check_rnaseq_training.py --tsv
+```
+
+### What it checks
+
+For every entry in `samples.csv` that has a **non-zero**
+`rnaseq_reads/<species_tag>_norm_R1.fastq.gz` file *and* a corresponding
+`genome_annotation/<out>/` folder, the script evaluates two conditions:
+
+| Status | Meaning |
+|---|---|
+| `MISSING_TRAINING` | `genome_annotation/<out>/training/` directory does not exist — training has never run for this genome |
+| `NEW_READS` | The `training/` directory exists but the R1 file is newer than the directory — RNA-seq reads were refreshed after training last ran |
+| `OK` | Training exists and is up to date (shown only with `--report-ok`) |
+
+### How species and folder names are matched
+
+The script derives both the `<out>` folder name and the `<species_tag>` file prefix
+using the same rules as the Nextflow pipeline:
+
+The `STRAIN` field from `samples.csv` is sanitised before the name is assembled:
+
+1. Leading/trailing whitespace stripped; quotes (`'` `"`) removed.
+2. Only the first `;`-delimited token is kept (some entries list synonyms after a semicolon).
+3. **Colons (`:`) replaced with a space** — e.g. `CBS:123` → `CBS 123`.
+
+Then:
+
+- `<out>` = `{SPECIES}_{STRAIN}` with spaces → `_` and special characters
+  (`[ ] * ? { }`) → `_` (mirrors the `make_out` Groovy closure in `funannotate.nf`)
+- `<species_tag>` = `{SPECIES}` with spaces → `_`
+
+Matching is driven by `samples.csv` rather than directory-name prefix scanning, so
+species like *Aspergillus sp.* and *Aspergillus sp. 2663* — which share a common
+prefix but are distinct organisms — are never confused.
+
+### Options
+
+```
+--project-dir DIR    Project root (default: current directory)
+--tsv                Print a TSV header line before output
+--report-ok          Also print rows with status OK
+```
+
+Exit code equals the number of folders that need action (0 = nothing to do), making
+the script safe to use in shell conditionals or CI checks.
