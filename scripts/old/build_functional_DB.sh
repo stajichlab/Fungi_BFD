@@ -1,8 +1,8 @@
 #!/usr/bin/bash -l
 #SBATCH -p short --mem 64gb -c 64 -N 1 -n 1 --out logs/load_functionDB.log
 module load duckdb
-DBDIR=functionalDB
-DBNAME=function
+DBDIR=db
+DBNAME=BFD
 mkdir -p $DBDIR
 # build species table
 duckdb -c "CREATE OR REPLACE TABLE species AS SELECT * FROM read_csv_auto('samples.csv')" $DBDIR/$DBNAME.duckdb

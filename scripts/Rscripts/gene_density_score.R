@@ -11,8 +11,8 @@ library(cowplot)
 library(ggfortify)
 library(ggpubr)
 
-DBDIR="functionalDB"
-DBNAME="function.duckdb"
+DBDIR="db"
+DBNAME="BFD.duckdb"
 plotdir = "plots"
 dir.create(file.path(plotdir),showWarnings = FALSE)
 statsplotdir = file.path(plotdir,"gene_density")

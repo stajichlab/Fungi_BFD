@@ -13,7 +13,7 @@ dir.create(file.path(plotdir),showWarnings = FALSE)
 pdf(file.path(plotdir,"clusters_mmseqs.pdf"))
 
 # to use a database file already created by
-con <- dbConnect(duckdb(), dbdir="functionalDB/function.duckdb", read_only = TRUE)
+con <- dbConnect(duckdb(), dbdir="db/BFD.duckdb", read_only = TRUE)
 
 # build a temp table which has the number of non-pfam annotated genes
 cluster_create_sql = "

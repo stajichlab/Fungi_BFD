@@ -12,7 +12,7 @@ plotdir = "plots/exon_explore"
 dir.create(file.path(plotdir),showWarnings = FALSE)
 pdf(file.path(plotdir,"exon_explore.pdf"))
 # to use a database file already created by 
-con <- dbConnect(duckdb(), dbdir="functionalDB/function.duckdb", read_only = TRUE)
+con <- dbConnect(duckdb(), dbdir="db/BFD.duckdb", read_only = TRUE)
 
 exoncount_sql = "SELECT species.PHYLUM, species.SUBPHYLUM, species.GENUS, species.SPECIES, asm_stats.TOTAL_LENGTH, 
                  asm_stats.GC_PERCENT, ex.*, genec.genecount

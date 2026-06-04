@@ -13,7 +13,7 @@ dir.create(file.path(plotdir),showWarnings = FALSE)
 pdf(file.path(plotdir,"IDR_domain_misc.pdf"))
 
 # to use a database file already created by 
-con <- dbConnect(duckdb(), dbdir="functionalDB/function.duckdb", read_only = TRUE)
+con <- dbConnect(duckdb(), dbdir="db/BFD.duckdb", read_only = TRUE)
 
 asmstats_sql = "SELECT sp.SUBPHYLUM, sp.GENUS, asm_stats.*
 FROM asm_stats, species sp

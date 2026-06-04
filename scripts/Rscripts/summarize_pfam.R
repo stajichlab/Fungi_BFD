@@ -10,8 +10,8 @@ library(cowplot)
 library(ggfortify)
 library(ggpubr)
 
-DBDIR="functionalDB"
-DBNAME="function.duckdb"
+DBDIR="db"
+DBNAME="BFD.duckdb"
 outdir="reports"
 dir.create(file.path(outdir),showWarnings = FALSE)
 pfamoutdir = file.path(outdir,"pfam")
