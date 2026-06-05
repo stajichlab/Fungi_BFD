@@ -605,10 +605,10 @@ process RNASEQ_PREPARE {
     fi
 
     # ── If representative was already trained, just extract shared files ──────
-    TRAIN_GFF3="${params.target}/${out}/training/funannotate_train.pasa.gff3"
+    TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
     if [ -f "\$TRAIN_GFF3" ]; then
         echo "[INFO] Training already complete for ${out}; extracting shared files to rnaseq_data"
-        TRAINDIR="${params.target}/${out}/training"
+        TRAINDIR="${params.training_target}/${out}/training"
         TRINITY_FA=\$(find \$TRAINDIR -maxdepth 1 -name "trinity.fasta" | head -1)
         if [ -n "\$TRINITY_FA" ]; then
             cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
@@ -660,8 +660,8 @@ process RNASEQ_PREPARE {
     stub:
     """
     echo ">stub_trinity_${species_tag}" > ${species_tag}.trinity-GG.fasta
-    mkdir -p ${params.target}/${out}/training
-    touch ${params.target}/${out}/training/funannotate_train.pasa.gff3
+    mkdir -p ${params.training_target}/${out}/training
+    touch ${params.training_target}/${out}/training/funannotate_train.pasa.gff3
     """
 }
 
@@ -696,7 +696,7 @@ process FUNANNOTATE_TRAIN {
     fi
 
     # ── Skip if training output already present and rnaseq is not newer than GBK ──
-    TRAIN_GFF3="${params.target}/${out}/training/funannotate_train.pasa.gff3"
+    TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
     PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
     if [ -f "\$TRAIN_GFF3" ]; then
         RETRAIN=0
@@ -704,7 +704,7 @@ process FUNANNOTATE_TRAIN {
             # Re-train if the rnaseq R1 is newer than the existing prediction GBK.
             if [ "${r1}" -nt "\$PREDICT_GBK" ]; then
                 echo "[INFO] RNAseq reads newer than predict GBK for ${out}; retraining"
-                rm -rf "${params.target}/${out}/training"
+#                rm -rf "${params.training_target}/${out}/training"
                 RETRAIN=1
             fi
         fi
@@ -726,7 +726,7 @@ process FUNANNOTATE_TRAIN {
     pasa_db_arg="--pasa_db sqlite"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
-        MYSQL_SCRATCH=${params.target}/${out}/training/mysql_db
+        MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
         if [ ! -f \$MYSQL_SCRATCH/mysql/conf/my.cnf ]; then
             echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
             mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
@@ -779,7 +779,7 @@ process FUNANNOTATE_TRAIN {
 
     # ── Remove large intermediates not needed for predict or update ─────────────
     # Keeps: *.bam, *.bai, *.pasa.gff3, *.stringtie.gtf, *.transcripts.gff3
-    TRAINDIR="${params.target}/${out}/training"
+    TRAINDIR="${params.training_target}/${out}/training"
     echo "[INFO] Removing large training intermediates in \$TRAINDIR"
     rm -rf "\$TRAINDIR/hisat2"
     rm -rf "\$TRAINDIR/trinity_gg"
@@ -792,8 +792,8 @@ process FUNANNOTATE_TRAIN {
     stub:
     """
     echo "[STUB] FUNANNOTATE_TRAIN stub for ${out}"
-    mkdir -p ${params.target}/${out}/training
-    touch ${params.target}/${out}/training/funannotate_train.pasa.gff3
+    mkdir -p ${params.training_target}/${out}/training
+    touch ${params.training_target}/${out}/training/funannotate_train.pasa.gff3
     """
 }
 
@@ -842,8 +842,8 @@ process FUNANNOTATE_PREDICT {
 
     # Link training data into work dir so funannotate predict finds it at the relative path it expects.
     mkdir -p ${out}
-    if [ -d "${params.target}/${out}/training" ]; then
-        ln -sfn "${params.target}/${out}/training" "${out}/training"
+    if [ -d "${params.training_target}/${out}/training" ]; then
+        ln -sfn "${params.training_target}/${out}/training" "${out}/training"
     fi
 
     TBL2ASN_PARAMS="-l paired-ends"
@@ -1096,7 +1096,7 @@ process FUNANNOTATE_UPDATE {
     pasa_db_arg="--pasa_db sqlite"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
-        MYSQL_SCRATCH=${params.target}/${out}/training/mysql_db
+        MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
         if [ ! -f \$MYSQL_SCRATCH/mysql/conf/my.cnf ]; then
             echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
             mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
@@ -1125,8 +1125,8 @@ process FUNANNOTATE_UPDATE {
 
     # Link training data into work dir so funannotate update finds it at the relative path it expects.
     mkdir -p ${out}
-    if [ -d "${params.target}/${out}/training" ]; then
-        ln -sfn "${params.target}/${out}/training" "${out}/training"
+    if [ -d "${params.training_target}/${out}/training" ]; then
+        ln -sfn "${params.training_target}/${out}/training" "${out}/training"
     fi
 
     # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
@@ -1420,12 +1420,12 @@ workflow {
             // UNLESS the rnaseq R1 or trinity FASTA is newer than the existing prediction GBK
             // (staleRnaseq), in which case we re-run training so predict can be refreshed too.
             def train_todo = branched.has_rnaseq.filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
-                def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
+                def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
                 !gff3.exists() || gff3.size() == 0 || staleRnaseq(out as String, sp as String)
             }
             def train_done = branched.has_rnaseq
                 .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _tf ->
-                    def gff3 = file("${params.target}/${out}/training/funannotate_train.pasa.gff3")
+                    def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
                     gff3.exists() && gff3.size() > 0 && !staleRnaseq(out as String, sp as String)
                 }
                 .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _tf ->
