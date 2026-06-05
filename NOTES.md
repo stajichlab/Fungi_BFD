@@ -45,7 +45,6 @@ bbnorm.sh \
   out=$SCRATCH/Pseudocercospora_musae_norm_R1.fq.gz \
   out2=$SCRATCH/Pseudocercospora_musae_norm_R2.fq.gz \
   target=30 ecc=t
-
 fastp \
   --in1 $SCRATCH/Pseudocercospora_musae_norm_R1.fq.gz \
   --in2 $SCRATCH/Pseudocercospora_musae_norm_R2.fq.gz \
@@ -57,3 +56,7 @@ fastp \
   --cut_right --cut_right_window_size 4 --cut_right_mean_quality 5 \
   --length_required 25
 ```
+
+### 3. Nextflow thinks jobs moved to different queue are failed
+
+Change the request of queue out of the nextflow.conf and conf/profile_funannotate.conf for now so that restriction is not in there

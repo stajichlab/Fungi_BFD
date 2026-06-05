@@ -767,7 +767,7 @@ process FUNANNOTATE_TRAIN {
             \$pasa_db_arg
     else
         echo "[INFO] Running funannotate train (no shared Trinity) for ${out} using pre-normalized reads"
-        funannotate train -i ${genome_fa} -o ${params.target}/${out} \\
+        funannotate train -i ${genome_fa} -o ${params.training_target}/${out} \\
             --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
@@ -871,8 +871,11 @@ process FUNANNOTATE_PREDICT {
     find ${out}/predict_results/ -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
         | xargs -0 --no-run-if-empty pigz
     # Remove the training symlink so publishDir does not overwrite the real training dir.
+    # are we sure this is right thing, seems like something is still getting deleted
     rm -f "${out}/training"
+    echo "[INFO] deleted ${out}/training"
     sync
+    echo "[INFO] did the syncing"
     """
 
     stub:
