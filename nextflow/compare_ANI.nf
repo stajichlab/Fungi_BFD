@@ -30,10 +30,10 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 params.genome_dir             = "${launchDir}/input/dna"
-params.genome_suffix          = '.scaffolds.fa'   // alt: '.masked.fa' with input_clean_genomes/
+params.genome_suffix          = '.scaffolds.fa'   // alt: '.masked.fasta' with input_clean_genomes/
 // Controls how the genome filename stem is derived from samples.csv:
 //   'species' (default) → ${SPECIES}_${STRAIN}${genome_suffix}  e.g. Fusarium_oxysporum_CBS123.scaffolds.fa
-//   'asmid'             → ${ASMID}${genome_suffix}               e.g. GCF_010015735.1_Aaoar1.masked.fa
+//   'asmid'             → ${ASMID}${genome_suffix}               e.g. GCF_010015735.1_Aaoar1.masked.fasta
 params.genome_name_style      = 'species'
 params.compare                = 'GENUS'
 params.ani_cluster_threshold  = 95.0
@@ -52,7 +52,11 @@ params.fastani_kmer           = 16
 // Runs fastANI with a query list vs a reference list.
 // For un-batched groups: query == ref == all genomes in the group.
 // For batched groups:    query and ref are subset lists (batch i × batch j).
-// storeDir means: if the output TSV already exists on disk, skip this job.
+//
+// query and ref are staged into separate subdirs (stageAs) so that identical
+// files staged for both inputs don't cause a filename collision in the work dir.
+//
+// storeDir: if the output TSV already exists on disk, skip this job.
 //
 // group_size drives CPU/memory scaling (total genomes in the group, not batch size):
 //   <= 200 genomes →  8 CPUs / 16 GB
@@ -69,15 +73,18 @@ process ANI_COMPARE {
     storeDir "${params.outdir}/${params.compare}/${group_name}/batches"
 
     input:
-        tuple val(group_name), path(query_genomes), path(ref_genomes), val(batch_tag), val(group_size)
+        tuple val(group_name),
+              path(query_genomes, stageAs: 'query/*'),
+              path(ref_genomes,   stageAs: 'ref/*'),
+              val(batch_tag), val(group_size)
 
     output:
         tuple val(group_name), path("${group_name}.${batch_tag}.ani.tsv")
 
     script:
     """
-    ls ${query_genomes} > query_list.txt
-    ls ${ref_genomes}   > ref_list.txt
+    ls query/* > query_list.txt
+    ls ref/*   > ref_list.txt
     fastANI \\
         --ql query_list.txt \\
         --rl ref_list.txt \\
@@ -121,7 +128,7 @@ process MERGE_ANI_BATCHES {
 }
 
 // ── REPORT_ANI ───────────────────────────────────────────────────────────────
-// Parses the merged ANI TSV and writes a human-readable report.
+// Parses the ANI TSV and writes a human-readable report + genome names file.
 // report_ani.py is in bin/ which Nextflow adds to PATH automatically.
 
 process REPORT_ANI {
@@ -135,12 +142,14 @@ process REPORT_ANI {
 
     output:
         path("${group_name}_ANI_report.txt")
+        path("${group_name}_genome_names.tsv")
 
     script:
     """
+    cp ${names_tsv} ${group_name}_genome_names.tsv
     report_ani.py \\
         --input    ${ani_tsv} \\
-        --names    ${names_tsv} \\
+        --names    ${group_name}_genome_names.tsv \\
         --group    "${group_name}" \\
         --level    "${params.compare}" \\
         --cluster-threshold ${params.ani_cluster_threshold} \\
@@ -151,6 +160,7 @@ process REPORT_ANI {
     stub:
     """
     printf '=== ANI Report: ${group_name} (stub) ===\\n' > ${group_name}_ANI_report.txt
+    touch ${group_name}_genome_names.tsv
     """
 }
 
@@ -217,19 +227,20 @@ workflow {
             tuple(groupKey, locustag, species, genome)
         }
         .filter { item -> item != null }
-        .take(params.n_test > 0 ? params.n_test as int : -1)
 
     // ── Group by taxonomic rank ───────────────────────────────────────────────
-    // After groupTuple: tuple(group_name, [[locustag, species, genome], ...])
+    // n_test limits *groups* (applied after groupTuple so --n_test 3 = 3 groups).
     def grouped_ch = sample_ch
         .map { groupKey, locustag, species, genome ->
             tuple(groupKey, tuple(locustag, species, genome))
         }
         .groupTuple()
         .filter { _gname, members -> members.size() >= params.min_group_size as int }
+        .take(params.n_test > 0 ? params.n_test as int : -1)
 
     // ── Prepare per-group genome list and names TSV ───────────────────────────
-    // names_tsv: tab-separated filename\tspecies used by REPORT_ANI
+    // names_tsv: tab-separated filename\tspecies used by REPORT_ANI.
+    // Written to workDir by the workflow controller (head node).
     def prepared_ch = grouped_ch
         .map { group_name, members ->
             def genomes   = members.collect { m -> m[2] }
@@ -243,6 +254,15 @@ workflow {
             tuple(group_name, genomes, nameFile)
         }
 
+    // Split prepared_ch into two named sub-channels so items are not lost to
+    // competing consumers (queue channels are consumed once in Nextflow).
+    def prepared_split = prepared_ch.multiMap { group_name, genomes, nameFile ->
+        ani:   tuple(group_name, genomes)
+        names: tuple(group_name, nameFile)
+    }
+    def genome_ch = prepared_split.ani
+    def names_map = prepared_split.names
+
     // ── Route: batched vs single-job ─────────────────────────────────────────
     def batchSize = params.ani_batch_size as int
 
@@ -250,8 +270,8 @@ workflow {
 
     if (batchSize > 0) {
         // Split into upper-triangle batch pairs; carry total group size for CPU scaling
-        def batch_pairs_ch = prepared_ch
-            .flatMap { group_name, genomes, _nameFile ->
+        def batch_pairs_ch = genome_ch
+            .flatMap { group_name, genomes ->
                 def N       = genomes.size()
                 def nBatch  = (N + batchSize - 1).intdiv(batchSize)
                 def batches = (0..<nBatch).collect { i ->
@@ -266,27 +286,23 @@ workflow {
                 }
             }
 
-        def raw_ch     = ANI_COMPARE(batch_pairs_ch)
-        def names_map  = prepared_ch.map { gn, _genomes, nf -> tuple(gn, nf) }
-
-        ani_out_ch = raw_ch
+        ani_out_ch = ANI_COMPARE(batch_pairs_ch)
             .groupTuple()
             .map { gn, tsv_list -> tuple(gn, tsv_list.flatten()) }
             | MERGE_ANI_BATCHES
-            | combine(names_map, by: 0)
+            | join(names_map, by: 0)
 
     } else {
-        // Single job per group; pass total group size for CPU scaling
-        def single_ch  = prepared_ch
-            .map { group_name, genomes, _nameFile ->
+        // Single job per group; query and ref are the same genome list.
+        // stageAs 'query/*' / 'ref/*' in ANI_COMPARE prevents filename collision
+        // when the same files are staged for both inputs.
+        def single_ch = genome_ch
+            .map { group_name, genomes ->
                 tuple(group_name, genomes, genomes, "full", genomes.size())
             }
 
-        def raw_ch    = ANI_COMPARE(single_ch)
-        def names_map = prepared_ch.map { gn, _genomes, nf -> tuple(gn, nf) }
-
-        ani_out_ch = raw_ch
-            | combine(names_map, by: 0)
+        ani_out_ch = ANI_COMPARE(single_ch)
+            | join(names_map, by: 0)
     }
 
     // ── Generate reports ──────────────────────────────────────────────────────
