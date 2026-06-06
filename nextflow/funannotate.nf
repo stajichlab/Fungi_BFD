@@ -757,7 +757,7 @@ process FUNANNOTATE_TRAIN {
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
     if [ -s "${trinity_fa}" ]; then
         echo "[INFO] Running funannotate train (PASA only) for ${out} using shared Trinity from rnaseq_data"
-        funannotate train -i ${genome_fa} -o ${params.target}/${out} \\
+        funannotate train -i ${genome_fa} -o ${params.training_target}/${out} \\
             --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
