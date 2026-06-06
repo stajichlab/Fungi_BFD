@@ -1,0 +1,17 @@
+# RNASeq SRA override list
+# Controls per-accession handling in SRA_FETCH.
+#
+# NOTE: BGISEQ/MGISEQ platform accessions are auto-detected from efetch runinfo
+# and routed to the rename_headers strategy without needing an entry here.
+# Add an explicit entry only to override that auto-detection or to force skip.
+#
+# action values:
+#   skip            — exclude this accession entirely (bad library, low quality, etc.)
+#   rename_headers  — use fasterq-dump --split-3, then renumber headers with seqkit
+#                     so R1/R2 spot numbers are in sync. Auto-applied for BGISEQ
+#                     platform; list here to force on non-BGISEQ accessions with the
+#                     same issue, or to override auto-detection.
+#
+# Format: sra_accession,species_tag,taxonid,action,reason
+#SRR9937866,Amanita_pallidorosea,1324310,rename_headers,BGI/MGISEQ data - read name mismatch from parallel-fastq-dump block splitting (R1 spot 1 vs R2 spot 31257492); auto-detected via BGISEQ platform in runinfo
+sra_accession,species_tag,taxonid,action,reason
