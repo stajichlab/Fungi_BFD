@@ -207,13 +207,11 @@ workflow {
         .map { row ->
             def locustag  = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def species   = row.SPECIES?.trim() ?: ''
-            def strain    = (row.STRAIN?.trim() ?: '').split(';')[0].trim()
-                                .replace("'", '').replace(':', ' ')
+            def strain    = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replaceAll(/['"]/, '').replace(':', ' ')
             def groupKey  = row[compareRank]?.trim() ?: ''
             def stem      = nameStyle == 'asmid'
                                 ? row.ASMID?.trim()
-                                : [species, strain].findAll { s -> s }.join('_')
-                                      .replaceAll(/[\s\/\#]+/, '_')
+                                : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def genome    = file("${params.genome_dir}/${stem}${params.genome_suffix}", glob: false)
 
             if (!groupKey) {
