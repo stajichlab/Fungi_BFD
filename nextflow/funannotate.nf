@@ -552,16 +552,7 @@ process SRA_FETCH {
         NPAIRS=\$(zcat ${species_tag}_norm_R1.fastq.gz 2>/dev/null | awk 'NR%4==1' | wc -l || echo 0)
         echo "[INFO] Combined \$NPAIRS normalized read pairs for ${species_tag}"
 
-        # Append provenance manifest.
         mkdir -p "${launchDir}/rnaseq_reads"
-        MANIFEST="${launchDir}/rnaseq_reads/rnaseq_manifest.tsv"
-        if [ ! -f "\$MANIFEST" ]; then
-            printf "species_tag\ttaxonid\taccessions\ttimestamp\n" > "\$MANIFEST"
-        fi
-        printf "%s\t%s\t%s\t%s\n" \
-            "${species_tag}" "\$TAXONID" \
-            "\$(echo \$ACCESSIONS | tr '[:space:]' ',' | sed 's/,\$//')" \
-            "\$(date -Iseconds)" >> "\$MANIFEST"
     fi
     """
 
@@ -839,6 +830,25 @@ process FUNANNOTATE_PREDICT {
         echo "[DEBUG] TMPDIR       = \$TMPDIR"
         echo "[DEBUG] pwd          = \$(pwd)"
     fi
+
+    # ── Skip if prediction already complete (e.g. orchestrator restarted after SLURM job finished) ──
+    PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
+    if [ -f "\$PREDICT_GBK" ] && [ -s "\$PREDICT_GBK" ]; then
+        echo "[INFO] Prediction already complete for ${out}, syncing to work dir"
+        mkdir -p ${out}
+        rsync -a --exclude 'training' "${params.target}/${out}/" "${out}/"
+        exit 0
+    fi
+
+    # ── Restore any partial state from a previous failed attempt ──────────────
+    if [ -d "${params.target}/${out}/predict_results" ]; then
+        echo "[INFO] Restoring partial predict state from ${params.target}/${out}"
+        mkdir -p ${out}
+        rsync -a --exclude 'training' "${params.target}/${out}/" "${out}/"
+    fi
+
+    # ── Persist results to target even if orchestrator dies before publishDir ──
+    trap 'if [ -d "${out}" ]; then mkdir -p "${params.target}/${out}" && rsync -a --exclude "training" "${out}/" "${params.target}/${out}/" 2>/dev/null || true; fi' EXIT
 
     # Link training data into work dir so funannotate predict finds it at the relative path it expects.
     mkdir -p ${out}
@@ -1215,10 +1225,9 @@ workflow {
         .filter(taxonFilter)
         .filter(asmidFilter)
         .map { row ->
-            def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
-            def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
-            strain = strain.replaceAll(/;.*$/, '').trim().replace(':', ' ')
-            def out           = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_').replaceAll(/[\[\]\*\?\{\}]/, '_')
+            def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
+            def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
+            def out           = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def asmid         = row.ASMID?.trim()
             def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def busco         = row.BUSCO_LINEAGE?.trim()
@@ -1462,10 +1471,9 @@ workflow {
             .filter(taxonFilter)
             .filter(asmidFilter)
             .map { row ->
-                def species       = row.SPECIES?.trim()?.replaceAll(/['"]/, '')
-                def strain        = row.STRAIN?.trim()?.replaceAll(/['"]/, '')
-                strain = strain.replaceAll(/;.*$/, '').trim().replace(':', ' ')
-                def out           = [species, strain].findAll { it }.join('_').replaceAll(/\s+/, '_').replaceAll(/[\[\]\*\?\{\}]/, '_')
+                def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
+                def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
+                def out           = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
                 def asmid         = row.ASMID?.trim()
                 def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
                 def busco         = row.BUSCO_LINEAGE?.trim()

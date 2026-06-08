@@ -549,16 +549,16 @@ process BATCH_AA_FREQ {
     publishDir "${params.genome_stats_outdir}/aa_freq", mode: 'copy'
 
     input:
-    tuple val(locustags), path(prots)
+    tuple val(locustags), val(basenames), path(prots)
 
     output:
     path "*.aa_freq.csv.gz", emit: csv
 
     script:
-    def tagList  = locustags instanceof List ? locustags : [locustags]
+    def baseList = basenames instanceof List ? basenames : [basenames]
     def protList = prots     instanceof List ? prots     : [prots]
-    def cmds = [tagList, protList].transpose().collect { tag, prot ->
-        "python3 ${params.scripts}/calculate_AA_freq.py ${prot.name} -o ${tag}.aa_freq.csv.gz"
+    def cmds = [baseList, protList].transpose().collect { basename, prot ->
+        "python3 ${params.scripts}/calculate_AA_freq.py ${prot.name} -o ${basename}.aa_freq.csv.gz"
     }.join('\n')
     """
     module load biopython
@@ -566,9 +566,9 @@ process BATCH_AA_FREQ {
     """
 
     stub:
-    def tagList = locustags instanceof List ? locustags : [locustags]
+    def baseList = basenames instanceof List ? basenames : [basenames]
     """
-    ${ tagList.collect { "printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${it}.aa_freq.csv.gz" }.join('\n') }
+    ${ baseList.collect { "printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${it}.aa_freq.csv.gz" }.join('\n') }
     """
 }
 
@@ -607,16 +607,16 @@ process BATCH_CODON_FREQ {
     publishDir "${params.genome_stats_outdir}/codon_freq", mode: 'copy'
 
     input:
-    tuple val(locustags), path(prots)
+    tuple val(locustags), val(basenames), path(prots)
 
     output:
     path "*.codon_freq.csv.gz", emit: csv
 
     script:
-    def tagList  = locustags instanceof List ? locustags : [locustags]
+    def baseList = basenames instanceof List ? basenames : [basenames]
     def protList = prots     instanceof List ? prots     : [prots]
-    def cmds = [tagList, protList].transpose().collect { tag, prot ->
-        "python3 ${params.scripts}/calculate_codon_freq.py ${prot.name} -o ${tag}.codon_freq.csv.gz"
+    def cmds = [baseList, protList].transpose().collect { basename, prot ->
+        "python3 ${params.scripts}/calculate_codon_freq.py ${prot.name} -o ${basename}.codon_freq.csv.gz"
     }.join('\n')
     """
     module load biopython
@@ -624,9 +624,9 @@ process BATCH_CODON_FREQ {
     """
 
     stub:
-    def tagList = locustags instanceof List ? locustags : [locustags]
+    def baseList = basenames instanceof List ? basenames : [basenames]
     """
-    ${ tagList.collect { "printf 'species_prefix,codon,frequency\\n' | gzip > ${it}.codon_freq.csv.gz" }.join('\n') }
+    ${ baseList.collect { "printf 'species_prefix,codon,frequency\\n' | gzip > ${it}.codon_freq.csv.gz" }.join('\n') }
     """
 }
 
@@ -666,10 +666,10 @@ process CALC_INTERGENIC {
     storeDir "${params.genome_stats_outdir}/intergenic_stats"
 
     input:
-    tuple val(locustag), path(gff_file)
+    tuple val(locustag), val(basename), path(gff_file)
 
     output:
-    path "${locustag}.gene_intergenic_distances.csv.gz", emit: csv
+    path "${basename}.gene_intergenic_distances.csv.gz", emit: csv
 
     script:
     """
@@ -677,12 +677,12 @@ process CALC_INTERGENIC {
     python3 ${params.scripts}/calculate_intergenic.py \\
         ${gff_file} -o .
     pigz gene_pairwise_distances.csv
-    mv gene_pairwise_distances.csv.gz ${locustag}.gene_intergenic_distances.csv.gz
+    mv gene_pairwise_distances.csv.gz ${basename}.gene_intergenic_distances.csv.gz
     """
 
     stub:
     """
-    printf 'species_prefix,left_gene,right_gene,distance\\n' | gzip > ${locustag}.gene_intergenic_distances.csv.gz
+    printf 'species_prefix,left_gene,right_gene,distance\\n' | gzip > ${basename}.gene_intergenic_distances.csv.gz
     """
 }
 
@@ -722,16 +722,16 @@ process CALC_GENE_STATS {
     storeDir "${params.genome_stats_outdir}/gene_stats"
 
     input:
-    tuple val(locustag), path(gff_file), path(dna_file)
+    tuple val(locustag), val(basename), path(gff_file), path(dna_file)
 
     output:
-    path "${locustag}.gene_info.csv.gz",        emit: gene_info
-    path "${locustag}.gene_exons.csv.gz",       emit: gene_exons
-    path "${locustag}.gene_CDS.csv.gz",         emit: gene_CDS
-    path "${locustag}.gene_introns.csv.gz",     emit: gene_introns
-    path "${locustag}.gene_transcripts.csv.gz", emit: gene_transcripts
-    path "${locustag}.gene_trnas.csv.gz",       emit: gene_trnas
-    path "${locustag}.gene_proteins.csv.gz",    emit: gene_proteins
+    path "${basename}.gene_info.csv.gz",        emit: gene_info
+    path "${basename}.gene_exons.csv.gz",       emit: gene_exons
+    path "${basename}.gene_CDS.csv.gz",         emit: gene_CDS
+    path "${basename}.gene_introns.csv.gz",     emit: gene_introns
+    path "${basename}.gene_transcripts.csv.gz", emit: gene_transcripts
+    path "${basename}.gene_trnas.csv.gz",       emit: gene_trnas
+    path "${basename}.gene_proteins.csv.gz",    emit: gene_proteins
 
     script:
     """
@@ -744,14 +744,14 @@ process CALC_GENE_STATS {
     pigz gene_info.csv gene_exons.csv gene_CDS.csv gene_introns.csv \\
          gene_transcripts.csv gene_trnas.csv gene_proteins.csv
     for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
-        mv \${f}.csv.gz ${locustag}.\${f}.csv.gz
+        mv \${f}.csv.gz ${basename}.\${f}.csv.gz
     done
     """
 
     stub:
     """
     for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
-        printf 'id\\n' | gzip > ${locustag}.\${f}.csv.gz
+        printf 'id\\n' | gzip > ${basename}.\${f}.csv.gz
     done
     """
 }
@@ -795,6 +795,88 @@ process MERGE_GENE_STATS {
     """
 }
 
+// ── BUSCO (genome) ────────────────────────────────────────────────────────────
+// Runs BUSCO in genome mode.  storeDir caches per species+lineage so switching
+// to a finer-grained lineage (e.g. ascomycota_odb12) produces a distinct file
+// without invalidating results from fungi_odb12.
+process BUSCO_GENOME {
+    tag        "${locustag}"
+    label      'busco_genome'
+    storeDir   "${params.genome_stats_outdir}/BUSCO_genome"
+
+    input:
+        tuple val(locustag), val(basename), val(lineage), path(genome)
+
+    output:
+        path("${basename}.BUSCO_summary.${lineage}.txt"), emit: summary
+
+    script:
+    """
+    module load busco
+    export BUSCO_LINEAGES=/srv/projects/db/BUSCO/v12/
+    RUNDIR="${basename}_busco_genome"
+    busco -i ${genome} \\
+          -l ${lineage} \\
+          -m genome \\
+          -o \$RUNDIR \\
+          -c ${task.cpus} \\
+          --offline --download_path \$BUSCO_LINEAGES
+    SUMMARY=\$(ls \${RUNDIR}/short_summary.specific.*.txt 2>/dev/null | head -1)
+    [ -z "\$SUMMARY" ] && SUMMARY=\$(ls \${RUNDIR}/short_summary*.txt 2>/dev/null | head -1)
+    if [ -z "\$SUMMARY" ]; then
+        echo "[ERROR] BUSCO genome: no short_summary file found for ${basename}" >&2
+        exit 1
+    fi
+    cp "\$SUMMARY" "${basename}.BUSCO_summary.${lineage}.txt"
+    """
+
+    stub:
+    """
+    printf '# BUSCO version: 5.x\\n# The lineage dataset is: ${lineage}\\n\\tC:99.0%%[S:98.0%%,D:1.0%%],F:0.5%%,M:0.5%%,n:758\\n' \\
+        > "${basename}.BUSCO_summary.${lineage}.txt"
+    """
+}
+
+// ── BUSCO (proteins) ──────────────────────────────────────────────────────────
+// Runs BUSCO in proteins mode.  Same storeDir/lineage caching logic as BUSCO_GENOME.
+process BUSCO_PEP {
+    tag        "${locustag}"
+    label      'busco_pep'
+    storeDir   "${params.genome_stats_outdir}/BUSCO_protein"
+
+    input:
+        tuple val(locustag), val(basename), val(lineage), path(proteins)
+
+    output:
+        path("${basename}.BUSCO_summary.${lineage}.txt"), emit: summary
+
+    script:
+    """
+    module load busco
+    export BUSCO_LINEAGES=/srv/projects/db/BUSCO/v12/
+    RUNDIR="${basename}_busco_pep"
+    busco -i ${proteins} \\
+          -l ${lineage} \\
+          -m proteins \\
+          -o \$RUNDIR \\
+          -c ${task.cpus} \\
+          --offline --download_path \$BUSCO_LINEAGES
+    SUMMARY=\$(ls \${RUNDIR}/short_summary.specific.*.txt 2>/dev/null | head -1)
+    [ -z "\$SUMMARY" ] && SUMMARY=\$(ls \${RUNDIR}/short_summary*.txt 2>/dev/null | head -1)
+    if [ -z "\$SUMMARY" ]; then
+        echo "[ERROR] BUSCO proteins: no short_summary file found for ${basename}" >&2
+        exit 1
+    fi
+    cp "\$SUMMARY" "${basename}.BUSCO_summary.${lineage}.txt"
+    """
+
+    stub:
+    """
+    printf '# BUSCO version: 5.x\\n# The lineage dataset is: ${lineage}\\n\\tC:98.0%%[S:97.0%%,D:1.0%%],F:1.0%%,M:1.0%%,n:758\\n' \\
+        > "${basename}.BUSCO_summary.${lineage}.txt"
+    """
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // INPUT SETUP (symlinks from genome_annotation → input/)
 // ════════════════════════════════════════════════════════════════════════════
@@ -807,10 +889,11 @@ workflow SETUP_INPUT {
             .map { locustag, basename, species, strain -> "${locustag}\t${basename}" }
             .collectFile(name: 'setup_rows.tsv', newLine: true)
         SETUP_SYMLINKS(rows_file)
-        // Re-emit original rows gated by process completion
-        done_ch = SETUP_SYMLINKS.out.done
+        // Re-emit original rows gated by process completion.
+        // manifest is a real file so -resume re-runs when the species set changes.
+        done_ch = SETUP_SYMLINKS.out.manifest
             .combine(ch)
-            .map { _flag, locustag, basename, species, strain ->
+            .map { _manifest, locustag, basename, species, strain ->
                 tuple(locustag, basename, species, strain)
             }
     emit:
@@ -824,7 +907,9 @@ process SETUP_SYMLINKS {
         path(rows_file)
 
     output:
-        val(true), emit: done
+        // Real file output so -resume cache invalidates when the species set changes.
+        // val(true) alone is always identical and causes -resume to skip the script.
+        path("symlink_manifest.txt"), emit: manifest
 
     script:
     """
@@ -845,6 +930,7 @@ process SETUP_SYMLINKS {
         fi
     }
 
+    : > symlink_manifest.txt
     while IFS=\$'\\t' read -r locustag basename; do
         src="${params.genome_annotation}/\${basename}/predict_results"
         misc="${params.genome_annotation}/\${basename}/predict_misc"
@@ -853,7 +939,6 @@ process SETUP_SYMLINKS {
             echo "[WARN] predict_results not found for \${basename}: \$src" >&2
             continue
         fi
-	echo "symlinking from \$src/\${basename}.proteins.fa"
         make_link "\$src/\${basename}.proteins.fa"        "${params.pep_dir}/\${basename}.proteins.fa"
         make_link "\$src/\${basename}.cds-transcripts.fa" "${params.cds_dir}/\${basename}.cds-transcripts.fa"
         make_link "\$src/\${basename}.gff3"               "${params.gff_dir}/\${basename}.gff3"
@@ -864,12 +949,15 @@ process SETUP_SYMLINKS {
         else
             echo "[INFO] no trnascan GFF3 for \${basename}, skipping trna symlink"
         fi
+        echo "\${locustag}\t\${basename}" >> symlink_manifest.txt
     done < ${rows_file}
+    echo "[INFO] SETUP_SYMLINKS: \$(wc -l < symlink_manifest.txt | tr -d ' ') species linked"
     """
 
     stub:
     """
-    echo "[STUB] SETUP_SYMLINKS: \$(wc -l < ${rows_file}) species"
+    awk '{print \$1"\\t"\$2}' ${rows_file} > symlink_manifest.txt
+    echo "[STUB] SETUP_SYMLINKS: \$(wc -l < symlink_manifest.txt | tr -d ' ') species"
     """
 }
 
@@ -945,9 +1033,9 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '').replace(':', ' ')
+            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replaceAll(/['"]/, '').replace(':', ' ')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
+            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(locustag, basename, species, strain)
         }
         .take(params.n_test > 0 ? params.n_test as int : -1)
@@ -976,23 +1064,37 @@ workflow {
     // ── Per-genome statistics input channels ───────────────────────────────────
     aa_freq_ch = ready_ch.map { locustag, basename, species, strain ->
         def f = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
-        f.exists() ? tuple(locustag, f) : null
+        f.exists() ? tuple(locustag, basename, f) : null
     }.filter { it != null }
 
     codon_freq_ch = ready_ch.map { locustag, basename, species, strain ->
         def f = file("${params.cds_dir}/${basename}.cds-transcripts.fa", glob: false)
-        f.exists() ? tuple(locustag, f) : null
+        f.exists() ? tuple(locustag, basename, f) : null
     }.filter { it != null }
 
     intergenic_ch = ready_ch.map { locustag, basename, species, strain ->
         def f = file("${params.gff_dir}/${basename}.gff3", glob: false)
-        f.exists() ? tuple(locustag, f) : null
+        f.exists() ? tuple(locustag, basename, f) : null
     }.filter { it != null }
 
     gene_stats_ch = ready_ch.map { locustag, basename, species, strain ->
         def gff = file("${params.gff_dir}/${basename}.gff3", glob: false)
         def dna = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
-        (gff.exists() && dna.exists()) ? tuple(locustag, gff, dna) : null
+        (gff.exists() && dna.exists()) ? tuple(locustag, basename, gff, dna) : null
+    }.filter { it != null }
+
+    // ── BUSCO input channels ───────────────────────────────────────────────────
+    // lineage: use params.busco_lineage (default fungi_odb12) globally.
+    // The val(lineage) slot in each process input is kept explicit so per-clade
+    // overrides can be wired in here later (e.g. from row.BUSCO_LINEAGE).
+    busco_genome_ch = ready_ch.map { locustag, basename, species, strain ->
+        def f = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
+        f.exists() ? tuple(locustag, basename, params.busco_lineage, f) : null
+    }.filter { it != null }
+
+    busco_pep_ch = ready_ch.map { locustag, basename, species, strain ->
+        def f = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
+        f.exists() ? tuple(locustag, basename, params.busco_lineage, f) : null
     }.filter { it != null }
 
     // ── Per-species RUN steps ──────────────────────────────────────────────────
@@ -1201,30 +1303,46 @@ workflow {
     // collated into batches of freq_batch_size to amortise job-startup overhead.
     if (params.run_aa_freq.toBoolean()) {
         def aa_batch_ch = aa_freq_ch
-            .map { locustag, prot ->
-                clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")])
-                file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz").exists()
-                    ? null : tuple(locustag, prot)
+            .map { locustag, basename, prot ->
+                clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz")])
+                file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz").exists()
+                    ? null : tuple(locustag, basename, prot)
             }
             .filter { it != null }
             .buffer(size: params.freq_batch_size as int, remainder: true)
-            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
         BATCH_AA_FREQ(aa_batch_ch)
     }
     if (params.run_codon_freq.toBoolean()) {
         def codon_batch_ch = codon_freq_ch
-            .map { locustag, prot ->
-                clearIfStale(prot, [file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz")])
-                file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz").exists()
-                    ? null : tuple(locustag, prot)
+            .map { locustag, basename, prot ->
+                clearIfStale(prot, [file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz")])
+                file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz").exists()
+                    ? null : tuple(locustag, basename, prot)
             }
             .filter { it != null }
             .buffer(size: params.freq_batch_size as int, remainder: true)
-            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
+            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
         BATCH_CODON_FREQ(codon_batch_ch)
     }
     if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
     if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
+
+    if (params.run_busco_genome.toBoolean())
+        BUSCO_GENOME(busco_genome_ch.map { locustag, basename, lineage, genome ->
+            clearIfStale(genome, [
+                file("${params.genome_stats_outdir}/BUSCO_genome/${basename}.BUSCO_summary.${lineage}.txt")
+            ])
+            tuple(locustag, basename, lineage, genome)
+        })
+
+    if (params.run_busco_pep.toBoolean())
+        BUSCO_PEP(busco_pep_ch.map { locustag, basename, lineage, prot ->
+            clearIfStale(prot, [
+                file("${params.genome_stats_outdir}/BUSCO_protein/${basename}.BUSCO_summary.${lineage}.txt")
+            ])
+            tuple(locustag, basename, lineage, prot)
+        })
 
     if (!params.skip_merge.toBoolean()) {
         if (use_glob) {
@@ -1264,8 +1382,8 @@ workflow {
             // gated on batch completion so newly-published files are visible.
             if (params.run_aa_freq.toBoolean()) {
                 def aa_sync    = BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([])
-                def aa_paths   = aa_freq_ch.map { locustag, _ignored ->
-                    file("${params.genome_stats_outdir}/aa_freq/${locustag}.aa_freq.csv.gz")
+                def aa_paths   = aa_freq_ch.map { locustag, basename, _ignored ->
+                    file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz")
                 }.collect()
                 MERGE_AA_FREQ(
                     aa_sync.combine(aa_paths)
@@ -1275,8 +1393,8 @@ workflow {
             }
             if (params.run_codon_freq.toBoolean()) {
                 def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([])
-                def codon_paths = codon_freq_ch.map { locustag, _ignored ->
-                    file("${params.genome_stats_outdir}/codon_freq/${locustag}.codon_freq.csv.gz")
+                def codon_paths = codon_freq_ch.map { locustag, basename, _ignored ->
+                    file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz")
                 }.collect()
                 MERGE_CODON_FREQ(
                     codon_sync.combine(codon_paths)

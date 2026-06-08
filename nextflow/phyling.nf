@@ -214,9 +214,9 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replace("'", '').replace(':', ' ')
+            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replaceAll(/['"]/, '').replace(':', ' ')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def basename = [species, strain].findAll { it }.join('_').replaceAll(/[\s\/\#]+/, '_')
+            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def fasta    = file("${input_dir}/${basename}${suffix}", glob: false)
             if (!fasta.exists()) {
                 log.warn "PHYling: skipping ${basename} (${locustag}): ${basename}${suffix} not found"
