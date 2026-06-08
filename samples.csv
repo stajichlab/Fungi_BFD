@@ -20064,8 +20064,7 @@ GCA_001599835.1_JCM_12817_assembly_v001,Thermoascus crustaceus,JCM 12817,PRJDB35
 GCA_041956715.1_Theth1,Thermoascus thermophilus,ATCC 26413,PRJNA1064961,1131473,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Thermoascaceae,Thermoascus,Thermoascus thermophilus,1,F3B8190C
 GCA_041956725.1_Thiau1,Thermocarpiscus australiensis,ATCC 28236,PRJNA1064950,113626,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Chaetomiaceae,Thermocarpiscus,Thermocarpiscus australiensis,1,F4A33759
 GCA_011800035.1_IMB_SAS_Cthedis_SODCAT_2020,Thermochaetoides dissita,CBS 180.67,PRJNA595853,2588329,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Chaetomiaceae,Thermochaetoides,Thermochaetoides dissita,1,FB098397
-GCA_911303055.1_CTHT4,Thermochaetoides thermophila DSM 1495,,PRJEB46383,759272,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Chaetomiaceae,Thermochaetoides,Thermochaetoides thermophila,1,FE7811B5
-GCF_000221225.1_CTHT_3.0,Thermochaetoides thermophila DSM 1495,DSM 1495,PRJNA47065,759272,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Chaetomiaceae,Thermochaetoides,Thermochaetoides thermophila,1,F3005BBD
+GCA_911303055.1_CTHT4,Thermochaetoides thermophila DSM 1495,DSM 1495,PRJEB46383,759272,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Chaetomiaceae,Thermochaetoides,Thermochaetoides thermophila,1,FE7811B5
 GCA_000787465.1_ASM78746v1,Thermomucor indicae-seudaticae,HACC 243,PRJNA261109,101121,mucoromycota,Mucoromycota,,Mucoromycetes,,Mucorales,Lichtheimiaceae,Thermomucor,Thermomucor indicae-seudaticae,1,FBAB06C3
 GCF_041956625.1_Talth1,Thermomyces dupontii,NRRL 2155,PRJNA1064962,28565,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Thermomyces,Thermomyces dupontii,1,FA456A6E
 GCF_041956635.1_Thela1,Thermomyces lanuginosus,ATCC 200065,PRJNA1064963,5541,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Thermomyces,Thermomyces lanuginosus,1,F4C68BB8
