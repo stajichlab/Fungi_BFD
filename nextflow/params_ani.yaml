@@ -1,0 +1,51 @@
+# params_ani.yaml — Example parameters for compare_ANI workflow
+# Pass to nextflow with:  -params-file nextflow/params_ani.yaml
+#
+# All values shown are defaults; comment out or delete lines you don't need to override.
+
+samples:    "samples.csv"
+
+# Genome input — two naming styles are supported:
+#
+#   style 'species' (default): stem = SPECIES_STRAIN from samples.csv
+#     genome_dir:    "input/dna"
+#     genome_suffix: ".scaffolds.fa"
+#     → resolves to e.g. input/dna/Fusarium_oxysporum_CBS123.scaffolds.fa
+#
+#   style 'asmid': stem = ASMID column from samples.csv (funannotate/BLD convention)
+#     genome_dir:    "input_clean_genomes"
+#     genome_suffix: ".masked.fasta"
+#     → resolves to e.g. input_clean_genomes/GCF_010015735.1_Aaoar1.masked.fasta
+#
+genome_name_style: "species"
+genome_dir:        "input/dna"
+genome_suffix:     ".scaffolds.fa"
+
+# Taxonomic level to group genomes for comparison.
+# Options: PHYLUM, SUBPHYLUM, CLASS, SUBCLASS, ORDER, FAMILY, GENUS
+compare: "GENUS"
+
+# Restrict to a taxonomic subset before grouping.
+# Format: RANK:VALUE  (e.g. "PHYLUM:Ascomycota", "CLASS:Sordariomycetes")
+# Leave empty string to process all taxa.
+taxon: ""
+
+# ANI thresholds
+ani_cluster_threshold: 95.0   # genomes with ANI >= this are placed in the same cluster
+ani_outlier_threshold: 90.0   # genomes with best ANI < this are flagged as outliers
+
+# Skip groups with fewer than this many genomes
+min_group_size: 2
+
+# Batching: split large groups into chunks of this size (0 = disabled; use threads instead)
+ani_batch_size: 0
+
+# Output directory (relative to launch directory)
+outdir: "results/ANI"
+
+# fastANI settings
+fastani_fraglen: 3000
+fastani_kmer: 16
+
+# Limit groups processed (for testing; 0 = all)
+n_test: 0
