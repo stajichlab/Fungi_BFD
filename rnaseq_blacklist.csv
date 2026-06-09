@@ -13,5 +13,13 @@
 #                     same issue, or to override auto-detection.
 #
 # Format: sra_accession,species_tag,taxonid,action,reason
-#SRR9937866,Amanita_pallidorosea,1324310,rename_headers,BGI/MGISEQ data - read name mismatch from parallel-fastq-dump block splitting (R1 spot 1 vs R2 spot 31257492); auto-detected via BGISEQ platform in runinfo
-sra_accession,species_tag,taxonid,action,reason
+SRR8919655,Sporisorium_graminicola,280036,skip,not paired
+SRR8919648,Sporisorium_graminicola,280036,skip,not paired
+SRR8919643,Sporisorium_graminicola,280036,skip,not paired
+SRR8919649,Sporisorium_graminicola,280036,skip,not paired
+SRR8919646,Sporisorium_graminicola,280036,skip,not paired
+SRR12496020,Malassezia_globosa,76773,skip,not paired
+SRR12496022,Malassezia_globosa,76773,skip,not paired
+SRR12496028,Malassezia_globosa,76773,skip,not paired
+SRR12496033,Malassezia_globosa,76773,skip,not paired
+SRR12496021,Malassezia_globosa,76773,skip,not paired
