@@ -1,25 +1,57 @@
 #!/usr/bin/bash -l
-#SBATCH -p short --mem 64gb -c 16 -N 1 -n 1 --out logs/build_duckdb.log
+#SBATCH -p short --mem 64gb -c 16 -N 1 -n 1 --out logs/build_duckdb.%j.log
+
+# Build a BFD DuckDB from one taxon subset folder under tables/.
+#
+# Usage:
+#   sbatch scripts/build_BFD_duckDB.sh [SUBSET]
+#   bash   scripts/build_BFD_duckDB.sh [SUBSET]
+#
+# SUBSET names a folder inside tables/ (default: All_Taxa). Each folder holds a
+# self-contained set of the gzipped source tables for that taxonomic slice, so
+# building 'Cryptococcus' reads tables/Cryptococcus/*.csv.gz and so on. The
+# subset name is embedded in the output filename: db/BFD.<SUBSET>.duckdb
+#
+# Examples:
+#   sbatch scripts/build_BFD_duckDB.sh                # -> db/BFD.All_Taxa.duckdb
+#   sbatch scripts/build_BFD_duckDB.sh Cryptococcus   # -> db/BFD.Cryptococcus.duckdb
+
+set -euo pipefail
 
 module load duckdb
 
 TABLES=tables
 DBDIR=db
 DBNAME=BFD
-mkdir -p $DBDIR
+
+# Subset folder: first positional arg, or $SUBSET env var, or All_Taxa default.
+SUBSET="${1:-${SUBSET:-All_Taxa}}"
+SRC="$TABLES/$SUBSET"
+
+if [ ! -d "$SRC" ]; then
+    echo "ERROR: subset folder '$SRC' does not exist." >&2
+    echo "Available subsets:" >&2
+    ls -1 "$TABLES" 2>/dev/null | sed 's/^/  - /' >&2
+    exit 1
+fi
+
+mkdir -p "$DBDIR"
 mkdir -p logs
 
-DB=$DBDIR/$DBNAME.duckdb
+DB="$DBDIR/$DBNAME.$SUBSET.duckdb"
 # Remove existing DB to allow clean rebuild
-rm -f $DB
+rm -f "$DB"
+
+echo "Building $DB from $SRC"
 
 # ─── species ──────────────────────────────────────────────────────────────────
 duckdb -c "
-CREATE TABLE species AS SELECT * FROM read_csv_auto('$TABLES/species.csv.gz');
+CREATE TABLE species AS SELECT * FROM read_csv_auto('$SRC/species.csv.gz');
 CREATE UNIQUE INDEX idx_species_locustag ON species(LOCUSTAG);
 CREATE UNIQUE INDEX idx_species_asm      ON species(ASMID);
-CREATE UNIQUE INDEX idx_species_taxonomy ON species(PHYLUM, CLASS, "ORDER", FAMILY, GENUS);
-" $DB
+-- Non-unique: a genus-level taxonomy tuple is shared by multiple species.
+CREATE INDEX idx_species_taxonomy ON species(PHYLUM, CLASS, \"ORDER\", FAMILY, GENUS);
+" "$DB"
 
 # ─── asm_stats ────────────────────────────────────────────────────────────────
 # Source TSV has ASMID/gc_pct/total_length_bp; we join to species for LOCUSTAG
@@ -44,170 +76,170 @@ SELECT
     a.t2t_scaffolds,
     a.telomere_fwd,
     a.telomere_rev
-FROM read_csv('$TABLES/asm_stats.tsv.gz', delim='\t') AS a
+FROM read_csv('$SRC/asm_stats.tsv.gz', delim='\t') AS a
 JOIN species AS sp USING(ASMID);
 CREATE UNIQUE INDEX idx_asm_locustag ON asm_stats(LOCUSTAG);
 CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
-" $DB
+" "$DB"
 
 # ─── gene tables ──────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE gene_info AS
-SELECT * FROM read_csv_auto('$TABLES/gene_info.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/gene_info.csv.gz');
 CREATE UNIQUE INDEX idx_gene_info_gene_id  ON gene_info(gene_id);
 CREATE        INDEX idx_gene_info_locustag ON gene_info(LOCUSTAG);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_proteins AS
 SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_proteins.csv.gz');
+FROM read_csv_auto('$SRC/gene_proteins.csv.gz');
 CREATE UNIQUE INDEX idx_gene_prot_protein_id  ON gene_proteins(protein_id);
 CREATE        INDEX idx_gene_prot_locustag    ON gene_proteins(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_transcripts AS
 SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_transcripts.csv.gz');
+FROM read_csv_auto('$SRC/gene_transcripts.csv.gz');
 CREATE UNIQUE INDEX idx_tx_transcript_id ON gene_transcripts(transcript_id);
 CREATE        INDEX idx_tx_locustag      ON gene_transcripts(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_exons AS
 SELECT *, string_split(exon_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_exons.csv.gz');
+FROM read_csv_auto('$SRC/gene_exons.csv.gz');
 CREATE UNIQUE INDEX idx_exon_exon_id  ON gene_exons(exon_id);
 CREATE        INDEX idx_exon_locustag ON gene_exons(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_CDS AS
 SELECT *, string_split(cds_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_CDS.csv.gz');
+FROM read_csv_auto('$SRC/gene_CDS.csv.gz');
 CREATE UNIQUE INDEX idx_cds_cds_id   ON gene_CDS(cds_id);
 CREATE        INDEX idx_cds_locustag ON gene_CDS(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_introns AS
 SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_introns.csv.gz');
+FROM read_csv_auto('$SRC/gene_introns.csv.gz');
 CREATE UNIQUE INDEX idx_intron_intron_id  ON gene_introns(intron_id);
 CREATE        INDEX idx_intron_locustag   ON gene_introns(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE gene_trna AS
 SELECT *, string_split(gene_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/gene_trnas.csv.gz');
+FROM read_csv_auto('$SRC/gene_trnas.csv.gz');
 CREATE UNIQUE INDEX idx_trna_gene_id  ON gene_trna(gene_id);
 CREATE        INDEX idx_trna_locustag ON gene_trna(species_prefix);
-" $DB
+" "$DB"
 
-# intergenic distances (38M rows — only species_prefix index)
+# intergenic distances (large — only species_prefix index)
 duckdb -c "
 CREATE TABLE gene_intergenic_distances AS
-SELECT * FROM read_csv_auto('$TABLES/All_Taxa/gene_intergenic_distances.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/gene_intergenic_distances.csv.gz');
 CREATE INDEX idx_intergenic_locustag ON gene_intergenic_distances(species_prefix);
-" $DB
+" "$DB"
 
 # ─── functional annotation ────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE pfam AS
 SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$TABLES/pfam.csv.gz');
+FROM read_csv_auto('$SRC/pfam.csv.gz');
 CREATE UNIQUE INDEX idx_pfam_domain_hit    ON pfam(protein_id, pfam_id, domain_num);
 CREATE        INDEX idx_pfam_locustag      ON pfam(species_prefix);
 CREATE        INDEX idx_pfam_pfam_id       ON pfam(pfam_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE cazy AS
-SELECT * FROM read_csv_auto('$TABLES/cazy.cazymes_hmm.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/cazy.cazymes_hmm.csv.gz');
 CREATE UNIQUE INDEX idx_cazy_hit        ON cazy(protein_id, HMM_id, s_start);
 CREATE        INDEX idx_cazy_locustag   ON cazy(species_prefix);
 CREATE        INDEX idx_cazy_hmm_id     ON cazy(HMM_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE cazy_overview AS
-SELECT * FROM read_csv_auto('$TABLES/cazy.overview.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/cazy.overview.csv.gz');
 CREATE UNIQUE INDEX idx_cazyov_protein_id ON cazy_overview(protein_id);
 CREATE        INDEX idx_cazyov_locustag   ON cazy_overview(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE merops AS
-SELECT * FROM read_csv_auto('$TABLES/merops.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/merops.csv.gz');
 CREATE        INDEX idx_merops_locustag  ON merops(species_prefix);
 CREATE        INDEX idx_merops_merops_id ON merops(merops_id);
-" $DB
+" "$DB"
 
 # ─── subcellular localisation / secretome ─────────────────────────────────────
 duckdb -c "
 CREATE TABLE signalp AS
-SELECT * FROM read_csv_auto('$TABLES/signalp.signal_peptide.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/signalp.signal_peptide.csv.gz');
 CREATE INDEX idx_signalp_locustag  ON signalp(species_prefix);
 CREATE INDEX idx_signalp_protein   ON signalp(protein_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE targetp AS
-SELECT * FROM read_csv_auto('$TABLES/targetP.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/targetP.csv.gz');
 CREATE INDEX idx_targetp_locustag ON targetp(species_prefix);
 CREATE INDEX idx_targetp_protein  ON targetp(protein_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE wolfpsort AS
-SELECT * FROM read_csv_auto('$TABLES/wolfpsort.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/wolfpsort.csv.gz');
 CREATE INDEX idx_wolfpsort_locustag ON wolfpsort(species_prefix);
 CREATE INDEX idx_wolfpsort_protein  ON wolfpsort(protein_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE predgpi AS
-SELECT * FROM read_csv_auto('$TABLES/predgpi.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/predgpi.csv.gz');
 CREATE INDEX idx_predgpi_locustag ON predgpi(species_prefix);
 CREATE INDEX idx_predgpi_protein  ON predgpi(protein_id);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE tmhmm AS
-SELECT * FROM read_csv_auto('$TABLES/tmhmm.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/tmhmm.csv.gz');
 CREATE INDEX idx_tmhmm_locustag ON tmhmm(species_prefix);
 CREATE INDEX idx_tmhmm_protein  ON tmhmm(protein_id);
-" $DB
+" "$DB"
 
 # ─── disorder ─────────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE idp_summary AS
-SELECT * FROM read_csv_auto('$TABLES/idp_summary.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/idp_summary.csv.gz');
 CREATE UNIQUE INDEX idx_idpsum_protein   ON idp_summary(protein_id);
 CREATE        INDEX idx_idpsum_locustag  ON idp_summary(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE idp AS
-SELECT * FROM read_csv_auto('$TABLES/idp.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/idp.csv.gz');
 CREATE UNIQUE INDEX idx_idp_region    ON idp(protein_id, IDP_start);
 CREATE        INDEX idx_idp_locustag  ON idp(species_prefix);
-" $DB
+" "$DB"
 
 # ─── composition ──────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE aa_frequency AS
-SELECT * FROM read_csv_auto('$TABLES/aa_freq.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/aa_freq.csv.gz');
 CREATE INDEX idx_aa_locustag ON aa_frequency(species_prefix);
-" $DB
+" "$DB"
 
 duckdb -c "
 CREATE TABLE codon_frequency AS
-SELECT * FROM read_csv_auto('$TABLES/codon_freq.csv.gz');
+SELECT * FROM read_csv_auto('$SRC/codon_freq.csv.gz');
 CREATE INDEX idx_codon_locustag ON codon_frequency(species_prefix);
-" $DB
+" "$DB"
 
 # ─── analytical views ─────────────────────────────────────────────────────────
 # Per-species summary: genome stats + functional domain counts
@@ -218,7 +250,7 @@ SELECT
     sp.SPECIES,
     sp.GENUS,
     sp.FAMILY,
-    sp."ORDER",
+    sp.\"ORDER\",
     sp.CLASS,
     sp.SUBPHYLUM,
     sp.PHYLUM,
@@ -254,7 +286,7 @@ LEFT JOIN (SELECT species_prefix AS LOCUSTAG, count(*) AS tmhmm_count
            FROM tmhmm WHERE PredHel > 0 GROUP BY species_prefix) tmhmm_c USING(LOCUSTAG)
 LEFT JOIN (SELECT species_prefix AS LOCUSTAG, count(*) AS idp_high_disorder
            FROM idp_summary WHERE IDP_fraction > 0.8 GROUP BY species_prefix) idp_c USING(LOCUSTAG);
-" $DB
+" "$DB"
 
 # Per-protein secretome/annotation flags
 duckdb -c "
@@ -282,8 +314,8 @@ LEFT JOIN (SELECT protein_id, localization FROM wolfpsort) wp USING(protein_id)
 LEFT JOIN (SELECT protein_id, PredHel FROM tmhmm) tm USING(protein_id)
 LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi FROM predgpi) gpi USING(protein_id)
 LEFT JOIN (SELECT protein_id, IDP_fraction FROM idp_summary) idps USING(protein_id);
-" $DB
+" "$DB"
 
 echo "Build complete: $DB"
-duckdb -c "SELECT table_name, estimated_size FROM duckdb_tables() ORDER BY table_name;" $DB
-duckdb -c "SELECT view_name FROM duckdb_views() ORDER BY view_name;" $DB
+duckdb -c "SELECT table_name, estimated_size FROM duckdb_tables() ORDER BY table_name;" "$DB"
+duckdb -c "SELECT view_name FROM duckdb_views() ORDER BY view_name;" "$DB"
