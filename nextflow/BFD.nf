@@ -313,7 +313,7 @@ process RUN_PREDGPI {
 
 process MERGE_PFAM {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(domtbls)
@@ -337,7 +337,7 @@ process MERGE_PFAM {
 
 process MERGE_CAZY {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(overviews)
@@ -367,7 +367,7 @@ process MERGE_CAZY {
 
 process MERGE_MEROPS {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(blasttabs)
@@ -390,7 +390,7 @@ process MERGE_MEROPS {
 
 process MERGE_SIGNALP {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(gff3s)
@@ -413,7 +413,7 @@ process MERGE_SIGNALP {
 
 process MERGE_TMHMM {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(tsvs)
@@ -436,7 +436,7 @@ process MERGE_TMHMM {
 
 process MERGE_TARGETP {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(summaries)
@@ -459,11 +459,11 @@ process MERGE_TARGETP {
 
 process MERGE_IDP {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-        path(idp_files)
-        path(idp_sums)
+        path 'idp/*'
+        path 'sum/*'
 
     output:
         path("idp.csv.gz"),         emit: idp
@@ -471,16 +471,19 @@ process MERGE_IDP {
 
     script:
     """
-    # Concatenate per-species tables keeping one header line each
-    first_idp=\$(ls *.idp.csv.gz | head -1)
-    zcat \$first_idp | head -1 > idp.csv
-    for f in *.idp.csv.gz; do zcat "\$f" | tail -n +2 >> idp.csv; done
-    pigz idp.csv
+    # Concatenate per-species tables keeping one header line each.  Inputs are
+    # staged into separate idp/ and sum/ subdirs so the globs cannot cross-match.
+    first=1
+    for f in idp/*.idp.csv.gz; do
+        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+        else zcat "\$f" | tail -n +2; fi
+    done | gzip > idp.csv.gz
 
-    first_sum=\$(ls *.idp_summary.csv.gz | head -1)
-    zcat \$first_sum | head -1 > idp_summary.csv
-    for f in *.idp_summary.csv.gz; do zcat "\$f" | tail -n +2 >> idp_summary.csv; done
-    pigz idp_summary.csv
+    first=1
+    for f in sum/*.idp_summary.csv.gz; do
+        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
+        else zcat "\$f" | tail -n +2; fi
+    done | gzip > idp_summary.csv.gz
     """
 
     stub:
@@ -492,7 +495,7 @@ process MERGE_IDP {
 
 process MERGE_WOLFPSORT {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(results)
@@ -515,7 +518,7 @@ process MERGE_WOLFPSORT {
 
 process MERGE_PREDGPI {
     label      'merge'
-    publishDir "${params.tables}", mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
         path(gff3s)
@@ -574,11 +577,7 @@ process BATCH_AA_FREQ {
 
 process MERGE_AA_FREQ {
     label      'merge'
-    publishDir path: {
-        params.taxon
-            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
-            : "${params.tables}/All_Taxa"
-    }, mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
     path 'inputs/*'
@@ -632,11 +631,7 @@ process BATCH_CODON_FREQ {
 
 process MERGE_CODON_FREQ {
     label      'merge'
-    publishDir path: {
-        params.taxon
-            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
-            : "${params.tables}/All_Taxa"
-    }, mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
     path 'inputs/*'
@@ -688,11 +683,7 @@ process CALC_INTERGENIC {
 
 process MERGE_INTERGENIC {
     label      'merge'
-    publishDir path: {
-        params.taxon
-            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
-            : "${params.tables}/All_Taxa"
-    }, mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
     path 'inputs/*'
@@ -735,8 +726,13 @@ process CALC_GENE_STATS {
 
     script:
     """
+    set -euo pipefail
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load biopython
+    # bedtools is needed for tRNA codon enrichment. It is loaded in the
+    # genestats beforeScript too, but Nextflow runs .command.sh as a login
+    # shell (bash -l) which rebuilds PATH and drops it, so re-load it here.
+    module load bedtools/2.30.0
     python3 ${params.scripts}/build_genestats_table.py \\
         ${gff_file} \\
         -d . \\
@@ -758,11 +754,7 @@ process CALC_GENE_STATS {
 
 process MERGE_GENE_STATS {
     label      'merge'
-    publishDir path: {
-        params.taxon
-            ? "${params.tables}/${params.taxon.split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
-            : "${params.tables}/All_Taxa"
-    }, mode: 'copy'
+    publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
     path 'inputs/*'
@@ -792,6 +784,126 @@ process MERGE_GENE_STATS {
     for f in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
         printf 'id\\n' | gzip > \${f}.csv.gz
     done
+    """
+}
+
+// ── Assembly statistics (AAFTF assess) ────────────────────────────────────────
+// Runs `AAFTF assess` per genome to compute contig/N50/GC/masking/telomere stats.
+// Output is named by ASMID so the merged table joins to the species table on
+// ASMID in the DuckDB build.  storeDir caches per ASMID.
+process CALC_ASM_STATS {
+    label    'asmstats'
+    tag      asmid
+    storeDir "${params.genome_stats_outdir}/asm_stats"
+
+    input:
+    tuple val(asmid), val(basename), path(genome)
+
+    output:
+    path "${asmid}.stats.txt", emit: stats
+
+    script:
+    """
+    module load AAFTF/0.6.0
+    AAFTF assess -i ${genome} -r ${asmid}.stats.txt
+    """
+
+    stub:
+    """
+    cat > ${asmid}.stats.txt <<'EOF'
+Assembly statistics for: ${basename}.scaffolds.fa
+   CONTIG COUNT  =  10
+   TOTAL LENGTH  =  1000000
+            MIN  =  500
+            MAX  =  200000
+         MEDIAN  =  50000
+           MEAN  =  100000.0
+            L50  =  3
+            N50  =  150000
+            L90  =  8
+            N90  =  20000
+            GC%  =  50.00
+    N GAP COUNT  =  0
+  TOTAL N BASES  =  0
+   BASES MASKED  =  10000
+ PERCENT MASKED  =  1.00
+  T2T SCAFFOLDS  =  0
+   TELOMERE FWD  =  0
+   TELOMERE REV  =  0
+EOF
+    """
+}
+
+process MERGE_ASM_STATS {
+    label      'merge'
+    publishDir path: { tablesDir() }, mode: 'copy'
+
+    input:
+    path 'inputs/*'
+
+    output:
+    path "asm_stats.tsv.gz", emit: tsv
+
+    script:
+    """
+    python3 ${params.scripts}/summarize_asm_stats.py \\
+        --reportdir inputs \\
+        --samples   ${params.samples} \\
+        -o          asm_stats.tsv.gz
+    """
+
+    stub:
+    """
+    printf 'ASMID\\tSPECIES\\tSTRAIN\\tcontig_count\\ttotal_length_bp\\tmin_contig_bp\\tmax_contig_bp\\tmedian_contig_bp\\tmean_contig_bp\\tL50\\tN50_bp\\tL90\\tN90_bp\\tgc_pct\\tn_gap_count\\ttotal_n_bases\\tmasked_bases\\tmasked_pct\\tt2t_scaffolds\\ttelomere_fwd\\ttelomere_rev\\n' | gzip > asm_stats.tsv.gz
+    """
+}
+
+// ── Samples manifest + species table ──────────────────────────────────────────
+// Writes, restricted to the genomes matched by this run's taxonomy/pattern
+// filters, into the tables dir alongside the merged tables:
+//   samples.csv.gz — run manifest, every original samples.csv column
+//   species.csv.gz — normalized taxonomy table the DuckDB build/MCP load
+//                    (LOCUSTAG, ASMID, PHYLUM→SPECIES, BUSCO_LINEAGE)
+// Under --taxon the matched-key list contains only that clade, so both files are
+// automatically clade-restricted (tables/<SUBSET>/{samples,species}.csv.gz).
+process MERGE_SAMPLES {
+    label      'merge'
+    publishDir path: { tablesDir() }, mode: 'copy'
+
+    input:
+    path(samples)
+    path(matched)
+
+    output:
+    path "samples.csv.gz", emit: samples
+    path "species.csv.gz", emit: species
+
+    script:
+    """
+    python3 ${params.scripts}/subset_samples.py \\
+        --samples ${samples} \\
+        --matched ${matched} \\
+        --key     LOCUSTAG \\
+        -o        samples.csv.gz
+    python3 ${params.scripts}/build_species_table.py \\
+        --samples ${samples} \\
+        --matched ${matched} \\
+        --key     LOCUSTAG \\
+        -o        species.csv.gz
+    """
+
+    stub:
+    """
+    python3 ${params.scripts}/subset_samples.py \\
+        --samples ${samples} \\
+        --matched ${matched} \\
+        --key     LOCUSTAG \\
+        -o        samples.csv.gz
+    python3 ${params.scripts}/build_species_table.py \\
+        --samples ${samples} \\
+        --matched ${matched} \\
+        --key     LOCUSTAG \\
+        -o        species.csv.gz
     """
 }
 
@@ -884,9 +996,10 @@ process BUSCO_PEP {
 workflow SETUP_INPUT {
     take: ch   // tuple(locustag, basename, species, strain)
     main:
-        // Write all locustag+basename pairs to a TSV file for the bash loop
+        // Write basename+locustag pairs (basename first so empty locustag doesn't
+        // corrupt the tab-split — bash IFS=$'\t' read strips leading tab whitespace).
         rows_file = ch
-            .map { locustag, basename, species, strain -> "${locustag}\t${basename}" }
+            .map { locustag, basename, species, strain -> "${basename}\t${locustag}" }
             .collectFile(name: 'setup_rows.tsv', newLine: true)
         SETUP_SYMLINKS(rows_file)
         // Re-emit original rows gated by process completion.
@@ -931,7 +1044,7 @@ process SETUP_SYMLINKS {
     }
 
     : > symlink_manifest.txt
-    while IFS=\$'\\t' read -r locustag basename; do
+    while IFS=\$'\\t' read -r basename locustag; do
         src="${params.genome_annotation}/\${basename}/predict_results"
         misc="${params.genome_annotation}/\${basename}/predict_misc"
 
@@ -965,33 +1078,43 @@ process SETUP_SYMLINKS {
 // HELPERS
 // ════════════════════════════════════════════════════════════════════════════
 
+// Resolve the output subdirectory under params.tables for the MERGE steps.
+//   no --taxon              → ${params.tables}/All_Taxa   (the full dataset)
+//   --taxon RANK:VALUE      → ${params.tables}/<sanitised VALUE>
+// Used by every MERGE_* process so all merged tables land in a subfolder and
+// nothing is written loose at the top level of tables/.
+def tablesDir() {
+    params.taxon
+        ? "${params.tables}/${(params.taxon as String).split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
+        : "${params.tables}/All_Taxa"
+}
+
 // Build a gated glob channel.
 //   sync_ch — emits one value when the RUN step is done (or Channel.of(true))
-//   glob    — shell-style glob relative to params.outdir
-// Returns a channel of matching Path objects, or empty if none found.
-def gatedGlob(sync_ch, String glob) {
+//   baseDir — directory the glob is rooted in
+//   glob    — shell-style glob relative to baseDir
+// Returns a channel of matching non-empty Path objects, or empty if none found.
+def gatedGlobIn(sync_ch, String baseDir, String glob) {
     sync_ch
-        .flatMap { files("${params.outdir}/${glob}") }
+        .flatMap { files("${baseDir}/${glob}") }
         .filter  { it.size() > 0 }
         .collect()
         .filter  { !it.isEmpty() }
 }
 
-// Like gatedGlob but roots the glob in params.genome_stats_outdir instead.
-// Used for merge_all=true when no --taxon filter is active.
-def gatedGlobStats(sync_ch, String glob) {
-    sync_ch
-        .flatMap { files("${params.genome_stats_outdir}/${glob}") }
-        .filter  { it.size() > 0 }
-        .collect()
-        .filter  { !it.isEmpty() }
-}
+// gatedGlob roots in params.outdir (functional tool results);
+// gatedGlobStats roots in params.genome_stats_outdir (per-genome stats).
+def gatedGlob(sync_ch, String glob)      { gatedGlobIn(sync_ch, params.outdir,             glob) }
+def gatedGlobStats(sync_ch, String glob) { gatedGlobIn(sync_ch, params.genome_stats_outdir, glob) }
 
 // Delete storeDir output files that are older than inputFile so Nextflow re-runs
 // the process instead of using the stale cached result.  Only deletes files that
 // actually exist and are strictly older; missing or equal-timestamp files are left
 // alone.  Logs every deletion.
 def clearIfStale(inputFile, List storedOutputs) {
+    // Never touch real storeDir outputs during a stub run — the stub block would
+    // otherwise overwrite a deleted real result with a tiny placeholder.
+    if (workflow.stubRun) return
     if (!inputFile.exists()) return
     def inputMtime = inputFile.lastModified()   // follows symlinks via Java NIO default
     def stale = storedOutputs.findAll { f -> f.exists() && f.lastModified() < inputMtime }
@@ -1082,6 +1205,28 @@ workflow {
         def dna = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
         (gff.exists() && dna.exists()) ? tuple(locustag, basename, gff, dna) : null
     }.filter { it != null }
+
+    // Assembly-stats input: AAFTF assess reads the genome FASTA and the merged
+    // table joins to species on ASMID, so we attach ASMID (absent from ready_ch)
+    // by joining a basename→ASMID lookup built from samples.csv.
+    asmid_by_basename_ch = Channel
+        .fromPath(params.samples)
+        .splitCsv(header: true)
+        .filter(taxonFilter)
+        .map { row ->
+            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            tuple(basename, row.ASMID?.trim() ?: '')
+        }
+        .filter { basename, asmid -> asmid }
+
+    asm_stats_ch = ready_ch
+        .map { locustag, basename, species, strain ->
+            def f = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
+            f.exists() ? tuple(basename, f) : null
+        }
+        .filter { it != null }
+        .join(asmid_by_basename_ch)            // key = basename → (basename, genome, asmid)
+        .map { basename, genome, asmid -> tuple(asmid, basename, genome) }
 
     // ── BUSCO input channels ───────────────────────────────────────────────────
     // lineage: use params.busco_lineage (default fungi_odb12) globally.
@@ -1190,7 +1335,11 @@ workflow {
 
     if (!params.skip_merge.toBoolean()) {
 
-        if (params.merge_all.toBoolean()) {
+        // merge_all globs the whole results dir (all species ever processed).
+        // Under --taxon that would pull in species outside the requested clade,
+        // so fall through to the current-run (already taxon-filtered) branch —
+        // mirrors `use_glob` for the genome-stats merges below.
+        if (params.merge_all.toBoolean() && !params.taxon) {
 
             if (params.run_pfam.toBoolean()) {
                 def sync = RUN_PFAM.out.domtbl.collect()
@@ -1328,6 +1477,14 @@ workflow {
     if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
     if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
 
+    if (params.run_asm_stats.toBoolean())
+        CALC_ASM_STATS(asm_stats_ch.map { asmid, basename, genome ->
+            clearIfStale(genome, [
+                file("${params.genome_stats_outdir}/asm_stats/${asmid}.stats.txt")
+            ])
+            tuple(asmid, basename, genome)
+        })
+
     if (params.run_busco_genome.toBoolean())
         BUSCO_GENOME(busco_genome_ch.map { locustag, basename, lineage, genome ->
             clearIfStale(genome, [
@@ -1345,6 +1502,15 @@ workflow {
         })
 
     if (!params.skip_merge.toBoolean()) {
+        // Manifest of the genomes matched by this run's filters → tables/<SUBSET>/samples.csv.gz.
+        // Keys come from the post-setup (processed) channel, so a --taxon run yields
+        // a manifest restricted to that clade.
+        def matched_keys_file = ready_ch
+            .map { locustag, basename, species, strain -> (locustag ?: '').trim() }
+            .filter { it }
+            .collectFile(name: 'matched_locustags.txt', newLine: true)
+        MERGE_SAMPLES(file(params.samples), matched_keys_file)
+
         if (use_glob) {
             if (params.run_aa_freq.toBoolean()) {
                 MERGE_AA_FREQ(gatedGlobStats(BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([]), "aa_freq/*.aa_freq.csv.gz"))
@@ -1375,6 +1541,11 @@ workflow {
                 ))
             } else {
                 MERGE_GENE_STATS(gatedGlobStats(Channel.of(true), "gene_stats/*.csv.gz"))
+            }
+            if (params.run_asm_stats.toBoolean()) {
+                MERGE_ASM_STATS(gatedGlobStats(CALC_ASM_STATS.out.stats.collect(), "asm_stats/*.stats.txt"))
+            } else {
+                MERGE_ASM_STATS(gatedGlobStats(Channel.of(true), "asm_stats/*.stats.txt"))
             }
         } else {
             // current-run outputs only (merge_all=false, or --taxon active).
@@ -1415,6 +1586,7 @@ workflow {
                         .collect()
                 )
             }
+            if (params.run_asm_stats.toBoolean()) MERGE_ASM_STATS(CALC_ASM_STATS.out.stats.collect())
         }
     }
 }
