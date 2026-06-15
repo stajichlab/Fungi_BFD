@@ -60,3 +60,10 @@ fastp \
 ### 3. Nextflow thinks jobs moved to different queue are failed
 
 Change the request of queue out of the nextflow.conf and conf/profile_funannotate.conf for now so that restriction is not in there
+
+### 4. syncing finished but not fully copied results
+
+python sync_predict_results.py --dry-run
+python sync_predict_results.py 
+
+

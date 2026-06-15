@@ -28,13 +28,13 @@ nextflow run nextflow/BFD.nf \
     -profile BFD \
     --run_setup true \
     --run_pfam false \
-    --run_cazy false \
-    --run_merops false \
-    --run_signalp false \
+    --run_cazy true \
+    --run_merops true \
+    --run_signalp true \
     --run_tmhmm false \
     --run_targetp false \
-    --run_idp false \
-    --run_wolfpsort false \
+    --run_idp true \
+    --run_wolfpsort true \
     --run_predgpi false \
     --run_busco_genome true \
     --run_busco_pep true \

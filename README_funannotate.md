@@ -59,43 +59,68 @@ SRA_QUERY_BATCH       Batched NCBI SRA survey — up to sra_query_batch_size spe
     │                 Runs esearch/efetch runinfo query per species; no downloading.
     │                 Species already cached in rnaseq_reads/sra_query/ are reused
     │                 (file copy, no NCBI call); only uncached species are queried.
-    │                 Records up to 5 candidate accessions (sorted by spot count
-    │                 descending) in rnaseq_reads/sra_query/<species_tag>.sra_query.csv
+    │                 Primary query: PAIRED[Layout]; records up to 5 candidates.
+    │                 SE fallback: if no PE hits found AND --enable_single_end true,
+    │                 a second SINGLE[Layout] query runs and records up to
+    │                 --max_rnaseq_se_runs candidates.
+    │                 Output: rnaseq_reads/sra_query/<species_tag>.sra_query.csv
+    │                 Columns: species_tag, taxonid, sra_accession, spots, platform, layout
     │                 (publishDir copy, overwrite: false; delete CSV to re-query)
     │                 (only runs when --run_sra_fetch true)
     ▼
 COLLECT_SRA_QUERY     Merges all per-species query CSVs into a single named manifest
     │                 written alongside the input samples file:
     │                   <stem>.rnaseq_sra.csv   (e.g. samples.rnaseq_sra.csv)
-    │                 Columns: species_tag, taxonid, sra_accession, spots
+    │                 Columns: species_tag, taxonid, sra_accession, spots, platform, layout
     │                 ── stop here with --stop_after_sra_query true ──
     ▼
-    ├── (species with SRA hits)
+    ├── (species with PE accessions not overridden to SE)
     │       ▼
-    │   SRA_FETCH         Download up to --max_rnaseq_runs accessions (read from
+    │   SRA_FETCH         Download up to --max_rnaseq_runs PE accessions (read from
     │       │             the per-species query CSV — no NCBI call at this stage).
     │       │             Per-accession: parallel-fastq-dump → enforce read-pair
-    │       │             length → bbnorm (target=30) → fastp QC trim.
+    │       │             length (EBI FTP fallback on mismatch) → bbnorm (target=30,
+    │       │             ecc=t) → fastp QC trim.
     │       │             Writes rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
-    │       │             (storeDir; skipped if both files already exist)
+    │       │             and a zero-byte _norm_SE.fastq.gz stub.
+    │       │             (storeDir; skipped if all three files already exist)
+    │       │             Accessions with blacklist action SE_trinity are skipped
+    │       │             here — they route to SRA_FETCH_SE instead.
     │
-    └── (species with no SRA hits)
+    ├── (species with SE_trinity blacklist overrides OR SINGLE-layout hits
+    │    when --enable_single_end true; PE always takes priority)
+    │       ▼
+    │   SRA_FETCH_SE      Download up to --max_rnaseq_se_runs SE accessions.
+    │       │             SE_trinity: pfd --split-files, take _1 only (real SE data).
+    │       │             SINGLE layout: pfd gives ACC.fastq.gz or ACC_1.fastq.gz.
+    │       │             EBI FTP fallback on pfd failure.
+    │       │             Per-accession: fix_fastq_header_trinity → bbnorm (target=30,
+    │       │             ecc=f) → fastp QC trim.
+    │       │             Writes zero-byte _norm_{R1,R2}.fastq.gz PE stubs and
+    │       │             rnaseq_reads/<species_tag>_norm_SE.fastq.gz.
+    │       │             (storeDir; skipped if all three files already exist)
+    │
+    └── (species with no usable SRA hits)
             ▼
         WRITE_EMPTY_READS  Writes zero-byte placeholder files without a SLURM
                           download job:
-                          rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz
+                          rnaseq_reads/<species_tag>_norm_{R1,R2,SE}.fastq.gz
                           (storeDir; skipped if placeholder files already exist)
     │
     │  ── stop here with --stop_after_sra_fetch true ──
     ▼
 RNASEQ_PREPARE        Run funannotate train --stop_after_trinity on the
     │                 representative (first) assembly per species.
+    │                 PE mode:  --left_norm / --right_norm + --jaccard_clip
+    │                 SE mode:  --single_norm (no --jaccard_clip)
     │                 Archives Trinity-GG FASTA to rnaseq_data/<species_tag>.trinity-GG.fasta
     │                 (storeDir). All other strains of the same species reuse this.
     ▼
-FUNANNOTATE_TRAIN     Run funannotate train on every assembly:
-    │                 - With shared Trinity: only PASA runs (fast path)
-    │                 - Without shared Trinity: full train (normalize + Trinity + PASA)
+FUNANNOTATE_TRAIN     Run funannotate train on every assembly (4 branches):
+    │                 - Shared Trinity + PE reads: PASA only with --left_norm/--right_norm
+    │                 - Shared Trinity + SE reads: PASA only with --single_norm
+    │                 - No Trinity + PE reads:    full train with --left_norm/--right_norm
+    │                 - No Trinity + SE reads:    full train with --single_norm
     │                 Removes large intermediates (hisat2/, trinity_gg/) after completion.
     │                 Skipped at channel level if funannotate_train.pasa.gff3 already exists.
     ▼
@@ -121,9 +146,9 @@ FUNANNOTATE_ANNOTATE  funannotate annotate — functional annotation, GO terms,
 ## RNA-seq discovery and download: two-phase design
 
 The SRA workflow is split into a **lightweight query phase** (SRA_QUERY_BATCH) and a
-**heavy download phase** (SRA_FETCH). This avoids allocating large SLURM jobs for
-species that have no RNA-seq data, and makes the discovery results inspectable before
-committing to downloads.
+**heavy download phase** (SRA_FETCH / SRA_FETCH_SE). This avoids allocating large SLURM
+jobs for species that have no RNA-seq data, and makes the discovery results inspectable
+before committing to downloads.
 
 ### Phase 1 — SRA_QUERY_BATCH (survey)
 
@@ -132,18 +157,22 @@ committing to downloads.
 - Per species within each batch: sends a single `esearch | efetch -format runinfo`
   call to NCBI SRA. Species already cached in `rnaseq_reads/sra_query/` are reused
   (file copy only — no NCBI call). Only uncached species hit the network.
-- Filter criteria:
+- **Primary (PE) query filter criteria:**
   - `txid<taxonid>[Organism:noexp]` — exact taxon, no descendants
   - `RNA-Seq[Strategy]`, `PAIRED[Layout]`
   - Read length 75–300 bp
   - Illumina or BGI platform
   - ≥250,000 read pairs
-- Records **up to 5 candidate accessions** sorted by spot count descending
-  (largest datasets first; deterministic across re-runs).
-- Output CSV columns: `species_tag, taxonid, sra_accession, spots`
+  - Records **up to 5** candidates sorted by spot count descending.
+- **SE fallback** (only when `--enable_single_end true` **and** no PE hits found):
+  Re-runs the query with `SINGLE[Layout]` (Illumina only) and records **up to
+  `--max_rnaseq_se_runs`** (default 3) candidates with `layout=SINGLE`.
+- Output CSV columns: `species_tag, taxonid, sra_accession, spots, platform, layout`
 - Results published to `rnaseq_reads/sra_query/<species_tag>.sra_query.csv`
   (`publishDir overwrite: false`). Delete the per-species CSV to force re-query.
-- Resources: 1 CPU, 4 GB RAM, 2h per batch job (short queue); up to 2 retries.
+- Resources: 1 CPU, 4 GB RAM, 4h per batch job (short queue); up to 2 retries.
+- **Backward compatibility:** old cached CSVs with 5 columns (no `layout`) are handled
+  gracefully — the pipeline treats the missing column as `PAIRED`.
 
 ### Phase 2 — COLLECT_SRA_QUERY (merge manifest)
 
@@ -156,18 +185,56 @@ committing to downloads.
   before committing to downloads. Useful for large initial runs or when checking
   RNA-seq coverage for a new clade.
 
-### Phase 3 — SRA_FETCH / WRITE_EMPTY_READS (download)
+### Phase 3 — SRA_FETCH / SRA_FETCH_SE / WRITE_EMPTY_READS (download)
 
-The channel branches on whether the per-species CSV contains any data rows:
+The channel performs a **three-way branch** based on the per-species CSV and the
+`rnaseq_blacklist.csv` override file:
 
-- **Has accessions → SRA_FETCH**: downloads up to `--max_rnaseq_runs` accessions
-  (reads from the CSV; no NCBI query at this stage). Normalizes with bbnorm and
-  trims with fastp.
-- **No accessions → WRITE_EMPTY_READS**: writes zero-byte placeholder paired FASTQ
-  files in a single trivial job. No download queue allocation.
+- **PE accessions present (not overridden) → SRA_FETCH**: downloads up to
+  `--max_rnaseq_runs` paired-end accessions. Per-accession:
+  `parallel-fastq-dump → enforce_seqpair_readlen (EBI FTP fallback on mismatch)
+  → bbnorm (target=30, ecc=t) → fastp`. Writes `_norm_{R1,R2}.fastq.gz` plus a
+  zero-byte `_norm_SE.fastq.gz` stub. PE always wins — if a species has PE
+  accessions, SE is never fetched.
+- **SE_trinity override OR SINGLE layout (if enabled) → SRA_FETCH_SE**: downloads
+  up to `--max_rnaseq_se_runs` single-end reads. Per-accession:
+  `parallel-fastq-dump → fix_fastq_header_trinity → bbnorm (target=30, ecc=f)
+  → fastp`. Writes `_norm_SE.fastq.gz` plus zero-byte `_norm_{R1,R2}.fastq.gz` PE stubs.
+- **No usable accessions → WRITE_EMPTY_READS**: writes zero-byte placeholder files
+  for all three slots (`_norm_R1`, `_norm_R2`, `_norm_SE`) in a trivial job.
 
-Both branches write to `rnaseq_reads/<species_tag>_norm_{R1,R2}.fastq.gz` and use
-`storeDir`, so the result (data or empty) is cached identically.
+All three branches write to `rnaseq_reads/<species_tag>_norm_{R1,R2,SE}.fastq.gz`
+and use `storeDir`, so the result is cached identically regardless of path taken.
+
+---
+
+## Per-accession overrides: `rnaseq_blacklist.csv`
+
+The file `rnaseq_blacklist.csv` (project root) allows per-accession overrides that
+change how SRA_FETCH or SRA_FETCH_SE handles a specific run.
+
+**Format:** CSV with a header row; column 1 is the SRA accession, column 4 is the action.
+
+```
+accession,taxonid,species_tag,action
+SRR17583173,,Hemileia_vastatrix,SE_trinity
+ERR123456,,Botrytis_cinerea,skip
+SRR654321,,Neurospora_crassa,rename_headers
+```
+
+| Action | Effect |
+|---|---|
+| `skip` | Exclude the accession entirely from all processing |
+| `rename_headers` | Download normally; replace FASTQ headers with sequential integers before pairing (fixes BGI/MGISEQ block-splitting desync; applied automatically for BGISEQ platform) |
+| `SE_trinity` | Treat this accession as single-end despite SRA metadata saying PAIRED. SRA_FETCH skips it; SRA_FETCH_SE downloads `_1.fastq.gz` only and discards any `_2`. **Bypasses `--enable_single_end`** — the entry takes effect regardless of that flag. Useful for mislabeled runs where pfd produces mismatched R1/R2. |
+
+**Routing priority:**
+1. A species with at least one usable PE accession (not `skip` / not `SE_trinity`) → **SRA_FETCH**.
+   Any `SE_trinity` entries for that species are silently skipped — PE wins.
+2. A species where *all* PE accessions are `skip`/`SE_trinity` → **SRA_FETCH_SE** (always,
+   regardless of `--enable_single_end`).
+3. A species with only `SINGLE`-layout accessions and `--enable_single_end true` → **SRA_FETCH_SE**.
+4. No usable accessions → **WRITE_EMPTY_READS**.
 
 ---
 
@@ -207,6 +274,8 @@ has also already completed for a species (its `_norm_R1/R2.fastq.gz` files exist
 | All species | `rm -r rnaseq_reads/sra_query/` then re-run |
 | Force re-download (keep query cache) | `rm rnaseq_reads/<species_tag>_norm_*.fastq.gz` then re-run |
 | Full SRA reset | Remove both `rnaseq_reads/sra_query/` and `rnaseq_reads/<tag>_norm_*.fastq.gz` |
+| Re-route PE species to SE (SE_trinity) | Add entry to `rnaseq_blacklist.csv`, then `rm rnaseq_reads/<tag>_norm_*.fastq.gz` and re-run. storeDir will block re-fetch unless all three `_norm_*` files are removed. |
+| Enable SE for PE-absent species | Set `--enable_single_end true`, delete the per-species sra_query CSV (to trigger SE fallback query), then re-run. |
 
 > **Note:** `rnaseq_reads/` is under `cleanup = true` scope in the Nextflow work
 > directory, but the actual output files live outside the work directory (storeDir),
@@ -243,12 +312,13 @@ input_clean_genomes/
 rnaseq_reads/
   sra_query/
     <species_tag>.sra_query.csv   per-species SRA survey results (cached)
-  <species_tag>_norm_R1.fastq.gz  bbnorm + fastp normalized reads (or 0-byte placeholder)
-  <species_tag>_norm_R2.fastq.gz
-  rnaseq_manifest.tsv             provenance: species → downloaded SRA accessions + timestamp
+                                  columns: species_tag, taxonid, sra_accession, spots, platform, layout
+  <species_tag>_norm_R1.fastq.gz  PE: bbnorm+fastp normalized R1 (or 0-byte stub if SE/no data)
+  <species_tag>_norm_R2.fastq.gz  PE: bbnorm+fastp normalized R2 (or 0-byte stub if SE/no data)
+  <species_tag>_norm_SE.fastq.gz  SE: bbnorm+fastp normalized SE reads (or 0-byte stub if PE/no data)
 
 <samples_stem>.rnaseq_sra.csv    merged SRA survey manifest (alongside samples.csv)
-                                  columns: species_tag, taxonid, sra_accession, spots
+                                  columns: species_tag, taxonid, sra_accession, spots, platform, layout
 
 rnaseq_data/
   <species_tag>.trinity-GG.fasta  shared Trinity assembly per species
@@ -273,11 +343,13 @@ logs/nextflow/
 | `--suppress` | `""` | File of ASMIDs to skip (one per line, first comma-delimited field) |
 | `--only_clean` | `false` | Stop after GENOME_CLEAN |
 | `--run_repeatmasker` | `true` | Run tantan soft-masking |
-| `--run_sra_fetch` | `true` | Run SRA_QUERY_BATCH + SRA_FETCH (both phases) |
+| `--run_sra_fetch` | `true` | Run SRA_QUERY_BATCH + SRA_FETCH/SRA_FETCH_SE (both phases) |
 | `--stop_after_sra_query` | `false` | Halt after COLLECT_SRA_QUERY; produces `<stem>.rnaseq_sra.csv` only |
-| `--stop_after_sra_fetch` | `false` | Halt after SRA_FETCH; skip train/predict |
+| `--stop_after_sra_fetch` | `false` | Halt after SRA_FETCH/SRA_FETCH_SE; skip train/predict |
 | `--sra_query_batch_size` | `100` | Species per SRA_QUERY_BATCH job; reduce if batches time out |
-| `--max_rnaseq_runs` | `2` | Max accessions **downloaded** per species (SRA_FETCH honors this; SRA_QUERY_BATCH always surveys up to 5) |
+| `--max_rnaseq_runs` | `2` | Max PE accessions downloaded per species (SRA_FETCH; SRA_QUERY_BATCH surveys up to 5) |
+| `--enable_single_end` | `false` | Enable SE fallback: query SINGLE-layout SRA accessions when no PE found; required for SINGLE-layout species to be fetched. SE_trinity blacklist overrides bypass this flag. |
+| `--max_rnaseq_se_runs` | `3` | Max SE accessions downloaded per species (SRA_FETCH_SE) |
 | `--run_annotate` | `false` | Run funannotate annotate after predict |
 | `--run_update` | `false` | Run funannotate update (requires `--run_sra_fetch true`) |
 | `--run_antismash` | `false` | Run antiSMASH before annotate |
@@ -301,7 +373,8 @@ logs/nextflow/
 | `SRA_QUERY_BATCH` | short | 1 | 4 GB | Batched esearch/efetch; up to 10 concurrent; up to 2 retries per batch |
 | `COLLECT_SRA_QUERY` | short | 1 | 1 GB | Merges per-species CSVs; fast |
 | `WRITE_EMPTY_READS` | short | 1 | 1 GB | Zero-byte placeholder; no-data species only |
-| `SRA_FETCH` | short → epyc | 24 → 32 | 48 → 192 GB | Data species only; retry bumps memory and queue |
+| `SRA_FETCH` | short → epyc | 24 → 32 | 48 → 192 GB | PE species only; retry bumps memory and queue |
+| `SRA_FETCH_SE` | short → epyc | 24 → 32 | 48 → 192 GB | SE species only (SE_trinity or SINGLE layout); same retry profile as SRA_FETCH |
 | `RNASEQ_PREPARE` | epyc | 16 | 96 GB (+48 GB/retry) | Trinity-GG assembly; up to 3 retries |
 | `FUNANNOTATE_TRAIN` | epyc | 8 → 24 | 96 → 192 GB | PASA alignment; up to 3 retries |
 | `FUNANNOTATE_PREDICT` | epyc | 16 | 32 GB | |
@@ -323,8 +396,9 @@ if all declared output files already exist on disk — even without `-resume`:
 | `GENOME_CLEAN` | `input_clean_genomes/` | `<asmid>.fa` exists |
 | `MASKREPEAT_TANTAN_RUN` | `input_clean_genomes/` | `<asmid>.masked.fasta` exists |
 | `SRA_QUERY_BATCH` | `rnaseq_reads/sra_query/` | per-species CSV exists (checked inside the batch script; `publishDir overwrite: false`) |
-| `WRITE_EMPTY_READS` | `rnaseq_reads/` | `<tag>_norm_R1.fastq.gz` exists (0-byte) |
-| `SRA_FETCH` | `rnaseq_reads/` | `<tag>_norm_R1.fastq.gz` exists (non-zero) |
+| `WRITE_EMPTY_READS` | `rnaseq_reads/` | all three `<tag>_norm_{R1,R2,SE}.fastq.gz` exist (0-byte) |
+| `SRA_FETCH` | `rnaseq_reads/` | all three `<tag>_norm_{R1,R2,SE}.fastq.gz` exist |
+| `SRA_FETCH_SE` | `rnaseq_reads/` | all three `<tag>_norm_{R1,R2,SE}.fastq.gz` exist |
 | `RNASEQ_PREPARE` | `rnaseq_data/` | `<tag>.trinity-GG.fasta` exists |
 
 `FUNANNOTATE_TRAIN` and `FUNANNOTATE_PREDICT` skip via channel-level file-existence
@@ -336,10 +410,11 @@ skip gracefully when re-running over partially completed datasets.
 The pipeline also detects when RNA-seq data has been refreshed *after* a genome was
 already predicted, and automatically re-runs training and prediction for those genomes.
 
-**What "stale" means:** A prediction is considered stale when:
-- `rnaseq_reads/<species_tag>_norm_R1.fastq.gz` is newer than
-  `genome_annotation/<out>/predict_results/<out>.gbk`, **or**
-- `rnaseq_data/<species_tag>.trinity-GG.fasta` is newer than the same GBK.
+**What "stale" means:** A prediction is considered stale when any of the following is
+newer than `genome_annotation/<out>/predict_results/<out>.gbk`:
+- `rnaseq_reads/<species_tag>_norm_R1.fastq.gz` (PE reads), **or**
+- `rnaseq_reads/<species_tag>_norm_SE.fastq.gz` (SE reads), **or**
+- `rnaseq_data/<species_tag>.trinity-GG.fasta` (shared Trinity assembly).
 
 In both cases the reads used to build the current prediction are no longer the most
 recent ones on disk.
@@ -384,8 +459,10 @@ funannotate
 # SRA discovery (SRA_QUERY_BATCH only)
 ncbi_edirect
 
-# SRA download + normalisation (SRA_FETCH only)
+# SRA download + normalisation (SRA_FETCH and SRA_FETCH_SE)
 sratoolkit, parallel-fastq-dump, fastp, BBTools, workspace/scratch
+# EBI FTP fallback (loaded on demand inside SRA_FETCH / SRA_FETCH_SE)
+aria2
 
 # Optional post-predict annotation
 signalp/6-gpu         — GPU signal peptide prediction

@@ -12,14 +12,14 @@
 #                     platform; list here to force on non-BGISEQ accessions with the
 #                     same issue, or to override auto-detection.
 #
-# Format: sra_accession,species_tag,taxonid,action,reason
-SRR8919655,Sporisorium_graminicola,280036,skip,not paired
-SRR8919648,Sporisorium_graminicola,280036,skip,not paired
-SRR8919643,Sporisorium_graminicola,280036,skip,not paired
-SRR8919649,Sporisorium_graminicola,280036,skip,not paired
-SRR8919646,Sporisorium_graminicola,280036,skip,not paired
-SRR12496020,Malassezia_globosa,76773,skip,not paired
-SRR12496022,Malassezia_globosa,76773,skip,not paired
-SRR12496028,Malassezia_globosa,76773,skip,not paired
-SRR12496033,Malassezia_globosa,76773,skip,not paired
-SRR12496021,Malassezia_globosa,76773,skip,not paired
+# Format: sra_accession,species_tag,taxonid,action
+SRR8919655,Sporisorium_graminicola,280036,SE_trinity
+SRR8919648,Sporisorium_graminicola,280036,SE_trinity
+SRR8919643,Sporisorium_graminicola,280036,SE_trinity
+SRR8919649,Sporisorium_graminicola,280036,SE_trinity
+SRR8919646,Sporisorium_graminicola,280036,SE_trinity
+SRR12496020,Malassezia_globosa,76773,SE_trinity
+SRR12496022,Malassezia_globosa,76773,SE_trinity
+SRR12496028,Malassezia_globosa,76773,SE_trinity
+SRR12496033,Malassezia_globosa,76773,SE_trinity
+SRR12496021,Malassezia_globosa,76773,SE_trinity
