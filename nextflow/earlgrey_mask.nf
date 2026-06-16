@@ -109,7 +109,7 @@ process EARLGREY_BUILD_LIB {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load earlgrey/${params.earlgrey_version}
 
-    rm -rf earlgrey_out
+    # rm -rf earlgrey_out
     mkdir -p earlgrey_out
 
     earlGrey \\
@@ -121,6 +121,7 @@ process EARLGREY_BUILD_LIB {
         -c yes \\
         -v yes \\
         -q yes \\
+	-M 3200 \\
         -t ${task.cpus}
 
     # Locate EarlGrey products (paths are version-specific; glob defensively).
