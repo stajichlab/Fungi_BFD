@@ -209,10 +209,12 @@ process SRA_QUERY {
         efetch -format runinfo > _runinfo.tmp
 
     # col 1=Run, col 4=spots, col 13=LibraryStrategy, col 16=LibraryLayout, col 19=Platform
-    awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s,%s\\n", \$1, \$4, \$19}' _runinfo.tmp | \\
-        sort -t',' -k2 -rn | \\
+    # Prepend a platform rank (0=Illumina, 1=BGI/other) so the top 5 prefer Illumina,
+    # then by spot count desc; BGI/other only fill remaining slots when Illumina runs run out.
+    awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {rank=(\$19~/[Ii]llumina/)?0:1; printf "%d,%s,%s,%s\\n", rank, \$1, \$4, \$19}' _runinfo.tmp | \\
+        sort -t',' -k1,1n -k3,3rn | \\
         head -n 5 | \\
-        while IFS=',' read -r acc spots platform; do
+        while IFS=',' read -r rank acc spots platform; do
             printf '%s,%s,%s,%s,%s,PAIRED\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots" "\$platform"
         done >> ${species_tag}.sra_query.csv
 
@@ -305,10 +307,12 @@ process SRA_QUERY_BATCH {
         if query_species "\${species_tag}" "\${taxonid}"; then
             printf 'species_tag,taxonid,sra_accession,spots,platform,layout\\n' > "\${species_tag}.sra_query.csv"
             # col 1=Run, col 4=spots, col 13=LibraryStrategy, col 16=LibraryLayout, col 19=Platform
-            awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {printf "%s,%s,%s\\n", \$1, \$4, \$19}' "_runinfo_\${species_tag}.tmp" | \\
-                sort -t',' -k2 -rn | \\
+            # Prepend a platform rank (0=Illumina, 1=BGI/other) so the top 5 prefer Illumina,
+            # then by spot count desc; BGI/other only fill remaining slots when Illumina runs run out.
+            awk -F',' 'NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {rank=(\$19~/[Ii]llumina/)?0:1; printf "%d,%s,%s,%s\\n", rank, \$1, \$4, \$19}' "_runinfo_\${species_tag}.tmp" | \\
+                sort -t',' -k1,1n -k3,3rn | \\
                 head -n 5 | \\
-                while IFS=',' read -r acc spots platform; do
+                while IFS=',' read -r rank acc spots platform; do
                     printf '%s,%s,%s,%s,%s,PAIRED\\n' "\${species_tag}" "\${taxonid}" "\$acc" "\$spots" "\$platform"
                 done >> "\${species_tag}.sra_query.csv"
             rm -f "_runinfo_\${species_tag}.tmp"
@@ -441,6 +445,8 @@ process SRA_FETCH {
     output:
     tuple val(species_tag), path("${species_tag}_norm_R1.fastq.gz"), path("${species_tag}_norm_R2.fastq.gz"),
           path("${species_tag}_norm_SE.fastq.gz"), emit: reads
+    path("${species_tag}.se_candidates.csv"), optional: true, emit: se_candidates
+    path("${species_tag}.blacklist_candidates.csv"), optional: true, emit: blacklist_candidates
 
     script:
     """
@@ -465,6 +471,31 @@ process SRA_FETCH {
     BLACKLIST="${launchDir}/rnaseq_blacklist.csv"
     RAW_ACCESSIONS=\$(awk -F',' 'NR>1 {print \$3}' ${sra_query_csv} | head -n ${params.max_rnaseq_runs})
     TAXONID=\$(awk -F',' 'NR==2 {print \$2; exit}' ${sra_query_csv})
+
+    # Helper: record an accession that yielded a non-empty _1 but no _2 (single-end data
+    # mislabeled PAIRED in SRA). Writes a row in blacklist format so it can be pasted
+    # straight into rnaseq_blacklist.csv (acc,species_tag,taxonid,SE_trinity); a trailing
+    # spots column (SRA-reported, col 4 of the query CSV; empty if unknown) rides along as
+    # info and is ignored by the blacklist parser. Collected to rnaseq_se_candidates.csv.
+    flag_se_candidate() {
+        local acc="\$1" spots
+        spots=\$(awk -F',' -v a="\$acc" 'NR>1 && \$3==a {print \$4; exit}' ${sra_query_csv})
+        echo "[SE_CANDIDATE] \$acc ${species_tag} spots=\${spots:-NA} — add to rnaseq_blacklist.csv as SE_trinity"
+        echo "\$acc,${species_tag},\$TAXONID,SE_trinity,\${spots}" >> ${species_tag}.se_candidates.csv
+    }
+
+    # Helper: record an accession whose download failed outright (parallel-fastq-dump and the
+    # EBI FTP fallback both produced nothing usable). Writes a row in rnaseq_blacklist.csv
+    # column order (sra_accession,species_tag,taxonid,action) with action=skip so it can be
+    # pasted straight into the blacklist after review; the sra_query cache uses a different
+    # column order, hence the re-ordering here. Trailing spots column is info only and is
+    # ignored by the blacklist parser. Collected to rnaseq_blacklist_candidates.csv.
+    flag_blacklist_candidate() {
+        local acc="\$1" spots
+        spots=\$(awk -F',' -v a="\$acc" 'NR>1 && \$3==a {print \$4; exit}' ${sra_query_csv})
+        echo "[BLACKLIST_CANDIDATE] \$acc ${species_tag} spots=\${spots:-NA} — download failed; add to rnaseq_blacklist.csv as skip"
+        echo "\$acc,${species_tag},\$TAXONID,skip,\${spots}" >> ${species_tag}.blacklist_candidates.csv
+    }
 
     # Helper: look up the explicit override action for an accession from the blacklist
     # (col 4 = action: skip | rename_headers).  Returns empty string if not listed.
@@ -553,6 +584,7 @@ process SRA_FETCH {
                 parallel-fastq-dump --sra-id \$ACC --threads ${task.cpus} \
                     --outdir reads/ --split-files --gzip --tmpdir \$TMPDIR || {
                     echo "[WARN] Download failed for \$ACC (\$maxspot), skipping"
+                    flag_blacklist_candidate "\$ACC"
                     continue
                 }
                 if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
@@ -565,13 +597,18 @@ process SRA_FETCH {
                             --max-reads ${params.max_rnaseq_reads} \
                         | pigz -c >> \$TMPDIR/${species_tag}_R2.fastq.gz
                     rm reads/\${ACC}_[12].fastq.gz
+                elif [ -s reads/\${ACC}_1.fastq.gz ]; then
+                    flag_se_candidate "\$ACC"
+                    rm -f reads/\${ACC}_1.fastq.gz
                 else
                     echo "[WARN] Missing pair for \$ACC after download, skipping"
+                    flag_blacklist_candidate "\$ACC"
                 fi
             else
                 parallel-fastq-dump --sra-id \$ACC --threads ${task.cpus} \
                     --outdir reads/ --split-files \$maxspot --gzip --tmpdir \$TMPDIR || {
                     echo "[WARN] Download failed for \$ACC (\$maxspot), skipping"
+                    flag_blacklist_candidate "\$ACC"
                     continue
                 }
                 if [ -f reads/\${ACC}_1.fastq.gz ] && [ -f reads/\${ACC}_2.fastq.gz ]; then
@@ -579,8 +616,12 @@ process SRA_FETCH {
 		    --max-reads ${params.max_rnaseq_reads} \
 		    \\| pigz -c \\>\\> \$TMPDIR/${species_tag}_R{}.fastq.gz  ::: 1 2
                     rm reads/\${ACC}_[12].fastq.gz
+                elif [ -s reads/\${ACC}_1.fastq.gz ]; then
+                    flag_se_candidate "\$ACC"
+                    rm -f reads/\${ACC}_1.fastq.gz
                 else
                     echo "[WARN] Missing pair for \$ACC after download, skipping"
+                    flag_blacklist_candidate "\$ACC"
                 fi
             fi
         done
@@ -603,12 +644,19 @@ process SRA_FETCH {
                 aria2c --max-connection-per-server=4 --min-split-size=1M --max-tries=3 --retry-wait=5 \
                     "\${EBI_DIR}/\${ACC}_2.fastq.gz" -d reads_ebi/ -o "\${ACC}_2.fastq.gz" || true
                 if [ ! -s reads_ebi/\${ACC}_2.fastq.gz ]; then
-                    echo "[WARN] \$ACC: no paired-end R2 at EBI (single-end or accession absent); skipping"
+                    if [ -s reads_ebi/\${ACC}_1.fastq.gz ]; then
+                        echo "[WARN] \$ACC: no paired-end R2 at EBI but R1 present (single-end data)"
+                        flag_se_candidate "\$ACC"
+                    else
+                        echo "[WARN] \$ACC: no paired-end R2 at EBI (single-end or accession absent); skipping"
+                        flag_blacklist_candidate "\$ACC"
+                    fi
                     rm -f reads_ebi/\${ACC}_1.fastq.gz reads_ebi/\${ACC}_2.fastq.gz
                     continue
                 fi
                 if [ ! -s reads_ebi/\${ACC}_1.fastq.gz ]; then
                     echo "[WARN] \$ACC: R1 missing at EBI; skipping"
+                    flag_blacklist_candidate "\$ACC"
                     rm -f reads_ebi/\${ACC}_2.fastq.gz
                     continue
                 fi
@@ -1702,6 +1750,20 @@ workflow {
             SRA_FETCH(branched_sra.has_pe)
             SRA_FETCH_SE(branched_sra.has_se)
             WRITE_EMPTY_READS(branched_sra.no_data.map { stag, _csv -> stag })
+
+            // Accessions found to be single-end (non-empty _1, no _2) during the PE fetch are
+            // recorded as blacklist-ready rows; merge all per-task notes into one reviewable
+            // file at the project root. Add these to rnaseq_blacklist.csv as SE_trinity and
+            // rerun to route them through SRA_FETCH_SE.
+            SRA_FETCH.out.se_candidates
+                .collectFile(name: 'rnaseq_se_candidates.csv', storeDir: launchDir, newLine: false)
+
+            // Accessions whose download failed outright (pfd + EBI FTP both produced nothing)
+            // are recorded in rnaseq_blacklist.csv column order so they can be reviewed and
+            // pasted straight into the blacklist as skip entries; merged into one file at root.
+            SRA_FETCH.out.blacklist_candidates
+                .collectFile(name: 'rnaseq_blacklist_candidates.csv', storeDir: launchDir, newLine: false)
+
             reads_ch = SRA_FETCH.out.reads
                 .mix(SRA_FETCH_SE.out.reads)
                 .mix(WRITE_EMPTY_READS.out.reads)
