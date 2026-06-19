@@ -69,6 +69,7 @@ params.sketch_cache           = "${launchDir}/work/ANI/sketch_cache"
 params.skani_preset           = 'medium'  // fast | medium | slow (must match sketch+triangle)
 params.skani_min_af           = 15        // minimum aligned fraction (%) to report a pair
 params.skani_compression      = 0         // -c override; 0 = use preset default
+params.skani_sketch_chunk     = 50        // genomes sketched per skani job (>=1)
 
 // ── mash ──────────────────────────────────────────────────────────────────────
 params.mash_kmer              = 21
@@ -129,32 +130,39 @@ process MASH_SKETCH {
     """
 }
 
+// skani sketching is fast, so genomes are batched --skani_sketch_chunk per job
+// (instead of one SLURM job per genome) to cut scheduler churn. Output filenames
+// are declared deterministically (one <genome>.sketch per input) so storeDir
+// still caches each chunk and reuses it across runs / --compare levels.
 process SKANI_SKETCH {
-    tag   "${genome.name}"
+    tag   "${group_name} [${genomes.size()} genomes]"
     label 'skani'
-    cpus   2
-    memory '6 GB'
+    cpus   4
+    memory '8 GB'
 
     storeDir "${params.sketch_cache}/skani/${params.skani_preset}_af${params.skani_min_af}"
 
     input:
-        tuple val(group_name), path(genome)
+        tuple val(group_name), path(genomes), val(sketch_names)
 
     output:
-        tuple val(group_name), path("${genome.name}.sketch")
+        tuple val(group_name), path(sketch_names)
 
     script:
     def preset = skaniPresetFlag(params.skani_preset)
     def cflag  = (params.skani_compression as int) > 0 ? "-c ${params.skani_compression}" : ''
     """
-    mkdir -p sk_out
-    skani sketch ${preset} ${cflag} -t ${task.cpus} ${genome} -o sk_out
-    mv sk_out/${genome.name}.sketch ${genome.name}.sketch
+    # skani sketch errors out if its -o dir already exists; clear any partial
+    # output left behind by an interrupted/retried run before re-sketching.
+    rm -rf sk_out
+    printf '%s\\n' ${genomes} > genome_list.txt
+    skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o sk_out
+    mv sk_out/*.sketch .
     """
 
     stub:
     """
-    touch ${genome.name}.sketch
+    for s in ${sketch_names.join(' ')}; do touch \$s; done
     """
 }
 
@@ -196,7 +204,7 @@ process SKANI_COMPARE {
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '64 GB' : sketches.size() > 200 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.compare}/${group_name}/batches"
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
 
     input:
         tuple val(group_name), path(sketches)
@@ -232,7 +240,7 @@ process MASH_COMPARE {
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.compare}/${group_name}/batches"
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
 
     input:
         tuple val(group_name), path(sketches)
@@ -268,7 +276,7 @@ process SOURMASH_COMPARE {
     cpus   { sigs.size() > 500 ? 32 : sigs.size() > 200 ? 16 : 8 }
     memory { sigs.size() > 500 ? '128 GB' : sigs.size() > 200 ? '64 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.compare}/${group_name}/batches"
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
 
     input:
         tuple val(group_name), path(sigs)
@@ -282,7 +290,7 @@ process SOURMASH_COMPARE {
     sourmash compare --ani --containment --quiet \\
         --from-file sig_list.txt --csv cmp.csv -k ${params.sourmash_kmer}
 
-    sourmash_matrix_to_long.py --input cmp.csv --output ${group_name}.full.ani.tsv
+    python3 ${projectDir}/bin/sourmash_matrix_to_long.py --input cmp.csv --output ${group_name}.full.ani.tsv
     """
 
     stub:
@@ -302,7 +310,7 @@ process FASTANI_COMPARE {
     cpus   { group_size > 500 ? 64 : group_size > 200 ? 24 : 8 }
     memory { group_size > 500 ? '128 GB' : group_size > 200 ? '48 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.compare}/${group_name}/batches"
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
 
     input:
         tuple val(group_name),
@@ -372,7 +380,7 @@ process MASH_COMPONENTS {
 
     script:
     """
-    mash_components.py --input ${mash_dist} \\
+    python3 ${projectDir}/bin/mash_components.py --input ${mash_dist} \\
         --ani ${params.prefilter_ani} --min-size ${params.min_group_size} \\
         > ${group_name}.components.tsv
     """
@@ -392,7 +400,7 @@ process MERGE_ANI {
     tag   "${group_name}"
     label 'report'
 
-    storeDir "${params.outdir}/${params.compare}/${group_name}"
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}"
 
     input:
         tuple val(group_name), path(part_tsvs)
@@ -415,7 +423,7 @@ process REPORT_ANI {
     tag   "${group_name}"
     label 'report'
 
-    publishDir { "${params.outdir}/${params.compare}/${group_name}" }, mode: 'copy'
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(ani_tsv), path(names_tsv)
@@ -427,7 +435,7 @@ process REPORT_ANI {
     script:
     """
     cp ${names_tsv} ${group_name}_genome_names.tsv
-    report_ani.py \\
+    python3 ${projectDir}/bin/report_ani.py \\
         --input    ${ani_tsv} \\
         --names    ${group_name}_genome_names.tsv \\
         --group    "${group_name}" \\
@@ -527,10 +535,22 @@ workflow {
     // ── Per-group genome list + names TSV ─────────────────────────────────────
     // names_tsv (filename\tspecies) is the authoritative genome universe for the
     // report — genomes with no surviving pair still show up there as outliers.
+    // Only genomes whose file actually exists on disk are listed: the names file
+    // (and the genome list fed to the compare step) must never reference a genome
+    // that is absent from the input folder.
     def prepared_ch = grouped_ch
         .map { group_name, members ->
-            def genomes   = members.collect { m -> m[2] }
-            def namesText = members.collect { m -> "${m[2].getName()}\t${m[1]}" }.join('\n')
+            def present = members.findAll { m -> m[2].exists() }
+            def missing = members.size() - present.size()
+            if (missing > 0) {
+                log.warn "${group_name}: omitting ${missing} genome(s) missing from ${params.genome_dir}"
+            }
+            tuple(group_name, present)
+        }
+        .filter { _gname, present -> present.size() >= params.min_group_size as int }
+        .map { group_name, present ->
+            def genomes   = present.collect { m -> m[2] }
+            def namesText = present.collect { m -> "${m[2].getName()}\t${m[1]}" }.join('\n')
             def nameFile  = file("${workflow.workDir}/names_${group_name}.tsv")
             nameFile.text = "filename\tspecies\n" + namesText + "\n"
             tuple(group_name, genomes, nameFile)
@@ -552,8 +572,16 @@ workflow {
     def ani_tsv_ch
 
     if (method == 'skani') {
-        ani_tsv_ch = SKANI_SKETCH(genome_flat)
+        // Batch genomes into chunks of skani_sketch_chunk per sketch job.
+        def chunk = Math.max(1, params.skani_sketch_chunk as int)
+        def skani_sketch_in = genome_ch.flatMap { gn, genomes ->
+            genomes.collate(chunk).collect { sub ->
+                tuple(gn, sub, sub.collect { g -> "${g.name}.sketch" })
+            }
+        }
+        ani_tsv_ch = SKANI_SKETCH(skani_sketch_in)
             .groupTuple()
+            .map { gn, sketch_lists -> tuple(gn, sketch_lists.flatten()) }
             | SKANI_COMPARE
 
     } else if (method == 'mash') {

@@ -59,6 +59,7 @@ outdir: "results/ANI"
 skani_preset:      "medium"   # fast | medium | slow (must match sketch + triangle)
 skani_min_af:      15         # minimum aligned fraction (%) to report a pair
 skani_compression: 0          # -c override; 0 = use preset default
+skani_sketch_chunk: 50        # genomes sketched per skani job (batched to cut job count)
 
 # ── mash settings ─────────────────────────────────────────────────────────────
 mash_kmer:        21
