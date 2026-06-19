@@ -30,22 +30,61 @@ compare: "GENUS"
 # Leave empty string to process all taxa.
 taxon: ""
 
-# ANI thresholds
-ani_cluster_threshold: 95.0   # genomes with ANI >= this are placed in the same cluster
-ani_outlier_threshold: 90.0   # genomes with best ANI < this are flagged as outliers
+# ─────────────────────────────────────────────────────────────────────────────
+# Identity method:  skani (default) | mash | sourmash | fastani
+#   skani    fast + accurate ANI; sketch-once + sparse triangle. Best for
+#            clade-level (CLASS/PHYLUM) where fastANI is too slow.
+#   mash     fastest, roughest (MinHash distance -> ANI = 100*(1-dist)).
+#   sourmash MinHash containment-ANI matrix (sourmash compare --ani).
+#   fastani  classic fragment-mapping ANI (optionally mash-prefiltered below).
+# ─────────────────────────────────────────────────────────────────────────────
+ani_method: "skani"
+
+# Per-genome sketches are cached here and reused across groups, runs and
+# different --compare levels (skani/mash/sourmash). Safe to delete to force
+# re-sketching.
+sketch_cache: "work/ANI/sketch_cache"
+
+# ANI thresholds (for the report; apply to every method)
+ani_cluster_threshold: 95.0   # genomes with ANI >= this go in the same cluster
+ani_outlier_threshold: 90.0   # genomes whose best ANI < this are flagged as outliers
 
 # Skip groups with fewer than this many genomes
 min_group_size: 2
 
-# Batching: split large groups into chunks of this size (0 = disabled; use threads instead)
-ani_batch_size: 0
-
 # Output directory (relative to launch directory)
 outdir: "results/ANI"
 
-# fastANI settings
+# ── skani settings ────────────────────────────────────────────────────────────
+skani_preset:      "medium"   # fast | medium | slow (must match sketch + triangle)
+skani_min_af:      15         # minimum aligned fraction (%) to report a pair
+skani_compression: 0          # -c override; 0 = use preset default
+
+# ── mash settings ─────────────────────────────────────────────────────────────
+mash_kmer:        21
+mash_sketch_size: 10000
+
+# ── sourmash settings ─────────────────────────────────────────────────────────
+sourmash_kmer:   21
+sourmash_scaled: 1000
+
+# ── fastANI settings ──────────────────────────────────────────────────────────
 fastani_fraglen: 3000
-fastani_kmer: 16
+fastani_kmer:    16
+# Batching: split a group into chunks of this size and submit upper-triangle
+# batch-pair jobs (0 = disabled; one job per group using threads).
+ani_batch_size:  0
+# Prefilter cascade: use mash to pre-cluster a group into connected components,
+# then run fastANI all-vs-all ONLY within each component (skips cross-lineage
+# pairs entirely). Turns a clade-wide O(N^2) into sum_i O(n_i^2).
+fastani_prefilter: false
+prefilter_ani:     80.0       # mash-ANI% floor to join two genomes in a component
+
+# ── Container image tags (override only if a newer build is needed) ───────────
+# fastani_container:  "https://depot.galaxyproject.org/singularity/fastani:1.34--hb66fcc3_5"
+# skani_container:    "https://depot.galaxyproject.org/singularity/skani:0.2.2--ha6fb395_2"
+# mash_container:     "https://depot.galaxyproject.org/singularity/mash:2.3--hb105d93_10"
+# sourmash_container: "https://depot.galaxyproject.org/singularity/sourmash:4.9.4--hdfd78af_0"
 
 # Limit groups processed (for testing; 0 = all)
 n_test: 0

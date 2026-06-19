@@ -1126,6 +1126,15 @@ process FUNANNOTATE_TRAIN {
     """
 }
 
+// Option B persistence model: funannotate predict computes DIRECTLY into the persistent
+// per-genome dir (${params.target}/${out}), symmetric with FUNANNOTATE_TRAIN writing to
+// training_target. funannotate checkpoints into predict_misc/, so a restart after an
+// OOM/timeout/orchestrator death resumes completed steps in place rather than starting
+// over. There is no publishDir copy and no work-dir<->target rsync: the durable output is
+// written where downstream steps already read it. Large intermediates still go to the
+// node-local --tmpdir. The Nextflow output is a small marker file (nothing consumes the
+// predict dir as a channel; postpredict rebuilds metadata from the CSV and gates on the
+// on-disk GBK), so emitting a marker keeps the DAG edge without copying the result tree.
 process FUNANNOTATE_PREDICT {
     tag "$out"
 
@@ -1133,17 +1142,15 @@ process FUNANNOTATE_PREDICT {
     memory '32 GB'
     time   '32h'
 
-    publishDir "${params.target}", mode: 'copy', overwrite: true
-
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
           val(genome_fa)
 
     output:
-    path("${out}"), emit: dir
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table), emit: metadata
+    path("${out}.predict.done"), emit: done
 
     script:
     """
@@ -1155,83 +1162,90 @@ process FUNANNOTATE_PREDICT {
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
 
+    PREDICTDIR="${params.target}/${out}"
+    PREDICT_GBK="\$PREDICTDIR/predict_results/${out}.gbk"
+
     if [ "${params.debug.toBoolean()}" = "true" ]; then
-        echo "[DEBUG] out          = ${out}"
-        echo "[DEBUG] asmid        = ${asmid}"
-        echo "[DEBUG] species      = ${species}"
-        echo "[DEBUG] strain       = ${strain}"
-        echo "[DEBUG] locustag     = ${locustag}"
-        echo "[DEBUG] busco        = ${busco_lineage}"
-        echo "[DEBUG] transl_table = ${transl_table}"
-        echo "[DEBUG] proteins     = ${params.proteins}"
-        echo "[DEBUG] genome_fa    = ${genome_fa}"
-        echo "[DEBUG] TMPDIR       = \$TMPDIR"
-        echo "[DEBUG] pwd          = \$(pwd)"
+        echo "[DEBUG] out=${out} asmid=${asmid} species=${species} strain=${strain}"
+        echo "[DEBUG] locustag=${locustag} busco=${busco_lineage} transl_table=${transl_table}"
+        echo "[DEBUG] proteins=${params.proteins} genome_fa=${genome_fa}"
+        echo "[DEBUG] PREDICTDIR=\$PREDICTDIR TMPDIR=\$TMPDIR pwd=\$(pwd)"
     fi
 
-    # ── Skip if prediction already complete (e.g. orchestrator restarted after SLURM job finished) ──
-    PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
-    if [ -f "\$PREDICT_GBK" ] && [ -s "\$PREDICT_GBK" ]; then
-        echo "[INFO] Prediction already complete for ${out}, syncing to work dir"
-        mkdir -p ${out}
-        rsync -a --exclude 'training' "${params.target}/${out}/" "${out}/"
-        exit 0
+    # ── Skip vs. refresh decision ─────────────────────────────────────────────
+    # The workflow schedules this process when the GBK is missing OR stale (rnaseq/trinity
+    # newer than the GBK, per staleRnaseq()). Re-derive staleness here from the same on-disk
+    # timestamps so a current GBK short-circuits, but a stale one forces a clean re-predict.
+    if [ -s "\$PREDICT_GBK" ]; then
+        SPECIES_TAG=\$(printf '%s' "${species}" | sed -E 's/[[:space:]]+/_/g')
+        STALE=0
+        for f in "${launchDir}/rnaseq_reads/\${SPECIES_TAG}_norm_R1.fastq.gz" \\
+                 "${launchDir}/rnaseq_reads/\${SPECIES_TAG}_norm_SE.fastq.gz" \\
+                 "${launchDir}/rnaseq_data/\${SPECIES_TAG}.trinity-GG.fasta"; do
+            if [ -s "\$f" ] && [ "\$f" -nt "\$PREDICT_GBK" ]; then STALE=1; fi
+        done
+        if [ "\$STALE" -eq 0 ]; then
+            echo "[INFO] Prediction already complete and current for ${out}; nothing to do"
+            touch ${out}.predict.done
+            exit 0
+        fi
+        echo "[INFO] Stale prediction for ${out}: rnaseq/trinity newer than GBK — clearing predict outputs for a fresh run"
+        rm -rf "\$PREDICTDIR/predict_results" "\$PREDICTDIR/predict_misc"
     fi
 
-    # ── Restore any partial state from a previous failed attempt ──────────────
-    if [ -d "${params.target}/${out}/predict_results" ]; then
-        echo "[INFO] Restoring partial predict state from ${params.target}/${out}"
-        mkdir -p ${out}
-        rsync -a --exclude 'training' "${params.target}/${out}/" "${out}/"
+    mkdir -p "\$PREDICTDIR"
+
+    # ── Guard against a corrupt partial from a previous attempt ───────────────
+    # funannotate resumes from predict_misc/. If predict_results/ exists without a
+    # predict_misc/ (a half-written tree with no checkpoints and no GBK), clear it so
+    # predict starts the consensus/output step from a clean state instead of choking on it.
+    if [ ! -d "\$PREDICTDIR/predict_misc" ] && [ -d "\$PREDICTDIR/predict_results" ]; then
+        echo "[WARN] predict_results/ present without predict_misc/ for ${out}; clearing stale partial"
+        rm -rf "\$PREDICTDIR/predict_results"
     fi
 
-    # ── Persist results to target even if orchestrator dies before publishDir ──
-    trap 'if [ -d "${out}" ]; then mkdir -p "${params.target}/${out}" && rsync -a --exclude "training" "${out}/" "${params.target}/${out}/" 2>/dev/null || true; fi' EXIT
-
-    # Link training data into work dir so funannotate predict finds it at the relative path it expects.
-    mkdir -p ${out}
+    # funannotate predict expects training data at <outdir>/training; point it at the
+    # persistent training dir. The symlink lives in the persistent project tree (no
+    # publishDir to recursively copy the target), so it is left in place.
     if [ -d "${params.training_target}/${out}/training" ]; then
-        ln -sfn "${params.training_target}/${out}/training" "${out}/training"
+        ln -sfn "${params.training_target}/${out}/training" "\$PREDICTDIR/training"
     fi
 
     TBL2ASN_PARAMS="-l paired-ends"
 
     funannotate predict --name ${locustag} -i ${genome_fa} --strain "${strain}" \\
-        -o ${out} -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
+        -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 glimmerhmm:0 \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
-        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark 
+        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark
 
-    EXPECTED_GBK="${out}/predict_results/${out}.gbk"
-    if [ ! -f "\$EXPECTED_GBK" ]; then
-        echo "ERROR: funannotate predict did not produce expected GBK: \$EXPECTED_GBK" >&2
+    if [ ! -s "\$PREDICT_GBK" ]; then
+        echo "ERROR: funannotate predict did not produce expected GBK: \$PREDICT_GBK" >&2
         exit 1
     fi
-    if [ -d "${out}/predict_misc/ab_initio_parameters" ]; then
-        mv ${out}/predict_misc/ab_initio_parameters ${out}
-        mv ${out}/predict_misc/trnascan.no-overlaps.gff3 ${out}
-        rm -rf ${out}/predict_misc
-        mkdir -p ${out}/predict_misc
-        mv ${out}/ab_initio_parameters ${out}/trnascan.no-overlaps.gff3 ${out}/predict_misc
+    if [ -d "\$PREDICTDIR/predict_misc/ab_initio_parameters" ]; then
+        mv "\$PREDICTDIR/predict_misc/ab_initio_parameters" "\$PREDICTDIR"
+        mv "\$PREDICTDIR/predict_misc/trnascan.no-overlaps.gff3" "\$PREDICTDIR"
+        rm -rf "\$PREDICTDIR/predict_misc"
+        mkdir -p "\$PREDICTDIR/predict_misc"
+        mv "\$PREDICTDIR/ab_initio_parameters" "\$PREDICTDIR/trnascan.no-overlaps.gff3" "\$PREDICTDIR/predict_misc"
     fi
-    find ${out}/predict_results/ -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
+    find "\$PREDICTDIR/predict_results/" -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
         | xargs -0 --no-run-if-empty pigz
-    # Remove the training symlink so publishDir does not overwrite the real training dir.
-    # are we sure this is right thing, seems like something is still getting deleted
-    rm -f "${out}/training"
-    echo "[INFO] deleted ${out}/training"
     sync
-    echo "[INFO] did the syncing"
+    touch ${out}.predict.done
+    echo "[INFO] Prediction complete for ${out} at \$PREDICTDIR"
     """
 
     stub:
     """
     echo "[STUB] Would run funannotate predict for ${out} using ${genome_fa}"
     [ -f "${genome_fa}" ] || { echo "ERROR: genome not found at ${genome_fa}" >&2; exit 1; }
-    mkdir -p ${out}/predict_results ${out}/predict_misc
-    touch ${out}/predict_results/${out}.gbk ${out}/predict_results/${out}.proteins.fa
+    mkdir -p ${params.target}/${out}/predict_results ${params.target}/${out}/predict_misc
+    touch ${params.target}/${out}/predict_results/${out}.gbk ${params.target}/${out}/predict_results/${out}.proteins.fa
+    touch ${out}.predict.done
     """
 }
 
@@ -1890,9 +1904,14 @@ workflow {
             .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt -> out && asmid }
             .take((params.n_test as int) > 0 ? params.n_test as int : -1)
             .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt -> !suppressSet.contains(asmid) }
-            .filter { out, _asmid, _sp, _st, _lt, _bl, _hl, _tt ->
+            // Only genomes whose prediction was already complete AND current in a PRIOR run.
+            // This is the exact logical complement of the predict_ch filter, so this set is
+            // disjoint from the genomes (re)predicted in THIS run (which arrive via
+            // FUNANNOTATE_PREDICT.out.metadata below). Keeping them disjoint means no genome
+            // is fed downstream twice and stale genomes correctly wait for the fresh predict.
+            .filter { out, _asmid, sp, _st, _lt, _bl, _hl, _tt ->
                 def f = file("${params.target}/${out}/predict_results/${out}.gbk")
-                f.exists() && f.size() > 0
+                f.exists() && f.size() > 0 && !staleRnaseq(out as String, sp as String)
             }
 
         // annotate_ready_ch threads through optional pre-annotate steps. Each optional
@@ -1901,7 +1920,21 @@ workflow {
         // fires once all requested optional steps are complete for a given sample.
         // Joining ANTISMASH/INTERPRO/SIGNALP output back through postpredict reconstructs
         // the metadata tuple while encoding the dependency edge in the channel DAG.
-        def annotate_ready_ch = postpredict
+        //
+        // Same-run completion gate: genomes predicted in THIS run flow in via
+        // FUNANNOTATE_PREDICT.out.metadata (a real channel edge, so downstream waits for
+        // predict to finish), while prior-run genomes flow in via postpredict (available
+        // immediately). The two sets are disjoint by the filter above, so a plain mix
+        // needs no dedup. NOTE: the optional steps below are still each gated behind their
+        // params (run_antismash/interpro/signalp/update/annotate), all of which default to
+        // false — so by default nothing downstream of predict runs.
+        // Combined metadata for every genome with a current prediction: prior-run genomes
+        // (postpredict) plus genomes predicted in THIS run (FUNANNOTATE_PREDICT.out.metadata).
+        // Used both as the annotate source and as the right-hand side of the metadata-
+        // reconstruction joins below, so this-run genomes are not dropped when an optional
+        // step is enabled. (Reused multiple times, exactly as postpredict was before.)
+        def predict_meta = postpredict.mix(FUNANNOTATE_PREDICT.out.metadata)
+        def annotate_ready_ch = predict_meta
 
         if (params.run_antismash.toBoolean()) {
             def as_todo = annotate_ready_ch.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt ->
@@ -1915,7 +1948,7 @@ workflow {
             ANTISMASH_RUN(as_todo)
             def as_completed = ANTISMASH_RUN.out
                 .map { out, _files -> tuple(out, 'done') }
-                .join(postpredict)
+                .join(predict_meta)
                 .map { out, _flag, asmid, sp, st, lt, bl, hl, tt -> tuple(out, asmid, sp, st, lt, bl, hl, tt) }
             annotate_ready_ch = as_completed.mix(as_done)
         }
@@ -1930,7 +1963,7 @@ workflow {
             INTERPROSCAN_RUN(ipr_todo)
             def ipr_completed = INTERPROSCAN_RUN.out
                 .map { out, _xml -> tuple(out, 'done') }
-                .join(postpredict)
+                .join(predict_meta)
                 .map { out, _flag, asmid, sp, st, lt, bl, hl, tt -> tuple(out, asmid, sp, st, lt, bl, hl, tt) }
             annotate_ready_ch = ipr_completed.mix(ipr_done)
         }
@@ -1945,7 +1978,7 @@ workflow {
             SIGNALP_RUN(sp_todo)
             def sp_completed = SIGNALP_RUN.out
                 .map { out, _txt -> tuple(out, 'done') }
-                .join(postpredict)
+                .join(predict_meta)
                 .map { out, _flag, asmid, sp, st, lt, bl, hl, tt -> tuple(out, asmid, sp, st, lt, bl, hl, tt) }
             annotate_ready_ch = sp_completed.mix(sp_done)
         }
@@ -1955,7 +1988,7 @@ workflow {
                 // UPDATE runs from predict results in parallel with antismash/interpro/signalp.
                 // Reads are joined from SRA_FETCH (storeDir-cached, so prior-run reads are reused).
                 // The join on upd_signal gates annotate_ready_ch so ANNOTATE waits for UPDATE.
-                def upd_input = postpredict
+                def upd_input = predict_meta
                     .map { out, asmid, species, strain, locustag, busco, hlen, ttable ->
                         def species_tag = species.replaceAll(/\s+/, '_')
                         tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable)
