@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
-report_ani.py — Parse a fastANI all-vs-all TSV and write a clustering + outlier report.
+report_ani.py — Parse an all-vs-all ANI TSV and write a clustering + outlier report.
 
-FastANI output columns:
-  query  reference  ANI  bidirectional_fragment_mappings  total_query_fragments
+The input is a tab-separated file whose first three columns are:
+  query  reference  ANI
+
+This format is emitted by every --ani_method in compare_ANI.nf:
+  - fastani   : native fastANI output (cols 4/5 = mappings, ignored here)
+  - skani     : normalized from `skani triangle --sparse`
+  - mash      : normalized from `mash dist`           (ANI = 100*(1-distance))
+  - sourmash  : normalized from `sourmash compare --ani` matrix
+
+Sparse methods (skani/sourmash/mash-prefilter) and fastANI both *omit* pairs
+below their internal mapping/identity floor, so a fully divergent genome may have
+NO line at all in the TSV. To count and flag such genomes as outliers we take the
+authoritative genome universe from the --names file (one row per genome) when it
+is provided, and fall back to the genomes seen in the pairs otherwise.
 
 Two ANI thresholds are used:
   --cluster-threshold  (default 95.0)  Minimum ANI to place two genomes in the same cluster
@@ -63,7 +75,11 @@ def parse_ani_tsv(path):
                 continue
             q   = os.path.basename(parts[0])
             r   = os.path.basename(parts[1])
-            ani = float(parts[2])
+            try:
+                ani = float(parts[2])
+            except ValueError:
+                # header line (e.g. skani 'ANI') or malformed row — skip
+                continue
             if q == r:
                 continue
             key = tuple(sorted([q, r]))
@@ -185,8 +201,10 @@ def main():
     pairs = parse_ani_tsv(args.input)
     names = parse_names_tsv(args.names)
 
-    # Collect genome names from pair keys
-    genomes_set = set()
+    # Genome universe: prefer the names file (one row per genome in the group) so
+    # that genomes with no surviving pair — true outliers under sparse methods —
+    # are still counted and flagged. Fall back to the genomes seen in the pairs.
+    genomes_set = set(names.keys())
     for q, r in pairs:
         genomes_set.add(q)
         genomes_set.add(r)
@@ -195,8 +213,8 @@ def main():
     if not genomes:
         with open(args.output, 'w') as out:
             out.write(f"=== ANI Report: {args.group} ===\n")
-            out.write("No pairwise comparisons found in input.\n")
-        print("Warning: empty input — no pairs parsed.", file=sys.stderr)
+            out.write("No genomes found (empty names file and no pairs).\n")
+        print("Warning: empty input — no genomes or pairs.", file=sys.stderr)
         return
 
     write_report(args, pairs, names, genomes)
