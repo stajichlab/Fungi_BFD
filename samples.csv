@@ -14299,7 +14299,7 @@ GCA_015586015.1_ASM1558601v1,Penicillium chrysogenum,IF3SW-F3,PRJNA659567,5076,d
 GCA_015586395.1_ASM1558639v1,Penicillium chrysogenum,IF4SG-B1,PRJNA667181,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,F12272E1
 GCA_015585965.1_ASM1558596v1,Penicillium chrysogenum,IF4SW-F1,PRJNA659567,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,FCC2842F
 GCA_015585955.1_ASM1558595v1,Penicillium chrysogenum,IF7SW-F1,PRJNA659567,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,F70D5E31
-GCA_015586365.1_ASM1558636v1,Penicillium chrysogenum,IIF2*SW-F2,PRJNA667181,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,FE4CBA54
+GCA_015586365.1_ASM1558636v1,Penicillium chrysogenum,IIF2-SW-F2,PRJNA667181,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,FE4CBA54
 GCA_015585875.1_ASM1558587v1,Penicillium chrysogenum,IIF3SW-F2,PRJNA659567,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,FA71475E
 GCA_015585855.1_ASM1558585v1,Penicillium chrysogenum,IIF4SW-F3,PRJNA659567,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,FAA7441C
 GCA_015585735.1_ASM1558573v1,Penicillium chrysogenum,IIF8SW-F4,PRJNA659567,5076,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium chrysogenum,1,F70BF220
@@ -15643,7 +15643,7 @@ GCA_003693515.1_ASM369351v1,Pseudonectria buxi,JAC17-19,PRJNA485774,1053252,dika
 GCA_002911195.1_ASM291119v1,Pseudonectria foliicola,AR2711,PRJNA300435,1634538,dikarya,Ascomycota,,Sordariomycetes,,Hypocreales,Nectriaceae,Pseudonectria,Pseudonectria foliicola,1,FCE825C3
 GCA_003693505.1_ASM369350v1,Pseudonectria foliicola,JAC18-02,PRJNA485774,1634538,dikarya,Ascomycota,,Sordariomycetes,,Hypocreales,Nectriaceae,Pseudonectria,Pseudonectria foliicola,1,F4220373
 GCA_033297205.1_Gelamo1,Pseudoneurospora amorphoporcata,CBS 626.80,PRJNA953065,241081,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Sordariaceae,Pseudoneurospora,Pseudoneurospora amorphoporcata,1,F454A08E
-GCA_028028555.1_ASM2802855v1,Pseudopestalotiopsis chinensis,AH-3-21*,PRJNA909932,1912844,dikarya,Ascomycota,,Sordariomycetes,,Amphisphaeriales,Sporocadaceae,Pseudopestalotiopsis,Pseudopestalotiopsis chinensis,1,F0AEDD87
+GCA_028028555.1_ASM2802855v1,Pseudopestalotiopsis chinensis,AH-3-21,PRJNA909932,1912844,dikarya,Ascomycota,,Sordariomycetes,,Amphisphaeriales,Sporocadaceae,Pseudopestalotiopsis,Pseudopestalotiopsis chinensis,1,F0AEDD87
 GCA_015881745.1_ASM1588174v1,Pseudopestalotiopsis theae,CYF27,PRJNA663031,218556,dikarya,Ascomycota,,Sordariomycetes,,Amphisphaeriales,Sporocadaceae,Pseudopestalotiopsis,Pseudopestalotiopsis theae,1,F0F88B1D
 GCA_003868215.1_ASM386821v1,Pseudophaeomoniella oleicola,M24,PRJNA486708,1671306,dikarya,Ascomycota,,Eurotiomycetes,,Phaeomoniellales,Phaeomoniellaceae,Pseudophaeomoniella,Pseudophaeomoniella oleicola,1,F192E294
 GCA_033220655.1_ASM3322065v1,Pseudopithomyces chartarum,AGR01,PRJNA596850,1892770,dikarya,Ascomycota,,Dothideomycetes,,Pleosporales,Didymosphaeriaceae,Pseudopithomyces,Pseudopithomyces chartarum,1,F196B698
@@ -16962,8 +16962,8 @@ GCA_013036805.1_ASM1303680v1,Rhodotorula mucilaginosa,IF8SW-P2,PRJNA625575;PRJNA
 GCA_013036385.1_ASM1303638v1,Rhodotorula mucilaginosa,IFCSG-B1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F4D05AF6
 GCA_019802925.1_ASM1980292v1,Rhodotorula mucilaginosa,IIF1SG-B3,PRJNA635447,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,FA499B04
 GCA_013036515.1_ASM1303651v1,Rhodotorula mucilaginosa,IIF1SW-F1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F0598784
-GCA_013036665.1_ASM1303666v1,Rhodotorula mucilaginosa,IIF2*SW-B1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F19589D9
-GCA_013036445.1_ASM1303644v1,Rhodotorula mucilaginosa,IIF2*SW-F1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F5EBF28F
+GCA_013036665.1_ASM1303666v1,Rhodotorula mucilaginosa,IIF2-SW-B1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F19589D9
+GCA_013036445.1_ASM1303644v1,Rhodotorula mucilaginosa,IIF2-SW-F1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F5EBF28F
 GCA_012922805.1_ASM1292280v1,Rhodotorula mucilaginosa,IIF2SW-F1,PRJNA625575;PRJNA641401,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,FAF65C39
 GCA_019802915.1_ASM1980291v1,Rhodotorula mucilaginosa,IIF3SG-B1,PRJNA635447,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F514D524
 GCA_019802905.1_ASM1980290v1,Rhodotorula mucilaginosa,IIF4SG-B4,PRJNA635447,5537,dikarya,Basidiomycota,,Microbotryomycetes,,Sporidiobolales,Sporidiobolaceae,Rhodotorula,Rhodotorula mucilaginosa,1,F5DED11B
