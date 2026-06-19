@@ -1156,7 +1156,7 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = (row.STRAIN?.trim() ?: '').split(';')[0].trim().replaceAll(/['"]/, '').replace(':', ' ')
+            def strain   = SampleUtils.cleanStrain(row.STRAIN?.trim() ?: '')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(locustag, basename, species, strain)

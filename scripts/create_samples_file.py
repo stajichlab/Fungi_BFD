@@ -1,56 +1,52 @@
 #!/usr/bin/env python3
+"""Build samples.csv from the NCBI accession + taxonomy tables.
 
-# this script is from 1KFG/common_annotate but demonstrates how the LOCUS tag prefix was generated based on the assembly id
+Reproducible, dependency-light replacement for the original ad-hoc script.
 
-import os
+Pipeline (all upstream files are produced by ../../1KFG/2026/NCBI_fungi/Makefile):
+    ncbi_accessions.csv          (ACCESSION,SPECIES,STRAIN,NCBI_TAXID,BIOPROJECT,...,ASM_NAME)
+    ncbi_accessions_taxonomy.csv (ASM_ACCESSION,NCBI_TAXID,SPECIES_IN,STRAIN,<lineage>,SPECIES)
+        |
+        v   sanitize (scripts/sample_sanitize.py)  +  curation (data/curation/)
+        v
+    samples.csv
+
+Curation is data, not manual post-edits:
+    data/curation/exclude_asmids.txt  hard removals (one raw ASMID per line; '\\t reason'; '#' comments)
+    data/curation/keep_dupes.csv      species+strain isolates intentionally kept as >1 assembly
+    data/curation/overrides.csv       optional per-ASMID field corrections (ASMID,FIELD,VALUE)
+
+Dedup: known duplicate assemblies are handled by the exclude list.  Any *new*
+species+strain collision not covered by curation is resolved by a default
+tie-breaker (prefer RefSeq GCF, else newest GCA accession) and logged, unless
+the isolate is in keep_dupes.csv.
+
+LOCUSTAG is the md5-derived tag of the *raw* '{ACCESSION}_{ASM_NAME}' (stable
+across display cleaning); collisions get deterministic A/B/C suffixes after a
+stable sort.
+"""
+
+import argparse
 import csv
-import xml.etree.ElementTree as ET
 import hashlib
-from Bio import Entrez
-Entrez.email = 'jason.stajich@ucr.edu'
-from joblib import Memory
+import os
+import sys
 
-cachedir = os.path.join(os.getcwd(), 'cache')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sample_sanitize import clean_species, clean_strain, clean_asmid, backfill_strain
 
-if not os.path.exists(cachedir):
-    os.makedirs(cachedir)
-memory = Memory(cachedir, verbose=0)
+DEF_NCBI = "../../1KFG/2026/NCBI_fungi"
 
+OUT_FIELDS = ['ASMID', 'SPECIES_IN', 'STRAIN', 'BIOPROJECT', 'NCBI_TAXONID',
+              'BUSCO_LINEAGE', 'PHYLUM', 'SUBPHYLUM', 'CLASS', 'SUBCLASS',
+              'ORDER', 'FAMILY', 'GENUS', 'SPECIES', 'TRANSL_TABLE', 'LOCUSTAG']
+LINEAGE_COLS = ['PHYLUM', 'SUBPHYLUM', 'CLASS', 'SUBCLASS', 'ORDER', 'FAMILY', 'GENUS']
 
-#@memory.cache
-def get_locus_from_asm(assembly_id):
-    print(f"asmid = '{assembly_id}'")
-    mdsum = hashlib.md5(assembly_id.encode('utf-8')).hexdigest().upper()
-    return 'F' + mdsum[-7:]
-    
-@memory.cache
-def get_bioproject_prefix(BIOPROJECTID):
-    LOCUSTAG = ""
-    for project in BIOPROJECTID.split(';'):
-        # remove umbrella projects
-        print(f'Checking {project}')
-        if project == "PRJNA533106" or project == "PRJEB40665" or project == "PRJEB43510":
-            continue
-        try:
-            bioproject_handle = Entrez.efetch(db="bioproject",id = project)
-            projtree = ET.parse(bioproject_handle)
-            projroot = projtree.getroot()
-        
-            lt = projroot.iter('LocusTagPrefix')
-            for locus in lt:
-                LOCUSTAG = locus.text
-        except Exception as e:
-            print(f'Error {e}')
-        if len(LOCUSTAG) > 0:
-            break
-    return LOCUSTAG
-
-# Families where all members use the Alternative Yeast Nuclear Code (CUG→Ser, table 12)
+# --- translation tables ----------------------------------------------------
 TRANSL_TABLE_12_FAMILIES = {'Debaryomycetaceae'}
-# Individual genera using table 12 not covered by the family-level rule above
 TRANSL_TABLE_12_GENERA = {'Clavispora'}
-# Genera using Pachysolen tannophilus Nuclear Code (CUG→Ala, table 26)
 TRANSL_TABLE_26_GENERA = {'Pachysolen'}
+
 
 def get_transl_table(family, genus):
     if family in TRANSL_TABLE_12_FAMILIES or genus in TRANSL_TABLE_12_GENERA:
@@ -59,79 +55,224 @@ def get_transl_table(family, genus):
         return 26
     return 1
 
-accessions = 'ncbi_accessions.csv'
-accession_taxonomy = 'ncbi_accessions_taxonomy.csv'
 
-outsamples = 'samples.csv'
+def busco_lineage(phylum):
+    if phylum in ('Ascomycota', 'Basidiomycota'):
+        return 'dikarya'
+    if phylum == 'Mucoromycota':
+        return 'mucoromycota'
+    if phylum == 'Microsporidia':
+        return 'microsporidia'
+    return 'fungi'
 
-accession_dict = {}
-fields = ['ASMID','SPECIES_IN', 'STRAIN', 'BIOPROJECT', 'NCBI_TAXONID', 'BUSCO_LINEAGE']
-with open(accessions, 'r', newline='') as f:
-    reader = csv.reader(f)
-    header = next(reader)
-    hdr2dict = {header[i]: i for i in range(len(header))}
-    for row in reader:
-        acc = row[hdr2dict['ACCESSION']]
-        species = row[hdr2dict['SPECIES']]
-        strain = row[hdr2dict['STRAIN']]
-        asm_name = row[hdr2dict['ASM_NAME']]
-        asm_base = f'{acc}_{asm_name}'
-        accession_dict[asm_base] = [species, strain, 
-                                    row[hdr2dict['BIOPROJECT']], 
-                                    row[hdr2dict['NCBI_TAXID']] ]
-        
-with open(accession_taxonomy, 'r', newline='') as f:
-    reader = csv.reader(f)
-    header = next(reader)
-    fields.extend(header[4:])
-    fields.append('TRANSL_TABLE')
-    tax_hdr = {header[i]: i for i in range(len(header))}
-    for row in reader:
-        asm_base = row[0]
 
-        # add the BUSCO lineage to the dictionary
-        buscodb = 'fungi'
-        if row[4] == "Ascomycota" or row[4] == "Basidiomycota":
-            buscodb = 'dikarya'
-        elif row[4] == "Mucoromycota":
-            buscodb = 'mucoromycota'
-        elif row[4] == 'Microsporidia':
-            buscodb = 'microsporidia'
-        if asm_base not in accession_dict:
-            print(f'{asm_base} not found in accession_dict, skipping')
-            continue
-        family = row[tax_hdr['FAMILY']] if 'FAMILY' in tax_hdr else ''
-        genus = row[tax_hdr['GENUS']] if 'GENUS' in tax_hdr else ''
-        transl_table = get_transl_table(family, genus)
-        accession_dict[asm_base].append(buscodb)
-        accession_dict[asm_base].extend(row[4:])
-        accession_dict[asm_base].append(transl_table)
-            
-            
-print(f'{len(accession_dict)} assemblies processed')
+def get_locus(raw_asm_base):
+    return 'F' + hashlib.md5(raw_asm_base.encode('utf-8')).hexdigest().upper()[-7:]
 
-# add LOCUS tag field
-fields.append('LOCUSTAG')
 
-# add LOCUSTAG to the dictionary
-# seen maps base hash -> collision count; first occurrence keeps no suffix,
-# subsequent collisions get A, B, C ... to guarantee uniqueness.
-seen = {}  # base_hash -> count of times seen so far
-for asm in accession_dict:
-    locus = get_locus_from_asm(asm)
-    if locus in seen:
-        collision_index = seen[locus]  # 1 for second occurrence → suffix 'A'
-        suffixed = locus + chr(ord('A') + collision_index - 1)
-        print(f'Collision: {locus} reassigned to {suffixed} for {asm}')
-        seen[locus] += 1
-        locus = suffixed
-    else:
-        seen[locus] = 1
-    accession_dict[asm].append(locus)
-    
-with open(outsamples, 'wt',newline="") as f:
-    writer = csv.writer(f, lineterminator='\n')
-    writer.writerow(fields)
-    for asm in accession_dict:
-        writer.writerow([asm] + accession_dict[asm])
+def accnum(asmid):
+    """(numeric, version) of a GCA_/GCF_ accession for 'newest' comparison."""
+    parts = asmid.split('_')
+    try:
+        base, ver = parts[1].split('.')
+        return (int(base), int(ver))
+    except Exception:
+        return (0, 0)
 
+
+def prefix(asmid):
+    return asmid.split('_', 1)[0]
+
+
+def log(msg):
+    print(msg, file=sys.stderr)
+
+
+# --- loaders ---------------------------------------------------------------
+def load_exclude(path):
+    excl = {}
+    if not path or not os.path.exists(path):
+        return excl
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if not line.strip() or line.lstrip().startswith('#'):
+                continue
+            parts = line.split('\t')
+            asmid = parts[0].strip()
+            reason = parts[1].strip() if len(parts) > 1 else ''
+            if asmid:
+                excl[asmid] = reason
+    return excl
+
+
+def load_keep_dupes(path):
+    keep = set()
+    if not path or not os.path.exists(path):
+        return keep
+    with open(path, newline='') as f:
+        r = csv.DictReader(f)
+        for row in r:
+            keep.add((clean_species(row.get('SPECIES', '')).lower(),
+                      clean_strain(row.get('STRAIN', '')).lower()))
+    return keep
+
+
+def load_overrides(path):
+    ov = {}
+    if not path or not os.path.exists(path):
+        return ov
+    with open(path, newline='') as f:
+        r = csv.DictReader(f)
+        for row in r:
+            ov.setdefault(row['ASMID'], {})[row['FIELD']] = row['VALUE']
+    return ov
+
+
+def load_taxonomy(path):
+    """asm_base -> dict with lineage cols + binomial SPECIES (deduped, first wins)."""
+    tax = {}
+    n_lines = n_conflict = 0
+    with open(path, newline='') as f:
+        r = csv.DictReader(f)
+        for row in r:
+            n_lines += 1
+            asm = row['ASM_ACCESSION']
+            rec = {c: (row.get(c, '') or '').strip() for c in LINEAGE_COLS}
+            rec['SPECIES'] = (row.get('SPECIES', '') or '').strip()
+            if asm in tax:
+                if tax[asm] != rec:
+                    n_conflict += 1
+                continue
+            tax[asm] = rec
+    log(f"[taxonomy] {n_lines} lines -> {len(tax)} unique assemblies "
+        f"({n_lines - len(tax)} duplicate lines, {n_conflict} conflicting)")
+    return tax
+
+
+# --- main ------------------------------------------------------------------
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--accessions', default=f'{DEF_NCBI}/ncbi_accessions.csv')
+    ap.add_argument('--taxonomy', default=f'{DEF_NCBI}/ncbi_accessions_taxonomy.csv')
+    ap.add_argument('--exclude', default='data/curation/exclude_asmids.txt')
+    ap.add_argument('--keep-dupes', default='data/curation/keep_dupes.csv')
+    ap.add_argument('--overrides', default='data/curation/overrides.csv')
+    ap.add_argument('--outfile', default='samples.csv')
+    ap.add_argument('--no-dedup-rule', action='store_true',
+                    help='do not auto-resolve uncurated species+strain collisions')
+    args = ap.parse_args()
+
+    for p in (args.accessions, args.taxonomy):
+        if not os.path.exists(p):
+            ap.error(f'input not found: {p}')
+
+    exclude = load_exclude(args.exclude)
+    keep_dupes = load_keep_dupes(args.keep_dupes)
+    overrides = load_overrides(args.overrides)
+    tax = load_taxonomy(args.taxonomy)
+
+    # ----- read accessions (master), sanitize, apply exclude ---------------
+    records = []
+    n_in = n_excluded = n_no_tax = 0
+    seen_asmbase = set()
+    with open(args.accessions, newline='') as f:
+        r = csv.DictReader(f)
+        need = {'ACCESSION', 'SPECIES', 'STRAIN', 'NCBI_TAXID', 'BIOPROJECT', 'ASM_NAME'}
+        missing = need - set(r.fieldnames or [])
+        if missing:
+            ap.error(f'accessions file missing columns: {sorted(missing)}')
+        for row in r:
+            n_in += 1
+            raw_asm_base = f"{row['ACCESSION']}_{row['ASM_NAME']}"
+            if raw_asm_base in seen_asmbase:
+                continue  # defensive: duplicate accession line
+            seen_asmbase.add(raw_asm_base)
+            if raw_asm_base in exclude:
+                n_excluded += 1
+                continue
+
+            species_in_raw = row['SPECIES']
+            t = tax.get(raw_asm_base)
+            if t is None:
+                n_no_tax += 1
+                t = {c: '' for c in LINEAGE_COLS}
+                t['SPECIES'] = ''
+            binomial = clean_species(t['SPECIES'] or species_in_raw)
+            species_in = clean_species(species_in_raw)
+            strain = backfill_strain(clean_strain(row['STRAIN']), species_in, binomial)
+
+            rec = {
+                'ASMID': clean_asmid(raw_asm_base),
+                'RAW_ASM_BASE': raw_asm_base,
+                'SPECIES_IN': species_in,
+                'STRAIN': strain,
+                'BIOPROJECT': row['BIOPROJECT'],
+                'NCBI_TAXONID': row['NCBI_TAXID'],
+                'BUSCO_LINEAGE': busco_lineage(t['PHYLUM']),
+                'SPECIES': binomial,
+                'TRANSL_TABLE': get_transl_table(t['FAMILY'], t['GENUS']),
+            }
+            for c in LINEAGE_COLS:
+                rec[c] = t[c]
+            # per-ASMID overrides
+            for fld, val in overrides.get(rec['ASMID'], {}).items():
+                rec[fld] = val
+            records.append(rec)
+
+    log(f"[accessions] {n_in} rows -> {len(records)} kept "
+        f"({n_excluded} excluded by curation, {n_no_tax} without taxonomy)")
+
+    # ----- dedup tie-breaker for uncurated species+strain collisions -------
+    if not args.no_dedup_rule:
+        groups = {}
+        for rec in records:
+            k = (rec['SPECIES'].lower(), rec['STRAIN'].lower())
+            groups.setdefault(k, []).append(rec)
+        drop = set()
+        n_collapsed = 0
+        for k, recs in groups.items():
+            if not k[1] or len(recs) == 1:
+                continue            # no strain, or singleton -> nothing to resolve
+            if k in keep_dupes:
+                continue            # intentional multi-assembly isolate
+            # prefer RefSeq GCF, else newest accession
+            gcf = [x for x in recs if prefix(x['ASMID']) == 'GCF']
+            pool = gcf if gcf else recs
+            winner = max(pool, key=lambda x: accnum(x['ASMID']))
+            for x in recs:
+                if x is not winner:
+                    drop.add(id(x))
+                    n_collapsed += 1
+                    log(f"[dedup] {k[0]} | {k[1]}: drop {x['ASMID']} "
+                        f"(kept {winner['ASMID']})")
+        if drop:
+            records = [x for x in records if id(x) not in drop]
+        log(f"[dedup] auto-collapsed {n_collapsed} uncurated duplicate assemblies")
+
+    # ----- deterministic LOCUSTAG ------------------------------------------
+    records.sort(key=lambda x: x['RAW_ASM_BASE'])
+    seen = {}
+    for rec in records:
+        locus = get_locus(rec['RAW_ASM_BASE'])
+        if locus in seen:
+            suffixed = locus + chr(ord('A') + seen[locus] - 1)
+            log(f"[locus] collision {locus} -> {suffixed} for {rec['ASMID']}")
+            seen[locus] += 1
+            locus = suffixed
+        else:
+            seen[locus] = 1
+        rec['LOCUSTAG'] = locus
+
+    # ----- write -----------------------------------------------------------
+    with open(args.outfile, 'wt', newline='') as f:
+        w = csv.writer(f, lineterminator='\n')
+        w.writerow(OUT_FIELDS)
+        for rec in records:
+            w.writerow([rec[c] for c in OUT_FIELDS])
+    log(f"[write] {len(records)} assemblies -> {args.outfile}")
+
+
+if __name__ == '__main__':
+    main()
