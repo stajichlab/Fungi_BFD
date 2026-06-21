@@ -4,12 +4,20 @@
 Reproducible, dependency-light replacement for the original ad-hoc script.
 
 Pipeline (all upstream files are produced by ../../1KFG/2026/NCBI_fungi/Makefile):
-    ncbi_accessions.csv          (ACCESSION,SPECIES,STRAIN,NCBI_TAXID,BIOPROJECT,...,ASM_NAME)
+    ncbi_accessions.csv          (ACCESSION,SPECIES,STRAIN,NCBI_TAXID,BIOPROJECT,...,ASM_NAME,ASM_FOLDER)
     ncbi_accessions_taxonomy.csv (ASM_ACCESSION,NCBI_TAXID,SPECIES_IN,STRAIN,<lineage>,SPECIES)
         |
         v   sanitize (scripts/sample_sanitize.py)  +  curation (data/curation/)
         v
     samples.csv
+
+ASMID is the upstream ASM_FOLDER value: the filesystem-safe (no '#', spaces,
+commas, parens) '{ACCESSION}_{ASM_NAME}' that names the on-disk genome folder
+and its '<ASM_FOLDER>_genomic.fna.gz' file, and is also the taxonomy join key
+(ncbi_accessions_taxonomy.csv ASM_ACCESSION == ASM_FOLDER).  This keeps ASMID
+in lock-step with the path nextflow/funannotate.nf builds for input genomes.
+Older accession CSVs without an ASM_FOLDER column fall back to the previous
+behaviour: ASMID = clean_asmid(raw) joined to taxonomy on the raw base.
 
 Curation is data, not manual post-edits:
     data/curation/exclude_asmids.txt  hard removals (one raw ASMID per line; '\\t reason'; '#' comments)
@@ -106,6 +114,26 @@ def load_exclude(path):
     return excl
 
 
+def load_preferred(path):
+    """Set of ASMIDs to force as the winner of their species+strain dedup group.
+
+    Entries must be the ASMID exactly as it appears in samples.csv (the upstream
+    ASM_FOLDER value); one per line, '#' comments, optional '\\t reason'.  Stored
+    verbatim so it matches rec['ASMID']."""
+    pref = set()
+    if not path or not os.path.exists(path):
+        return pref
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if not line.strip() or line.lstrip().startswith('#'):
+                continue
+            asmid = line.split('\t')[0].strip()
+            if asmid:
+                pref.add(asmid)
+    return pref
+
+
 def load_keep_dupes(path):
     keep = set()
     if not path or not os.path.exists(path):
@@ -158,6 +186,7 @@ def main():
     ap.add_argument('--taxonomy', default=f'{DEF_NCBI}/ncbi_accessions_taxonomy.csv')
     ap.add_argument('--exclude', default='data/curation/exclude_asmids.txt')
     ap.add_argument('--keep-dupes', default='data/curation/keep_dupes.csv')
+    ap.add_argument('--prefer', default='data/curation/preferred_asmids.txt')
     ap.add_argument('--overrides', default='data/curation/overrides.csv')
     ap.add_argument('--outfile', default='samples.csv')
     ap.add_argument('--no-dedup-rule', action='store_true',
@@ -170,6 +199,7 @@ def main():
 
     exclude = load_exclude(args.exclude)
     keep_dupes = load_keep_dupes(args.keep_dupes)
+    preferred = load_preferred(args.prefer)
     overrides = load_overrides(args.overrides)
     tax = load_taxonomy(args.taxonomy)
 
@@ -183,9 +213,18 @@ def main():
         missing = need - set(r.fieldnames or [])
         if missing:
             ap.error(f'accessions file missing columns: {sorted(missing)}')
+        # ASM_FOLDER is the upstream-sanitized (filesystem-safe; no '#', spaces,
+        # commas, parens) '{ACCESSION}_{ASM_NAME}'.  It is the canonical on-disk
+        # folder + genome-file prefix and is the join key in the taxonomy table
+        # (ASM_ACCESSION == ASM_FOLDER), so we adopt it verbatim as ASMID.  Older
+        # accession CSVs predate the column: fall back to clean_asmid(raw), which
+        # reproduces the previous ASMID/join behaviour.
+        has_asm_folder = 'ASM_FOLDER' in (r.fieldnames or [])
         for row in r:
             n_in += 1
             raw_asm_base = f"{row['ACCESSION']}_{row['ASM_NAME']}"
+            asm_folder = (row.get('ASM_FOLDER') or '').strip() if has_asm_folder else ''
+            asmid = asm_folder or clean_asmid(raw_asm_base)
             if raw_asm_base in seen_asmbase:
                 continue  # defensive: duplicate accession line
             seen_asmbase.add(raw_asm_base)
@@ -194,7 +233,9 @@ def main():
                 continue
 
             species_in_raw = row['SPECIES']
-            t = tax.get(raw_asm_base)
+            # New CSVs: taxonomy ASM_ACCESSION == ASM_FOLDER == asmid.
+            # Old CSVs: taxonomy was keyed on the raw '{ACCESSION}_{ASM_NAME}'.
+            t = tax.get(asmid if has_asm_folder else raw_asm_base)
             if t is None:
                 n_no_tax += 1
                 t = {c: '' for c in LINEAGE_COLS}
@@ -204,7 +245,7 @@ def main():
             strain = backfill_strain(clean_strain(row['STRAIN']), species_in, binomial)
 
             rec = {
-                'ASMID': clean_asmid(raw_asm_base),
+                'ASMID': asmid,
                 'RAW_ASM_BASE': raw_asm_base,
                 'SPECIES_IN': species_in,
                 'STRAIN': strain,
@@ -237,9 +278,16 @@ def main():
                 continue            # no strain, or singleton -> nothing to resolve
             if k in keep_dupes:
                 continue            # intentional multi-assembly isolate
-            # prefer RefSeq GCF, else newest accession
-            gcf = [x for x in recs if prefix(x['ASMID']) == 'GCF']
-            pool = gcf if gcf else recs
+            # winner selection:
+            #   1. an explicitly preferred ASMID, else
+            #   2. RefSeq GCF, else
+            #   3. newest accession
+            pref = [x for x in recs if x['ASMID'] in preferred]
+            if pref:
+                pool = pref
+            else:
+                gcf = [x for x in recs if prefix(x['ASMID']) == 'GCF']
+                pool = gcf if gcf else recs
             winner = max(pool, key=lambda x: accnum(x['ASMID']))
             for x in recs:
                 if x is not winner:
@@ -264,6 +312,9 @@ def main():
         else:
             seen[locus] = 1
         rec['LOCUSTAG'] = locus
+
+    # ----- sort by species for output ----------------------------------------
+    records.sort(key=lambda x: (x['SPECIES'].lower(), x['STRAIN'].lower(), x['ASMID']))
 
     # ----- write -----------------------------------------------------------
     with open(args.outfile, 'wt', newline='') as f:

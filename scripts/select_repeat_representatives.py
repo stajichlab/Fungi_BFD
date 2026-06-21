@@ -101,7 +101,10 @@ def main():
             print(f"[skip] {asmid}: no entry in {args.asm_stats}", file=sys.stderr)
 
     def clean_exists(asmid):
-        return os.path.isfile(os.path.join(args.genome_dir, f"{asmid}{args.genome_suffix}"))
+        # Clean genomes may be stored gzip-compressed (.fa.gz) to save space; accept
+        # either the plain suffix or its .gz form.
+        base = os.path.join(args.genome_dir, f"{asmid}{args.genome_suffix}")
+        return os.path.isfile(base) or os.path.isfile(f"{base}.gz")
 
     rows = []
     n_species_over = 0
