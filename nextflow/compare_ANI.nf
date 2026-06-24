@@ -48,10 +48,13 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 params.genome_dir             = "${launchDir}/input/dna"
-params.genome_suffix          = '.scaffolds.fa'   // alt: '.masked.fasta' with input_clean_genomes/
+params.genome_suffix          = '.scaffolds.fa'   // alt: '.fa.gz' / '.masked.fasta.gz' with input_clean_genomes/
 // Controls how the genome filename stem is derived from samples.csv:
 //   'species' (default) → ${SPECIES}_${STRAIN}${genome_suffix}  e.g. Fusarium_oxysporum_CBS123.scaffolds.fa
-//   'asmid'             → ${ASMID}${genome_suffix}               e.g. GCF_010015735.1_Aaoar1.masked.fasta
+//   'asmid'             → ${ASMID}${genome_suffix}               e.g. GCF_010015735.1_Aaoar1.fa.gz
+// NOTE: input_clean_genomes/ files are gzipped (.fa.gz / .masked.fasta.gz). skani,
+// mash and sourmash read gzipped FASTA natively, so no decompression is needed.
+// (fastANI does NOT read .gz — use uncompressed input if --ani_method fastani.)
 params.genome_name_style      = 'species'
 params.compare                = 'GENUS'
 params.ani_cluster_threshold  = 95.0
@@ -496,7 +499,7 @@ workflow {
     }
 
     // ── Build sample channel ──────────────────────────────────────────────────
-    // Emits: tuple(group_key, locustag, species, genome_path)
+    // Emits: tuple(group_key, locustag, species, genome_path, genus, strain, asmid)
     def sample_ch = channel
         .fromPath(params.samples)
         .splitCsv(header: true)
@@ -504,6 +507,9 @@ workflow {
         .map { row ->
             def locustag  = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def species   = row.SPECIES?.trim() ?: ''
+            def genus     = row.GENUS?.trim() ?: ''
+            def strain    = row.STRAIN?.trim() ?: ''
+            def asmid     = row.ASMID?.trim() ?: ''
             def groupKey  = row[compareRank]?.trim() ?: ''
             def stem      = nameStyle == 'asmid'
                                 ? row.ASMID?.trim()
@@ -518,15 +524,15 @@ workflow {
                 log.warn "Skipping ${locustag}: genome not found at ${genome}"
                 return null
             }
-            tuple(groupKey, locustag, species, genome)
+            tuple(groupKey, locustag, species, genome, genus, strain, asmid)
         }
         .filter { item -> item != null }
 
     // ── Group by taxonomic rank ───────────────────────────────────────────────
     // n_test limits *groups* (applied after groupTuple so --n_test 3 = 3 groups).
     def grouped_ch = sample_ch
-        .map { groupKey, locustag, species, genome ->
-            tuple(groupKey, tuple(locustag, species, genome))
+        .map { groupKey, locustag, species, genome, genus, strain, asmid ->
+            tuple(groupKey, tuple(locustag, species, genome, genus, strain, asmid))
         }
         .groupTuple()
         .filter { _gname, members -> members.size() >= params.min_group_size as int }
@@ -550,9 +556,13 @@ workflow {
         .filter { _gname, present -> present.size() >= params.min_group_size as int }
         .map { group_name, present ->
             def genomes   = present.collect { m -> m[2] }
-            def namesText = present.collect { m -> "${m[2].getName()}\t${m[1]}" }.join('\n')
+            // names TSV columns: filename, asmid, genus, species, strain
+            // (m = locustag, species, genome, genus, strain, asmid)
+            def namesText = present.collect { m ->
+                "${m[2].getName()}\t${m[5]}\t${m[3]}\t${m[1]}\t${m[4]}"
+            }.join('\n')
             def nameFile  = file("${workflow.workDir}/names_${group_name}.tsv")
-            nameFile.text = "filename\tspecies\n" + namesText + "\n"
+            nameFile.text = "filename\tasmid\tgenus\tspecies\tstrain\n" + namesText + "\n"
             tuple(group_name, genomes, nameFile)
         }
 
