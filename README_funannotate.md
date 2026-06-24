@@ -46,13 +46,14 @@ SETUP_TAXONDB         Download NCBI taxdump (storeDir; once per deployment)
     │
     ▼
 GENOME_CLEAN          Decompress genome, run NCBI FCS-GX contamination purge,
-    │                 filter short contigs → input_clean_genomes/<asmid>.fa
-    │                 (storeDir; skipped if clean .fa already exists)
+    │                 filter short contigs → input_clean_genomes/<asmid>.fa.gz
+    │                 (gzip-compressed to save space; storeDir; skipped if a clean
+    │                  .fa.gz — or legacy uncompressed .fa — already exists)
     ▼
 MASKREPEAT_TANTAN_RUN Soft-mask repeats with tantan via funannotate mask
-    │                 → input_clean_genomes/<asmid>.masked.fasta
+    │                 → input_clean_genomes/<asmid>.masked.fasta.gz (gzip-compressed)
     │                 (storeDir; skipped if masked file exists; skippable with
-    │                  --run_repeatmasker false, falls back to clean .fa)
+    │                  --run_repeatmasker false, falls back to clean .fa[.gz])
     ▼
 SRA_QUERY_BATCH       Batched NCBI SRA survey — up to sra_query_batch_size species
     │                 per SLURM job (default 100), max 10 concurrent jobs.
@@ -126,7 +127,7 @@ FUNANNOTATE_TRAIN     Run funannotate train on every assembly (4 branches):
     ▼
 FUNANNOTATE_PREDICT   Run funannotate predict (Augustus + EvidenceModeler).
     │                 Uses training data linked from genome_annotation/<out>/training/.
-    │                 Skipped if predict_results/<out>.gbk already exists.
+    │                 Skipped if predict_results/<out>.gbk (or .gbk.gz) already exists.
     │                 Output: genome_annotation/<out>/predict_results/
     ▼
   (optional post-predict steps, run in parallel)
@@ -289,7 +290,8 @@ has also already completed for a species (its `_norm_R1/R2.fastq.gz` files exist
 genome_annotation/
   <Species_Strain>/
     predict_results/         ← primary output used by BFD.nf
-      <name>.gbk             GBK (compressed .gz after predict)
+      <name>.gbk             GBK (may be compressed to <name>.gbk.gz to save space;
+                             both forms count as complete — see Skip/cache behavior)
       <name>.proteins.fa
       <name>.cds-transcripts.fa
       <name>.gff3
@@ -393,8 +395,8 @@ if all declared output files already exist on disk — even without `-resume`:
 | Step | Cache location | Skip condition |
 |---|---|---|
 | `SETUP_TAXONDB` | `taxondb/` | `taxondb/names.dmp` exists |
-| `GENOME_CLEAN` | `input_clean_genomes/` | `<asmid>.fa` exists |
-| `MASKREPEAT_TANTAN_RUN` | `input_clean_genomes/` | `<asmid>.masked.fasta` exists |
+| `GENOME_CLEAN` | `input_clean_genomes/` | `<asmid>.fa.gz` (or legacy `<asmid>.fa`) exists |
+| `MASKREPEAT_TANTAN_RUN` | `input_clean_genomes/` | `<asmid>.masked.fasta.gz` (or legacy `<asmid>.masked.fasta`) exists |
 | `SRA_QUERY_BATCH` | `rnaseq_reads/sra_query/` | per-species CSV exists (checked inside the batch script; `publishDir overwrite: false`) |
 | `WRITE_EMPTY_READS` | `rnaseq_reads/` | all three `<tag>_norm_{R1,R2,SE}.fastq.gz` exist (0-byte) |
 | `SRA_FETCH` | `rnaseq_reads/` | all three `<tag>_norm_{R1,R2,SE}.fastq.gz` exist |
@@ -405,13 +407,61 @@ if all declared output files already exist on disk — even without `-resume`:
 checks (`funannotate_train.pasa.gff3` and `predict_results/<out>.gbk`), so they also
 skip gracefully when re-running over partially completed datasets.
 
+### Compressed input genomes (`.fa.gz` / `.masked.fasta.gz`)
+
+To save space, cleaned and repeat-masked genomes in `input_clean_genomes/` are stored
+gzip-compressed: `GENOME_CLEAN`/`GENOME_CLEAN_BATCH` emit `<asmid>.fa.gz` and
+`MASKREPEAT_TANTAN_RUN` emits `<asmid>.masked.fasta.gz`. The genome path threaded
+downstream (`genome_fa`) may therefore point at a `.gz` file.
+
+- **Resolution:** all existence/skip gates use the `genomeFile()` helper, which accepts
+  either the compressed (`.gz`) or a legacy uncompressed form, preferring the compressed
+  one. So a folder compressed after a prior run is **not** re-cleaned/re-masked, and
+  genomes left uncompressed from older runs still work.
+- **Consumers decompress on the fly:** `MASKREPEAT_TANTAN_RUN`, `RNASEQ_PREPARE`,
+  `FUNANNOTATE_TRAIN`, and `FUNANNOTATE_PREDICT` each inflate a `.gz` genome to a local
+  `genome_input.fa` in the task work dir before calling `funannotate ... -i` (funannotate
+  cannot read a gzipped FASTA via `-i`). The work-dir copy is discarded with the task.
+- **EarlGrey pipeline:** the separate `nextflow/earlgrey_mask.nf` curated repeat-masking
+  pipeline gets the same treatment — it resolves clean genomes via its own `genomeFile()`,
+  inflates `.fa.gz` before EarlGrey/RepeatMasker, and now delivers its soft-masked output
+  **compressed** as `input_clean_genomes/<asmid>.masked.fasta.gz` (which the tantan
+  `MASKREPEAT_TANTAN_RUN` storeDir and `FUNANNOTATE_PREDICT` both accept). The
+  `select_repeat_representatives.py` existence check also accepts `.fa.gz`.
+
+### Compressed GenBank outputs (`.gbk.gz`)
+
+To save space, a step's GenBank output may be stored gzip-compressed (`.gbk.gz`)
+instead of plain `.gbk`. All completion/skip gates accept **either** form (via the
+`gbkResult()` helper), so compressing a finished folder does **not** force a re-run.
+This applies to predict (`predict_results/<out>.gbk`), update
+(`update_results/<out>.gbk`), and annotate (`annotate_results/<out>.gbk`), plus the
+in-script skip guards in `FUNANNOTATE_TRAIN`/`FUNANNOTATE_PREDICT` and the RNA-seq
+staleness test below. `ANTISMASH_RUN` transparently inflates a gzipped predict GBK
+to a local copy before running.
+
+**Caveats before compressing:**
+- `funannotate annotate -i <dir>` and `funannotate update -i <dir>` read
+  `predict_results/<out>.gbk` *internally* and cannot consume a `.gbk.gz`. Only
+  compress `predict_results/<out>.gbk` for genomes that are fully done through any
+  annotate/update you intend to run. With the defaults
+  (`run_annotate`/`run_update`/`run_antismash` all `false`) predict is the terminal
+  artifact, so this is safe. `update_results` and `annotate_results` GBKs are terminal
+  and always safe to compress.
+- Skip/staleness checks compare RNA-seq mtimes against the GBK mtime, so preserve the
+  original mtime when compressing (`gzip` keeps it by default; use `gzip -n` to be safe)
+  to avoid spuriously triggering a stale re-predict.
+- Post-run assertions (verifying funannotate just wrote output) still expect plain
+  `.gbk`, since funannotate always writes uncompressed — compression is a separate
+  housekeeping step applied after a genome completes.
+
 ### RNA-seq staleness detection (train + predict)
 
 The pipeline also detects when RNA-seq data has been refreshed *after* a genome was
 already predicted, and automatically re-runs training and prediction for those genomes.
 
 **What "stale" means:** A prediction is considered stale when any of the following is
-newer than `genome_annotation/<out>/predict_results/<out>.gbk`:
+newer than `genome_annotation/<out>/predict_results/<out>.gbk` (or its `.gbk.gz`):
 - `rnaseq_reads/<species_tag>_norm_R1.fastq.gz` (PE reads), **or**
 - `rnaseq_reads/<species_tag>_norm_SE.fastq.gz` (SE reads), **or**
 - `rnaseq_data/<species_tag>.trinity-GG.fasta` (shared Trinity assembly).
