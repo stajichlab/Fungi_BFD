@@ -89,17 +89,45 @@ def parse_ani_tsv(path):
 
 
 def parse_names_tsv(path):
-    """Return dict[filename] = species_name."""
+    """Return dict[filename] = {'species','strain','genus','asmid','label'}.
+
+    Supports both the legacy 2-column header (filename, species) and the
+    extended 5-column header (filename, asmid, genus, species, strain). Columns
+    are located by header name, so order/extra columns are tolerated. 'label' is
+    a display string 'Genus species Strain' built from whatever is present.
+    """
     names = {}
     if not path or not os.path.exists(path):
         return names
     with open(path) as fh:
-        next(fh, None)  # skip header
+        header = fh.readline().rstrip('\n').split('\t')
+        cols = {name.strip().lower(): i for i, name in enumerate(header)}
         for line in fh:
-            parts = line.rstrip('\n').split('\t', 1)
-            if len(parts) == 2:
-                names[parts[0]] = parts[1]
+            parts = line.rstrip('\n').split('\t')
+            if not parts or not parts[0]:
+                continue
+            fn = parts[0]
+
+            def col(name):
+                i = cols.get(name)
+                return parts[i].strip() if i is not None and i < len(parts) else ''
+
+            species = col('species')
+            strain  = col('strain')
+            genus   = col('genus')
+            asmid   = col('asmid')
+            label   = ' '.join(p for p in (species, strain) if p) or species
+            names[fn] = {'species': species, 'strain': strain,
+                         'genus': genus, 'asmid': asmid, 'label': label}
     return names
+
+
+def _name_label(names, g):
+    """Display label + bracketed ASMID for genome filename g."""
+    info = names.get(g, {})
+    label = info.get('label', '')
+    asmid = info.get('asmid', '')
+    return f"{label}  [{asmid}]" if asmid else label
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
@@ -155,8 +183,7 @@ def write_report(args, pairs, names, genomes):
 
             out.write(f"Cluster {idx}  N={len(cluster)}  median_ANI={med_ani}  min_ANI={min_ani}\n")
             for g in sorted(cluster):
-                sp = names.get(g, '')
-                out.write(f"  {g:<70}  {sp}\n")
+                out.write(f"  {g:<70}  {_name_label(names, g)}\n")
             out.write("\n")
 
         # ── Outliers ──────────────────────────────────────────────────────────
@@ -164,10 +191,9 @@ def write_report(args, pairs, names, genomes):
 
         if outliers:
             for g in sorted(outliers):
-                sp    = names.get(g, '')
                 bani  = f"{max_ani_for[g]:.2f}%"
                 bmatch = best_match[g]
-                out.write(f"  {g:<70}  {sp}\n")
+                out.write(f"  {g:<70}  {_name_label(names, g)}\n")
                 out.write(f"    best_ANI={bani}  best_match={bmatch}\n")
         else:
             out.write("  (none)\n")
