@@ -47,16 +47,29 @@ process STAGE_FILES {
     def cds_out      = "${params.outdir}/${params.project}/cds"
     """
     mkdir -p "${proteins_out}" "${cds_out}"
-    tail -n +2 ${manifest} | while IFS=',' read -r locustag group; do
+    # Manifest columns: LOCUSTAG,GROUP,BASENAME. Inputs are named by BASENAME
+    # ({species}_{strain}); we symlink them to {LOCUSTAG}.faa / {LOCUSTAG}.cds.fa
+    # so downstream steps keep their stable per-genome identifiers.
+    tail -n +2 ${manifest} | while IFS=',' read -r locustag group basename; do
         [ -z "\$locustag" ] && continue
-        src="${pep_dir}/\${locustag}.faa"
+        [ -z "\$basename" ] && continue
+        src="${pep_dir}/\${basename}.proteins.fa"
         dst="${proteins_out}/\${locustag}.faa"
-        [ -f "\$src" ] && [ ! -e "\$dst" ] && ln -sf "\$src" "\$dst"
-        src="${cds_dir}/\${locustag}.cds.fa"
+        if [ -f "\$src" ]; then
+            [ ! -e "\$dst" ] && ln -sf "\$src" "\$dst"
+        else
+            echo "WARN: missing protein file for \${locustag}: \$src" >&2
+        fi
+        src="${cds_dir}/\${basename}.cds-transcripts.fa"
         dst="${cds_out}/\${locustag}.cds.fa"
         [ -f "\$src" ] && [ ! -e "\$dst" ] && ln -sf "\$src" "\$dst"
     done
-    echo "Staged \$(tail -n +2 ${manifest} | wc -l) species into ${proteins_out}"
+    n_staged=\$(find "${proteins_out}" -maxdepth 1 -name '*.faa' | wc -l)
+    echo "Staged \${n_staged} protein file(s) into ${proteins_out}"
+    if [ "\${n_staged}" -eq 0 ]; then
+        echo "ERROR: no protein files staged — check pep_dir (${pep_dir}) and BASENAME mapping" >&2
+        exit 1
+    fi
     """
 }
 
@@ -107,16 +120,21 @@ workflow PREPARE_COMPARATIVE {
             def grp = group_map.containsKey(lt)
                         ? group_map[lt]
                         : (taxon_filters.find { f -> row[f.rank]?.equalsIgnoreCase(f.value) }?.value ?: 'default')
-            [lt, grp]
+            // BASENAME: filesystem-safe "{species}_{strain}" tag — matches the
+            // input/pep/{tag}.proteins.fa and input/cds/{tag}.cds-transcripts.fa
+            // filenames. Reuses the same canonicaliser funannotate.nf uses to
+            // write those files (nextflow/lib/SampleUtils.groovy).
+            def base = SampleUtils.makeSampleTag(row['SPECIES'] ?: '', row['STRAIN'] ?: '')
+            [lt, grp, base]
         }
 
     // Assemble manifest CSV from the filtered channel
     def manifest_ch = species_ch
         .collectFile(
             name:    "${params.project}.manifest.csv",
-            seed:    "LOCUSTAG,GROUP\n",
+            seed:    "LOCUSTAG,GROUP,BASENAME\n",
             newLine: true
-        ) { lt, grp -> "${lt},${grp}" }
+        ) { lt, grp, base -> "${lt},${grp},${base}" }
 
     STAGE_FILES(manifest_ch, params.pep_dir, params.cds_dir)
 
