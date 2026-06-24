@@ -1161,7 +1161,7 @@ workflow {
             def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(locustag, basename, species, strain)
         }
-        .take(params.n_test > 0 ? params.n_test as int : -1)
+        .take((params.n_test as int) > 0 ? (params.n_test as int) : -1)
 
     // ── Input setup: symlink predict_results files into input/ subdirs ─────────
     def ready_ch
