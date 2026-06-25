@@ -259,54 +259,10 @@ GCA_900184115.1_ST99CH_1E4,Duplicate for strain and worse N50
 GCA_900184105.1_ST99CH_3D1,Duplicate for strain and worse N50
 GCA_900091695.1_Zt_ST99CH_3D7,Duplicate for strain and worse N50
 GCA_030567675.1_ASM3056767v1,Duplicate for strain and worse N50
-GCA_943181505.1_UFV02.1,Too big - need to mask
-GCA_055471975.1_ASM5547197v1,Too big - need to mask
-GCA_055471945.1_ASM5547194v1,Too big - need to mask
-GCA_055471935.1_ASM5547193v1,Too big - need to mask
-GCA_055471915.1_ASM5547191v1,Too big - need to mask
-GCA_055471895.1_ASM5547189v1,Too big - need to mask
-GCA_055471855.1_ASM5547185v1,Too big - need to mask
-GCA_055473375.1_ASM5547337v1,Too big - need to mask
-GCA_055473335.1_ASM5547333v1,Too big - need to mask
-GCA_055473355.1_ASM5547335v1,Too big - need to mask
-GCA_055473275.1_ASM5547327v1,Too big - need to mask
-GCA_055473315.1_ASM5547331v1,Too big - need to mask
-GCA_055473295.1_ASM5547329v1,Too big - need to mask
-GCA_055473255.1_ASM5547325v1,Too big - need to mask
-GCA_055473235.1_ASM5547323v1,Too big - need to mask
-GCA_055473215.1_ASM5547321v1,Too big - need to mask
-GCA_055473195.1_ASM5547319v1,Too big - need to mask
-GCA_055473175.1_ASM5547317v1,Too big - need to mask
-GCA_055473155.1_ASM5547315v1,Too big - need to mask
-GCA_055473135.1_ASM5547313v1,Too big - need to mask
-GCA_055473115.1_ASM5547311v1,Too big - need to mask
-GCA_055473095.1_ASM5547309v1,Too big - need to mask
-GCA_055473075.1_ASM5547307v1,Too big - need to mask
-GCA_055473055.1_ASM5547305v1,Too big - need to mask
-GCA_055473035.1_ASM5547303v1,Too big - need to mask
-GCA_055472995.1_ASM5547299v1,Too big - need to mask
-GCA_055473015.1_ASM5547301v1,Too big - need to mask
-GCA_055472975.1_ASM5547297v1,Too big - need to mask
-GCA_055472955.1_ASM5547295v1,Too big - need to mask
-GCA_055472935.1_ASM5547293v1,Too big - need to mask
-GCA_055472915.1_ASM5547291v1,Too big - need to mask
-GCA_055472895.1_ASM5547289v1,Too big - need to mask
-GCA_055472855.1_ASM5547285v1,Too big - need to mask
-GCA_055472875.1_ASM5547287v1,Too big - need to mask
-GCA_055472835.1_ASM5547283v1,Too big - need to mask
-GCA_055472815.1_ASM5547281v1,Too big - need to mask
-GCA_055472795.1_ASM5547279v1,Too big - need to mask
-GCA_055472775.1_ASM5547277v1,Too big - need to mask
-GCA_055472755.1_ASM5547275v1,Too big - need to mask
-GCA_055472735.1_ASM5547273v1,Too big - need to mask
-GCA_055472695.1_ASM5547269v1,Too big - need to mask
-GCA_055472715.1_ASM5547271v1,Too big - need to mask
-GCA_055472675.1_ASM5547267v1,Too big - need to mask
-GCA_055473935.1_ASM5547393v1,Too big - need to mask
-GCA_055473915.1_ASM5547391v1,Too big - need to mask
-GCA_055473895.1_ASM5547389v1,Too big - need to mask
-GCA_055473855.1_ASM5547385v1,Too big - need to mask
-GCA_055473835.1_ASM5547383v1,Too big - need to mask
-GCA_055473815.1_ASM5547381v1,Too big - need to mask
-GCA_055473795.1_ASM5547379v1,Too big - need to mask
-GCA_025201825.1_Phapa1,Too big - need to mask
+GCA_038093735.1_JMMU340,Too small/fragmented - funannotate only 1 training model (needs 30)
+GCA_018606675.1_ASM1860667v1,Too small/fragmented - funannotate only 13 training models (needs 30)
+GCA_004011275.1_ASM401127v1,Too small/fragmented - funannotate only 1 training model (needs 30)
+GCA_002994555.1_CA11,Too small/fragmented - funannotate only 6 training models (needs 30)
+GCA_002994575.1_FL11_1,Too small/fragmented - funannotate only 4 training models (needs 30)
+GCA_002994595.1_FL11_2,Too small/fragmented - funannotate only 9 training models (needs 30)
+GCA_041722615.1_BTNG35,Too small/fragmented - funannotate only 3 training models (needs 30)

@@ -1,0 +1,22 @@
+out	asmid	phylum	status	n_training_models	total_bp	contigs	N50	screen_flag
+Scedosporium_apiospermum_B4	GCA_029532445.1_ASM2953244v1	Ascomycota	FAILED_augustus_training		7055829	2246	3102	HIGH
+Scedosporium_apiospermum_B8	GCA_029532475.1_ASM2953247v1	Ascomycota	FAILED_augustus_training		6834466	2193	3051	HIGH
+Omphalotus_olearius_AS_2790	GCA_055690705.1_ASM5569070v1	Basidiomycota	FAILED_cmd_error		30189	7	5330	HIGH
+Boletus_aff._violaceofuscus_TRTC163470	GCA_038093735.1_JMMU340	Basidiomycota	FAILED_too_few_models	1	2389115	805	2920	HIGH
+Boletus_edulis_TH1141B	GCA_038089135.1_TH11141-Guyana-eduloid	Basidiomycota	FAILED_too_few_models	1	509737	113	4515	HIGH
+Malasseziomycetes_sp._bin8	GCA_018606675.1_ASM1860667v1	Basidiomycota	FAILED_too_few_models	13	127029	15	8224	HIGH
+Puccinia_arachidis_MRf11	GCA_001013415.1_ASM101341v1	Basidiomycota	FAILED_too_few_models	26	4192209	1554	2522	HIGH
+Trichosporon_inkin_C-2155	GCA_004011275.1_ASM401127v1	Basidiomycota	FAILED_too_few_models	1	162291	48	3111	HIGH
+Uromyces_transversalis_CA11	GCA_002994555.1_CA11	Basidiomycota	FAILED_too_few_models	6	6884163	2773	2395	HIGH
+Uromyces_transversalis_FL11_1	GCA_002994575.1_FL11_1	Basidiomycota	FAILED_too_few_models	4	2354024	895	2484	HIGH
+Uromyces_transversalis_FL11_2	GCA_002994595.1_FL11_2	Basidiomycota	FAILED_too_few_models	9	15744920	6000	2545	MED-frag
+cf._Tylopilus_sp._TRTC175157_TRTC175157	GCA_041722615.1_BTNG35	Basidiomycota	FAILED_too_few_models	3	385575	128	2667	HIGH
+Austropuccinia_psidii_MF-1	GCA_000469055.2_ASM46905v2	Basidiomycota	INCOMPLETE_unknown		564633442	101940	6435	OK(other cause)
+Leucoagaricus_bulbosus_ZRL20241576	GCA_056956825.1_ASM5695682v1	Basidiomycota	INCOMPLETE_unknown		40331279	6091	8846	MED-frag
+Leucoagaricus_bulbosus_ZRL20241974	GCA_056956645.1_ASM5695664v1	Basidiomycota	INCOMPLETE_unknown		34237799	283	461028	OK(other cause)
+Leucocoprinus_digitatocystis_ZRL20240473	GCA_056882555.1_ASM5688255v1	Basidiomycota	INCOMPLETE_unknown		63858484	11541	6806	OK(other cause)
+Phakopsora_pachyrhizi_GA_Tifton_14.1	GCA_055473935.1_ASM5547393v1	Basidiomycota	INCOMPLETE_unknown		1273959149	350	47183946	OK(other cause)
+Phakopsora_pachyrhizi_MT2006	GCA_025201825.1_Phapa1	Basidiomycota	INCOMPLETE_unknown		1057430280	7464	222464	OK(other cause)
+Phyllozyma_linderae_CBS_7893	GCA_058224995.1_ASM5822499v1	Basidiomycota	INCOMPLETE_unknown		18229775	25	2010320	OK(other cause)
+Lanmaoa_sp._TRTC157169_TRTC157169	GCA_041722395.1_DLT08-094	Basidiomycota	INCOMPLETE_zero_busco		114717	24	4925	HIGH
+Phakopsora_pachyrhizi	GCA_943181505.1_UFV02.1	Basidiomycota	INCOMPLETE_zero_busco		858710	2	429355	MED-small

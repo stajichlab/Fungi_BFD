@@ -1,0 +1,41 @@
+Logs scanned (unique): 8082
+Genomes (deduped by locustag): 8075
+
+Outcome counts (all phyla):
+  COMPLETED                    8054
+  FAILED_too_few_models        9
+  INCOMPLETE_unknown           7
+  FAILED_augustus_training     2
+  INCOMPLETE_zero_busco        2
+  FAILED_cmd_error             1
+
+--- restricted to phylum startswith 'Basidiomycota': 2685 genomes ---
+
+Crosstab  asm_risk x outcome  (does the asm_stats screen predict failures?)
+  asm_risk  FAILED/INCOMPLETE  COMPLETED   total  failure_rate
+  HIGH                      0         33      33  0.00%
+  MED                       0       1190    1190  0.00%
+  OK                        0       1281    1281  0.00%
+  NA                       19        162     181  10.50%
+
+Failed/incomplete genomes (this phylum subset):
+  out                                           status                     models  risk  asmid
+  Omphalotus_olearius_AS_2790                   FAILED_cmd_error                     NA  GCA_055690705.1_ASM5569070v1
+  Malasseziomycetes_sp._bin8                    FAILED_too_few_models          13    NA  GCA_018606675.1_ASM1860667v1
+  Uromyces_transversalis_CA11                   FAILED_too_few_models           6    NA  GCA_002994555.1_CA11
+  Puccinia_arachidis_MRf11                      FAILED_too_few_models          26    NA  GCA_001013415.1_ASM101341v1
+  Boletus_aff._violaceofuscus_TRTC163470        FAILED_too_few_models           1    NA  GCA_038093735.1_JMMU340
+  Trichosporon_inkin_C-2155                     FAILED_too_few_models           1    NA  GCA_004011275.1_ASM401127v1
+  Uromyces_transversalis_FL11_1                 FAILED_too_few_models           4    NA  GCA_002994575.1_FL11_1
+  Uromyces_transversalis_FL11_2                 FAILED_too_few_models           9    NA  GCA_002994595.1_FL11_2
+  Boletus_edulis_TH1141B                        FAILED_too_few_models           1    NA  GCA_038089135.1_TH11141-Guyana-eduloid
+  cf._Tylopilus_sp._TRTC175157_TRTC175157       FAILED_too_few_models           3    NA  GCA_041722615.1_BTNG35
+  Leucocoprinus_digitatocystis_ZRL20240473      INCOMPLETE_unknown                   NA  GCA_056882555.1_ASM5688255v1
+  Austropuccinia_psidii_MF-1                    INCOMPLETE_unknown                   NA  GCA_000469055.2_ASM46905v2
+  Phakopsora_pachyrhizi_GA_Tifton_14.1          INCOMPLETE_unknown                   NA  GCA_055473935.1_ASM5547393v1
+  Phyllozyma_linderae_CBS_7893                  INCOMPLETE_unknown                   NA  GCA_058224995.1_ASM5822499v1
+  Leucoagaricus_bulbosus_ZRL20241576            INCOMPLETE_unknown                   NA  GCA_056956825.1_ASM5695682v1
+  Phakopsora_pachyrhizi_MT2006                  INCOMPLETE_unknown                   NA  GCA_025201825.1_Phapa1
+  Leucoagaricus_bulbosus_ZRL20241974            INCOMPLETE_unknown                   NA  GCA_056956645.1_ASM5695664v1
+  Phakopsora_pachyrhizi                         INCOMPLETE_zero_busco                NA  GCA_943181505.1_UFV02.1
+  Lanmaoa_sp._TRTC157169_TRTC157169             INCOMPLETE_zero_busco                NA  GCA_041722395.1_DLT08-094

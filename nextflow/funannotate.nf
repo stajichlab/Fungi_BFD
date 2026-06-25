@@ -1379,15 +1379,60 @@ process FUNANNOTATE_PREDICT {
         *)    GENOME_IN="\$GENOME_FA" ;;
     esac
 
+    # ── Too-small-genome pre-flight guard ────────────────────────────────────
+    # Assemblies that are both small AND fragmented cannot yield funannotate's
+    # required 30 training models; predict would run for hours then abort with
+    # "Not enough gene models N to train Augustus (30 required), exiting". Detect
+    # that up front from cheap contig stats and skip cleanly (flag, no crash).
+    # Requires BOTH gates so complete small genomes (e.g. Malassezia) are unaffected.
+    # See analysis/funannotate_model_failures/. Disabled when predict_min_asm_bp=0.
+    SKIP_REPORT="${params.target}/predict_skipped_too_small.tsv"
+    if [ "${params.predict_min_asm_bp}" -gt 0 ]; then
+        # Per-contig lengths -> sort descending -> N50 (portable; no gawk asort).
+        read ASM_BP ASM_CTG ASM_N50 < <(
+            awk '/^>/{if(len)print len;len=0;next}{len+=length(\$0)}END{if(len)print len}' "\$GENOME_IN" \\
+            | sort -rn \\
+            | awk '{L[NR]=\$1;tot+=\$1}END{half=tot/2;run=0;n50=0;for(i=1;i<=NR;i++){run+=L[i];if(run>=half){n50=L[i];break}}print tot, NR, n50}')
+        echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
+        SMALL=0; FRAG=0
+        [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ] && SMALL=1
+        { [ "\$ASM_N50" -lt "${params.predict_frag_max_n50}" ] || [ "\$ASM_CTG" -gt "${params.predict_frag_max_contigs}" ]; } && FRAG=1
+        if [ "\$SMALL" -eq 1 ] && [ "\$FRAG" -eq 1 ]; then
+            echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
+            mkdir -p "${params.target}"
+            [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50" >> "\$SKIP_REPORT"
+            touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
+            touch ${out}.predict.done
+            exit 0
+        fi
+    fi
+
     funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 glimmerhmm:0 \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
-        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark
+        --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark || true
 
+    # ── Post-predict catch ────────────────────────────────────────────────────
+    # If predict produced no GBK, distinguish the known "too few training models"
+    # outcome (an unfixable property of the assembly) from a genuine error. The
+    # former is flagged and skipped so it does not abort the batch; anything else
+    # still hard-fails so real problems surface.
     if [ ! -s "\$PREDICT_GBK" ]; then
+        PLOG="\$PREDICTDIR/logfiles/funannotate-predict.log"
+        if [ -f "\$PLOG" ] && grep -q "Not enough gene models .* to train Augustus" "\$PLOG"; then
+            NMODELS=\$(grep -oE "Not enough gene models [0-9]+" "\$PLOG" | grep -oE "[0-9]+" | tail -1)
+            echo "[WARN] ${out}: funannotate found only \${NMODELS:-<min} training models (needs 30); too small/fragmented to annotate — skipping" >&2
+            mkdir -p "${params.target}"
+            [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "funannotate_too_few_models:\${NMODELS:-NA}" "" "" "" >> "\$SKIP_REPORT"
+            touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
+            touch ${out}.predict.done
+            exit 0
+        fi
         echo "ERROR: funannotate predict did not produce expected GBK: \$PREDICT_GBK" >&2
         exit 1
     fi
