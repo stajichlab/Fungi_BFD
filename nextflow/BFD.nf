@@ -24,6 +24,8 @@
 // All params (samples, pep_dir, outdir, tables, scripts, run_*, merge_all,
 // skip_merge, n_test) are defined in nextflow.config — do not redeclare defaults here.
 
+include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+
 // ════════════════════════════════════════════════════════════════════════════
 // RUN PROCESSES  (storeDir → skip automatically if all outputs already exist)
 // ════════════════════════════════════════════════════════════════════════════
@@ -580,7 +582,7 @@ process MERGE_AA_FREQ {
     publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-    path 'inputs/*'
+    path manifest
 
     output:
     path "aa_freq.csv.gz", emit: csv
@@ -588,10 +590,11 @@ process MERGE_AA_FREQ {
     script:
     """
     first=1
-    for f in inputs/*.aa_freq.csv.gz; do
+    while IFS=\$'\\t' read -r f _mtime _size; do
+        [ -n "\$f" ] || continue
         if [ "\$first" = "1" ]; then zcat "\$f"; first=0
         else zcat "\$f" | tail -n +2; fi
-    done | gzip > aa_freq.csv.gz
+    done < ${manifest} | gzip > aa_freq.csv.gz
     """
 
     stub:
@@ -634,7 +637,7 @@ process MERGE_CODON_FREQ {
     publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-    path 'inputs/*'
+    path manifest
 
     output:
     path "codon_freq.csv.gz", emit: csv
@@ -642,10 +645,11 @@ process MERGE_CODON_FREQ {
     script:
     """
     first=1
-    for f in inputs/*.codon_freq.csv.gz; do
+    while IFS=\$'\\t' read -r f _mtime _size; do
+        [ -n "\$f" ] || continue
         if [ "\$first" = "1" ]; then zcat "\$f"; first=0
         else zcat "\$f" | tail -n +2; fi
-    done | gzip > codon_freq.csv.gz
+    done < ${manifest} | gzip > codon_freq.csv.gz
     """
 
     stub:
@@ -686,7 +690,7 @@ process MERGE_INTERGENIC {
     publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-    path 'inputs/*'
+    path manifest
 
     output:
     path "gene_intergenic_distances.csv.gz", emit: csv
@@ -694,10 +698,11 @@ process MERGE_INTERGENIC {
     script:
     """
     first=1
-    for f in inputs/*.gene_intergenic_distances.csv.gz; do
+    while IFS=\$'\\t' read -r f _mtime _size; do
+        [ -n "\$f" ] || continue
         if [ "\$first" = "1" ]; then zcat "\$f"; first=0
         else zcat "\$f" | tail -n +2; fi
-    done | gzip > gene_intergenic_distances.csv.gz
+    done < ${manifest} | gzip > gene_intergenic_distances.csv.gz
     """
 
     stub:
@@ -757,7 +762,7 @@ process MERGE_GENE_STATS {
     publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-    path 'inputs/*'
+    path manifest
 
     output:
     path "gene_info.csv.gz",        emit: gene_info
@@ -770,12 +775,14 @@ process MERGE_GENE_STATS {
 
     script:
     """
+    set -euo pipefail
     for type in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
         first=1
-        for f in inputs/*.\${type}.csv.gz; do
+        while IFS=\$'\\t' read -r f _mtime _size; do
+            case "\$f" in *.\${type}.csv.gz) ;; *) continue ;; esac
             if [ "\$first" = "1" ]; then zcat "\$f"; first=0
             else zcat "\$f" | tail -n +2; fi
-        done | gzip > \${type}.csv.gz
+        done < ${manifest} | pigz -p ${task.cpus} > \${type}.csv.gz
     done
     """
 
@@ -839,7 +846,7 @@ process MERGE_ASM_STATS {
     publishDir path: { tablesDir() }, mode: 'copy'
 
     input:
-    path 'inputs/*'
+    path manifest
 
     output:
     path "asm_stats.tsv.gz", emit: tsv
@@ -847,9 +854,9 @@ process MERGE_ASM_STATS {
     script:
     """
     python3 ${params.scripts}/summarize_asm_stats.py \\
-        --reportdir inputs \\
-        --samples   ${params.samples} \\
-        -o          asm_stats.tsv.gz
+        --manifest ${manifest} \\
+        --samples  ${params.samples} \\
+        -o         asm_stats.tsv.gz
     """
 
     stub:
@@ -1107,6 +1114,29 @@ def gatedGlobIn(sync_ch, String baseDir, String glob) {
 def gatedGlob(sync_ch, String glob)      { gatedGlobIn(sync_ch, params.outdir,             glob) }
 def gatedGlobStats(sync_ch, String glob) { gatedGlobIn(sync_ch, params.genome_stats_outdir, glob) }
 
+// Collapse a channel of input files (Path objects or lists of Paths) into a
+// single manifest file, sorted, one TAB-delimited record per line:
+//     <absolute_path>\t<mtime_ms>\t<size_bytes>
+// MERGE_* processes consume this one file instead of staging thousands of inputs
+// via `path 'inputs/*'`.  With ~8k+ genomes the old staging built an enormous
+// stage-in command (risking "Argument list too long") and created a symlink per
+// file; the manifest sidesteps both.  The merge scripts read the path from the
+// first field directly off its stable storeDir location, so inputs must live on
+// the shared filesystem (they do — every per-genome stat is storeDir-cached).
+//
+// Staleness: mtime+size are baked into the manifest *content*, so if any input
+// file is regenerated (newer mtime or different size) the manifest content — and
+// therefore the merge task's input hash — changes, and Nextflow re-runs the
+// merge on `-resume`.  If nothing changed, the manifest is byte-identical and the
+// merge is cache-hit/skipped.  This is the staleness check the manifest enables:
+// "any input newer than the last manifest ⇒ re-merge", done via content hashing
+// rather than a separate mtime scan.
+def toManifest(ch, String name) {
+    ch.flatten()
+      .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
+      .collectFile(name: name, newLine: true, sort: true)
+}
+
 // Delete storeDir output files that are older than inputFile so Nextflow re-runs
 // the process instead of using the stale cached result.  Only deletes files that
 // actually exist and are strictly older; missing or equal-timestamp files are left
@@ -1131,6 +1161,16 @@ def clearIfStale(inputFile, List storedOutputs) {
 // ════════════════════════════════════════════════════════════════════════════
 
 workflow {
+    // ── --help: print parameter documentation and exit ──────────────────────────
+    if (params.help) {
+        log.info paramsHelp(command: "nextflow run nextflow/BFD.nf -c nextflow/nextflow.config -profile BFD")
+        return
+    }
+    // ── Validate params and samples.csv structure (fail fast) ───────────────────
+    validateParameters()
+    log.info paramsSummaryLog(workflow)
+    samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
+
     // ── Taxonomy filter ────────────────────────────────────────────────────────
     // Parse --taxon RANK:VALUE (e.g. --taxon PHYLUM:Ascomycota).
     def taxonFilter
@@ -1474,8 +1514,25 @@ workflow {
             .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
         BATCH_CODON_FREQ(codon_batch_ch)
     }
-    if (params.run_intergenic.toBoolean()) CALC_INTERGENIC(intergenic_ch)
-    if (params.run_gene_stats.toBoolean()) CALC_GENE_STATS(gene_stats_ch)
+    if (params.run_intergenic.toBoolean())
+        CALC_INTERGENIC(intergenic_ch.map { locustag, basename, gff ->
+            clearIfStale(gff, [
+                file("${params.genome_stats_outdir}/intergenic_stats/${basename}.gene_intergenic_distances.csv.gz")
+            ])
+            tuple(locustag, basename, gff)
+        })
+    if (params.run_gene_stats.toBoolean())
+        CALC_GENE_STATS(gene_stats_ch.map { locustag, basename, gff, dna ->
+            def outs = ['gene_info', 'gene_exons', 'gene_CDS', 'gene_introns',
+                        'gene_transcripts', 'gene_trnas', 'gene_proteins'].collect {
+                file("${params.genome_stats_outdir}/gene_stats/${basename}.${it}.csv.gz")
+            }
+            // GFF3 (re-annotation) and genome FASTA are both inputs; either being
+            // newer than the cached outputs should force a re-run.
+            clearIfStale(gff, outs)
+            clearIfStale(dna, outs)
+            tuple(locustag, basename, gff, dna)
+        })
 
     if (params.run_asm_stats.toBoolean())
         CALC_ASM_STATS(asm_stats_ch.map { asmid, basename, genome ->
@@ -1513,22 +1570,22 @@ workflow {
 
         if (use_glob) {
             if (params.run_aa_freq.toBoolean()) {
-                MERGE_AA_FREQ(gatedGlobStats(BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([]), "aa_freq/*.aa_freq.csv.gz"))
+                MERGE_AA_FREQ(toManifest(gatedGlobStats(BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([]), "aa_freq/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
             } else {
-                MERGE_AA_FREQ(gatedGlobStats(Channel.of(true), "aa_freq/*.aa_freq.csv.gz"))
+                MERGE_AA_FREQ(toManifest(gatedGlobStats(Channel.of(true), "aa_freq/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
             }
             if (params.run_codon_freq.toBoolean()) {
-                MERGE_CODON_FREQ(gatedGlobStats(BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([]), "codon_freq/*.codon_freq.csv.gz"))
+                MERGE_CODON_FREQ(toManifest(gatedGlobStats(BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([]), "codon_freq/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
             } else {
-                MERGE_CODON_FREQ(gatedGlobStats(Channel.of(true), "codon_freq/*.codon_freq.csv.gz"))
+                MERGE_CODON_FREQ(toManifest(gatedGlobStats(Channel.of(true), "codon_freq/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
             }
             if (params.run_intergenic.toBoolean()) {
-                MERGE_INTERGENIC(gatedGlobStats(CALC_INTERGENIC.out.csv.collect(), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
+                MERGE_INTERGENIC(toManifest(gatedGlobStats(CALC_INTERGENIC.out.csv.collect(), "intergenic_stats/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
             } else {
-                MERGE_INTERGENIC(gatedGlobStats(Channel.of(true), "intergenic_stats/*.gene_intergenic_distances.csv.gz"))
+                MERGE_INTERGENIC(toManifest(gatedGlobStats(Channel.of(true), "intergenic_stats/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
             }
             if (params.run_gene_stats.toBoolean()) {
-                MERGE_GENE_STATS(gatedGlobStats(
+                MERGE_GENE_STATS(toManifest(gatedGlobStats(
                     CALC_GENE_STATS.out.gene_info
                         .mix(CALC_GENE_STATS.out.gene_exons)
                         .mix(CALC_GENE_STATS.out.gene_CDS)
@@ -1538,44 +1595,51 @@ workflow {
                         .mix(CALC_GENE_STATS.out.gene_proteins)
                         .collect(),
                     "gene_stats/*.csv.gz"
-                ))
+                ), 'gene_stats.manifest.txt'))
             } else {
-                MERGE_GENE_STATS(gatedGlobStats(Channel.of(true), "gene_stats/*.csv.gz"))
+                MERGE_GENE_STATS(toManifest(gatedGlobStats(Channel.of(true), "gene_stats/*.csv.gz"), 'gene_stats.manifest.txt'))
             }
             if (params.run_asm_stats.toBoolean()) {
-                MERGE_ASM_STATS(gatedGlobStats(CALC_ASM_STATS.out.stats.collect(), "asm_stats/*.stats.txt"))
+                MERGE_ASM_STATS(toManifest(gatedGlobStats(CALC_ASM_STATS.out.stats.collect(), "asm_stats/*.stats.txt"), 'asm_stats.manifest.txt'))
             } else {
-                MERGE_ASM_STATS(gatedGlobStats(Channel.of(true), "asm_stats/*.stats.txt"))
+                MERGE_ASM_STATS(toManifest(gatedGlobStats(Channel.of(true), "asm_stats/*.stats.txt"), 'asm_stats.manifest.txt'))
             }
         } else {
             // current-run outputs only (merge_all=false, or --taxon active).
             // Build file lists from expected storeDir paths (covers cached + new),
             // gated on batch completion so newly-published files are visible.
             if (params.run_aa_freq.toBoolean()) {
-                def aa_sync    = BATCH_AA_FREQ.out.csv.flatten().collect().ifEmpty([])
-                def aa_paths   = aa_freq_ch.map { locustag, basename, _ignored ->
+                // Gate per-genome storeDir paths on BATCH completion.  aa_sync is a
+                // SCALAR barrier and aa_paths emits one file PER item (not collected):
+                // combine(scalar, perItem) yields clean [true, f] 2-tuples.  Combining
+                // with a collected list instead would make `combine` spread the list
+                // into one flat [true, f1, f2, …] emission and break the destructure.
+                def aa_sync  = BATCH_AA_FREQ.out.csv.flatten().collect().map { true }.ifEmpty(true)
+                def aa_paths = aa_freq_ch.map { locustag, basename, _ignored ->
                     file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz")
-                }.collect()
-                MERGE_AA_FREQ(
+                }
+                MERGE_AA_FREQ(toManifest(
                     aa_sync.combine(aa_paths)
-                           .map { _s, files -> files.findAll { it.exists() } }
-                           .filter { !it.isEmpty() }
-                )
+                           .map { _s, f -> f }
+                           .filter { it.exists() },
+                    'aa_freq.manifest.txt'
+                ))
             }
             if (params.run_codon_freq.toBoolean()) {
-                def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().ifEmpty([])
+                def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().map { true }.ifEmpty(true)
                 def codon_paths = codon_freq_ch.map { locustag, basename, _ignored ->
                     file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz")
-                }.collect()
-                MERGE_CODON_FREQ(
+                }
+                MERGE_CODON_FREQ(toManifest(
                     codon_sync.combine(codon_paths)
-                              .map { _s, files -> files.findAll { it.exists() } }
-                              .filter { !it.isEmpty() }
-                )
+                              .map { _s, f -> f }
+                              .filter { it.exists() },
+                    'codon_freq.manifest.txt'
+                ))
             }
-            if (params.run_intergenic.toBoolean()) MERGE_INTERGENIC(CALC_INTERGENIC.out.csv.collect())
+            if (params.run_intergenic.toBoolean()) MERGE_INTERGENIC(toManifest(CALC_INTERGENIC.out.csv.collect(), 'intergenic.manifest.txt'))
             if (params.run_gene_stats.toBoolean()) {
-                MERGE_GENE_STATS(
+                MERGE_GENE_STATS(toManifest(
                     CALC_GENE_STATS.out.gene_info
                         .mix(CALC_GENE_STATS.out.gene_exons)
                         .mix(CALC_GENE_STATS.out.gene_CDS)
@@ -1583,10 +1647,11 @@ workflow {
                         .mix(CALC_GENE_STATS.out.gene_transcripts)
                         .mix(CALC_GENE_STATS.out.gene_trnas)
                         .mix(CALC_GENE_STATS.out.gene_proteins)
-                        .collect()
-                )
+                        .collect(),
+                    'gene_stats.manifest.txt'
+                ))
             }
-            if (params.run_asm_stats.toBoolean()) MERGE_ASM_STATS(CALC_ASM_STATS.out.stats.collect())
+            if (params.run_asm_stats.toBoolean()) MERGE_ASM_STATS(toManifest(CALC_ASM_STATS.out.stats.collect(), 'asm_stats.manifest.txt'))
         }
     }
 }

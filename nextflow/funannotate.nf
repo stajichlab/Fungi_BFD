@@ -11,6 +11,8 @@
  *   nextflow run nextflow/funannotate.nf -c nextflow/nextflow.config -profile funannotate -resume
  */
 
+include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+
 // Metadata tuple order used throughout:
 //   val(out), val(asmid), val(species), val(strain), val(locustag),
 //   val(busco_lineage), val(header_length), val(transl_table)
@@ -1778,6 +1780,19 @@ def staleRnaseq(String out, String species) {
 }
 
 workflow {
+    // ── --help: print parameter documentation and exit ──────────────────────────
+    if (params.help) {
+        log.info paramsHelp(command: "nextflow run nextflow/funannotate.nf -c nextflow/nextflow.config -profile funannotate")
+        return
+    }
+    // ── Validate params and samples.csv structure (fail fast) ───────────────────
+    validateParameters()
+    log.info paramsSummaryLog(workflow)
+    // Validate sample-sheet columns/types against assets/schema_input.json. The
+    // returned list is discarded; the existing splitCsv logic below does the real
+    // channel building. A bad/mismatched samples.csv aborts here with a clear error.
+    samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
+
     def suppressSet = (params.suppress && file(params.suppress).exists())
         ? file(params.suppress).readLines()
               .collect { it.trim().split(',')[0].trim() }

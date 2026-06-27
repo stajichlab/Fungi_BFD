@@ -1,18 +1,28 @@
 #!/usr/bin/bash
 # Lint the BFD.nf workflow.
-# Run from the project root: bash pipeline/nextflow/run_lint.sh
+# Run from the project root: bash nextflow/run_lint.sh
 
 set -euo pipefail
 
-NXFDIR="pipeline/nextflow"
+NXFDIR="nextflow"
 
 module load nextflow 2>/dev/null || true
 
-echo "=== Nextflow syntax check (-preview, local executor, 0 samples) ==="
+echo "=== Nextflow syntax check: BFD.nf (-preview, local executor, 0 samples) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
 nextflow run ${NXFDIR}/BFD.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
+    -preview \
+    2>&1
+
+echo ""
+echo "=== Nextflow syntax check: funannotate.nf (-preview, funannotate,test) ==="
+# funannotate needs its own profile for params; test overrides samples to the fixture.
+NXF_OPTS="-Xms256m -Xmx2g" \
+nextflow run ${NXFDIR}/funannotate.nf \
+    -c ${NXFDIR}/nextflow.config \
+    -profile funannotate,test \
     -preview \
     2>&1
 
