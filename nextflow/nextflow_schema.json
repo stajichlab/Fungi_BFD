@@ -1,0 +1,153 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/stajichlab/BigFungiData/main/nextflow/nextflow_schema.json",
+    "title": "BigFungiData pipeline parameters",
+    "description": "Parameter schema for the BigFungiData Nextflow pipelines (funannotate.nf prediction/annotation and BFD.nf functional annotation). Only command-line-facing and commonly tuned parameters are validated; deep infrastructure paths are typed as strings. Unlisted parameters are accepted (warn-only) so the shared config can carry profile-specific settings.",
+    "type": "object",
+    "$defs": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "description": "Sample sheet and run-scope options shared by all profiles.",
+            "properties": {
+                "samples": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Path to the samples.csv sample sheet. Validated against assets/schema_input.json.",
+                    "default": "${launchDir}/samples.csv"
+                },
+                "n_test": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "If >0, restrict the run to the first n_test samples (testing/stub).",
+                    "default": 0
+                }
+            }
+        },
+        "run_scope_filters": {
+            "title": "Run scope and filters",
+            "type": "object",
+            "description": "Restrict which samples are processed and control the merge stage.",
+            "properties": {
+                "taxon": {
+                    "type": "string",
+                    "pattern": "^$|^[A-Za-z]+:.+$",
+                    "description": "Restrict to one taxonomic group as RANK:VALUE (e.g. PHYLUM:Ascomycota). Empty = no filter.",
+                    "default": ""
+                },
+                "asmid": {
+                    "type": "string",
+                    "description": "Restrict to a single assembly by exact ASMID. Empty = no filter.",
+                    "default": ""
+                },
+                "merge_all": {
+                    "type": "boolean",
+                    "description": "true = MERGE collects all files in results/function/<tool>/; false = only this run's outputs.",
+                    "default": false
+                },
+                "skip_merge": {
+                    "type": "boolean",
+                    "description": "Skip all MERGE_* steps (e.g. when running only new species).",
+                    "default": true
+                }
+            }
+        },
+        "funannotate_options": {
+            "title": "funannotate.nf options",
+            "type": "object",
+            "description": "Genome cleaning, RNA-seq fetch, training, prediction and annotation controls.",
+            "properties": {
+                "target":            { "type": "string", "format": "directory-path", "description": "Output dir for genome annotation." },
+                "training_target":   { "type": "string", "format": "directory-path", "description": "Output dir for funannotate training." },
+                "taxondb":           { "type": "string", "format": "directory-path", "description": "NCBI taxdump cache dir." },
+                "proteins":          { "type": "string", "format": "file-path", "description": "Protein evidence FASTA for prediction." },
+                "source":            { "type": "string", "format": "directory-path", "description": "Source genome assembly dir." },
+                "seqcenter":         { "type": "string", "description": "Sequencing center label for GenBank submission.", "default": "NCBI" },
+                "augustus_config":   { "type": "string", "format": "directory-path", "description": "AUGUSTUS_CONFIG_PATH." },
+                "funannotate_db":    { "type": "string", "format": "directory-path", "description": "FUNANNOTATE_DB dir." },
+                "min_contig_len":    { "type": "integer", "minimum": 0, "description": "Minimum contig length to retain when cleaning.", "default": 2000 },
+                "clean_script":      { "type": "string", "format": "file-path", "description": "Genome FASTA cleaning script." },
+                "fastq_hdr_script":  { "type": "string", "format": "file-path", "description": "FASTQ header fix script for Trinity." },
+                "sbt_template":      { "type": "string", "format": "file-path", "description": "GenBank submission template (.sbt)." },
+                "debug":             { "type": "boolean", "description": "Enable verbose debug output.", "default": false },
+                "max_cpus":          { "type": "integer", "minimum": 1, "description": "Upper CPU bound for funannotate sub-tools.", "default": 64 },
+                "suppress":          { "type": "string", "description": "Filename of ASMID suppress list (one ASMID per line).", "default": "suppress.txt" },
+                "max_rnaseq_runs":   { "type": "integer", "minimum": 0, "description": "Max paired-end SRA runs to fetch per species.", "default": 2 },
+                "max_rnaseq_spot":   { "type": "integer", "minimum": 0, "description": "Max spots per SRA run (0 = no cap).", "default": 0 },
+                "max_rnaseq_reads":  { "type": "integer", "minimum": 0, "description": "Max reads to keep after normalization.", "default": 40000000 },
+                "enable_single_end": { "type": "boolean", "description": "Allow single-end RNA-seq fallback.", "default": false },
+                "max_rnaseq_se_runs":{ "type": "integer", "minimum": 0, "description": "Max single-end SRA runs per species.", "default": 3 },
+                "only_clean":        { "type": "boolean", "description": "Stop after genome cleaning.", "default": false },
+                "clean_batch_size":  { "type": "integer", "minimum": 0, "description": "Genomes per GENOME_CLEAN_BATCH job (0 = one job per genome).", "default": 1000 },
+                "stop_after_sra_fetch": { "type": "boolean", "description": "Halt after SRA_FETCH.", "default": false },
+                "stop_after_sra_query": { "type": "boolean", "description": "Halt after SRA_QUERY.", "default": false },
+                "skip_sra_query":    { "type": "boolean", "description": "Reuse existing sra_query CSVs; skip SRA_QUERY_BATCH.", "default": false },
+                "run_sra_fetch":     { "type": "boolean", "description": "Run the SRA fetch/normalize stage.", "default": true },
+                "sra_query_batch_size": { "type": "integer", "minimum": 1, "description": "Species per SRA_QUERY_BATCH job.", "default": 10 },
+                "run_repeatmasker":  { "type": "boolean", "description": "Run repeat masking.", "default": true },
+                "run_update":        { "type": "boolean", "description": "Run funannotate update.", "default": false },
+                "run_annotate":      { "type": "boolean", "description": "Run funannotate annotate.", "default": false },
+                "run_antismash":     { "type": "boolean", "description": "Run antiSMASH.", "default": false },
+                "rnaseq_data":       { "type": "string", "format": "directory-path", "description": "Trinity-GG cache dir." },
+                "run_interpro":      { "type": "boolean", "description": "Run InterProScan in annotate.", "default": false },
+                "run_signalp":       { "type": "boolean", "description": "Run SignalP.", "default": false },
+                "antismash_taxon":   { "type": "string", "enum": ["fungi", "bacteria", "plants"], "description": "antiSMASH taxon mode.", "default": "fungi" },
+                "pasa_mysql":        { "type": "boolean", "description": "Use MySQL/MariaDB-backed PASA.", "default": true },
+                "rnaseq_trimmer":    { "type": "string", "enum": ["fastp", "trimmomatic"], "description": "RNA-seq read trimmer.", "default": "fastp" },
+                "mariadb_sif":       { "type": "string", "format": "file-path", "description": "MariaDB singularity image for PASA." },
+                "mysql_datadir":     { "type": "string", "format": "directory-path", "description": "MySQL data dir for PASA." },
+                "pasa_conf_dir":     { "type": "string", "format": "directory-path", "description": "PASA conf dir." },
+                "max_intronlen":     { "type": "integer", "minimum": 0, "description": "Max intron length for prediction.", "default": 3000 },
+                "min_intronlen":     { "type": "integer", "minimum": 0, "description": "Min intron length for prediction.", "default": 10 },
+                "predict_min_asm_bp":       { "type": "integer", "minimum": 0, "description": "Pre-flight: assembled bp below this counts as 'small' (0 disables the guard).", "default": 8000000 },
+                "predict_frag_max_n50":     { "type": "integer", "minimum": 0, "description": "Pre-flight: N50 below this counts as 'fragmented'.", "default": 10000 },
+                "predict_frag_max_contigs": { "type": "integer", "minimum": 0, "description": "Pre-flight: contig count above this counts as 'fragmented'.", "default": 1000 }
+            }
+        },
+        "bfd_functional_options": {
+            "title": "BFD.nf functional-annotation options",
+            "type": "object",
+            "description": "Input/output dirs and per-tool toggles for the functional annotation pipeline.",
+            "properties": {
+                "pep_dir":             { "type": "string", "format": "directory-path", "description": "Protein FASTA input dir." },
+                "cds_dir":             { "type": "string", "format": "directory-path", "description": "CDS FASTA input dir." },
+                "gff_dir":             { "type": "string", "format": "directory-path", "description": "GFF3 input dir." },
+                "trna_dir":            { "type": "string", "format": "directory-path", "description": "tRNA input dir." },
+                "genome_dir":          { "type": "string", "format": "directory-path", "description": "Genome DNA input dir." },
+                "genome_annotation":   { "type": "string", "format": "directory-path", "description": "Annotation source dir." },
+                "tables":              { "type": "string", "format": "directory-path", "description": "Consolidated table output dir." },
+                "scripts":             { "type": "string", "format": "directory-path", "description": "Project scripts dir." },
+                "outdir":              { "type": "string", "format": "directory-path", "description": "Functional results dir." },
+                "stats_outdir":        { "type": "string", "format": "directory-path", "description": "Sequence-stats results dir." },
+                "genome_stats_outdir": { "type": "string", "format": "directory-path", "description": "Genome-stats results dir." },
+                "run_setup":     { "type": "boolean", "default": true },
+                "run_pfam":      { "type": "boolean", "default": true },
+                "run_cazy":      { "type": "boolean", "default": true },
+                "run_merops":    { "type": "boolean", "default": true },
+                "run_tmhmm":     { "type": "boolean", "default": true },
+                "run_targetp":   { "type": "boolean", "default": true },
+                "run_idp":       { "type": "boolean", "default": true },
+                "run_wolfpsort": { "type": "boolean", "default": true },
+                "run_predgpi":   { "type": "boolean", "default": true },
+                "pfam_nodes":    { "type": "integer", "minimum": 1, "default": 1 },
+                "pfam_tasks":    { "type": "integer", "minimum": 1, "default": 1 },
+                "run_aa_freq":     { "type": "boolean", "default": true },
+                "run_codon_freq":  { "type": "boolean", "default": true },
+                "freq_batch_size": { "type": "integer", "minimum": 1, "default": 50 },
+                "run_intergenic":  { "type": "boolean", "default": true },
+                "run_gene_stats":  { "type": "boolean", "default": true },
+                "run_asm_stats":   { "type": "boolean", "default": true },
+                "run_chrom_info":  { "type": "boolean", "default": true },
+                "run_busco_genome":{ "type": "boolean", "default": false },
+                "run_busco_pep":   { "type": "boolean", "default": false },
+                "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" }
+            }
+        }
+    },
+    "allOf": [
+        { "$ref": "#/$defs/input_output_options" },
+        { "$ref": "#/$defs/run_scope_filters" },
+        { "$ref": "#/$defs/funannotate_options" },
+        { "$ref": "#/$defs/bfd_functional_options" }
+    ]
+}

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Parse results/asm_reports/*.stats.txt, join with samples.csv, write tables/asm_stats.tsv."""
+"""Parse AAFTF `assess` *.stats.txt reports, join with samples.csv, write a merged TSV.
 
+Inputs are supplied either as a manifest file (--manifest, one TAB-delimited
+`<path>\\t<mtime>\\t<size>` record per line, as written by BFD.nf toManifest) or
+as a directory to glob (--reportdir).  Output is written to -o; if it ends in
+.gz it is gzip-compressed.
+"""
+
+import argparse
 import csv
+import glob
+import gzip
 import os
 import sys
-import glob
-
-REPORT_DIR = "results/asm_reports"
-SAMPLES_CSV = "samples.csv"
-OUT_FILE = "tables/asm_stats.tsv"
 
 FIELD_MAP = {
     "CONTIG COUNT": "contig_count",
@@ -65,21 +69,56 @@ def load_samples(path):
         for row in reader:
             asmid = row["ASMID"]
             samples[asmid] = {
-                "SPECIES": row["SPECIES_IN"],
-                "STRAIN": row["STRAIN"],
+                "SPECIES": row.get("SPECIES_IN", row.get("SPECIES", "")),
+                "STRAIN": row.get("STRAIN", ""),
             }
     return samples
 
 
+def read_manifest(path):
+    """Read a toManifest file; return the list of report paths (first TAB field)."""
+    files = []
+    with open(path) as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            files.append(line.split("\t", 1)[0])
+    return files
+
+
+def collect_report_files(args):
+    """Resolve the list of .stats.txt report files from --manifest or --reportdir."""
+    if args.manifest:
+        files = read_manifest(args.manifest)
+    else:
+        files = glob.glob(os.path.join(args.reportdir, "*.stats.txt"))
+    return sorted(files)
+
+
+def open_out(path):
+    """Open path for text writing, gzip-compressed if it ends in .gz."""
+    if path.endswith(".gz"):
+        return gzip.open(path, "wt", newline="")
+    return open(path, "w", newline="")
+
+
 def main():
-    """Join asm stats files with samples metadata and write a TSV summary to tables/asm_stats.tsv."""
-    os.makedirs("tables", exist_ok=True)
+    """Join asm stats reports with samples metadata and write a merged TSV."""
+    p = argparse.ArgumentParser(description=__doc__)
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--manifest", help="TAB-delimited manifest of report paths (path\\tmtime\\tsize)")
+    src.add_argument("--reportdir", help="Directory to glob for *.stats.txt")
+    p.add_argument("--samples", required=True, help="samples CSV with ASMID/SPECIES_IN/STRAIN")
+    p.add_argument("-o", "--output", required=True, help="output TSV (.gz → gzip-compressed)")
+    args = p.parse_args()
 
-    samples = load_samples(SAMPLES_CSV)
+    samples = load_samples(args.samples)
 
-    report_files = sorted(glob.glob(os.path.join(REPORT_DIR, "*.stats.txt")))
+    report_files = collect_report_files(args)
     if not report_files:
-        print(f"No stats files found in {REPORT_DIR}", file=sys.stderr)
+        src_desc = args.manifest or args.reportdir
+        print(f"No stats files found ({src_desc})", file=sys.stderr)
         sys.exit(1)
 
     rows = []
@@ -102,18 +141,18 @@ def main():
         rows.append(row)
 
     if missing_meta:
-        print(f"WARNING: {len(missing_meta)} ASMIDs not found in {SAMPLES_CSV}:", file=sys.stderr)
+        print(f"WARNING: {len(missing_meta)} ASMIDs not found in {args.samples}:", file=sys.stderr)
         for m in missing_meta[:10]:
             print(f"  {m}", file=sys.stderr)
         if len(missing_meta) > 10:
             print(f"  ... and {len(missing_meta) - 10} more", file=sys.stderr)
 
-    with open(OUT_FILE, "w", newline="") as fh:
+    with open_out(args.output) as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"Wrote {len(rows)} rows to {OUT_FILE}")
+    print(f"Wrote {len(rows)} rows to {args.output}")
 
 
 if __name__ == "__main__":
