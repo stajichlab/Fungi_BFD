@@ -52,6 +52,18 @@
                 }
             }
         },
+        "generic_options": {
+            "title": "Generic options",
+            "type": "object",
+            "description": "Options that apply to every profile.",
+            "properties": {
+                "trace_report_suffix": {
+                    "type": "string",
+                    "description": "Suffix appended to the trace/report/timeline filenames so runs do not clobber each other. Defaults to the launch timestamp in yyyy-MM-dd_HH_mm_ss format.",
+                    "hidden": true
+                }
+            }
+        },
         "funannotate_options": {
             "title": "funannotate.nf options",
             "type": "object",
@@ -147,6 +159,7 @@
     "allOf": [
         { "$ref": "#/$defs/input_output_options" },
         { "$ref": "#/$defs/run_scope_filters" },
+        { "$ref": "#/$defs/generic_options" },
         { "$ref": "#/$defs/funannotate_options" },
         { "$ref": "#/$defs/bfd_functional_options" }
     ]

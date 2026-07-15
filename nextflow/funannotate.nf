@@ -591,6 +591,7 @@ process SRA_FETCH {
     """
     module load sratoolkit
     module load parallel-fastq-dump
+    module load parallel
     module load fastp
     module load BBTools
     module load workspace/scratch
@@ -1041,7 +1042,7 @@ process RNASEQ_PREPARE {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
-    module load funannotate
+    module load funannotate/dev-1.9
     module load fastp
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
@@ -1163,7 +1164,7 @@ process FUNANNOTATE_TRAIN {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
-    module load funannotate
+    module load funannotate/dev-1.9
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
@@ -1314,7 +1315,7 @@ process FUNANNOTATE_PREDICT {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
-    module load funannotate
+    module load funannotate/dev-1.9
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
