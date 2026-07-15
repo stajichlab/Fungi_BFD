@@ -266,3 +266,15 @@ GCA_002994555.1_CA11,Too small/fragmented - funannotate only 6 training models (
 GCA_002994575.1_FL11_1,Too small/fragmented - funannotate only 4 training models (needs 30)
 GCA_002994595.1_FL11_2,Too small/fragmented - funannotate only 9 training models (needs 30)
 GCA_041722615.1_BTNG35,Too small/fragmented - funannotate only 3 training models (needs 30)
+asmid,reason
+GCA_055473175.1_ASM5547317v1,funannotate_too_few_models:15
+GCA_027596065.1_ASM2759606v1,preflight_small_fragmented
+GCA_023347045.1_ASM2334704v1,preflight_small_fragmented
+GCA_027595885.1_ASM2759588v1,funannotate_too_few_models:19
+GCA_055690705.1_ASM5569070v1,preflight_small_fragmented
+GCA_040807145.1_ASM4080714v1,preflight_small_fragmented
+GCA_001069125.1_ASM106912v1,preflight_small_fragmented
+GCA_027595885.1_ASM2759588v1,funannotate_too_few_models:19
+GCA_023347045.1_ASM2334704v1,preflight_small_fragmented
+GCA_027596065.1_ASM2759606v1,preflight_small_fragmented
+GCA_054125455.1_ASM5412545v1,preflight_small_fragmented
