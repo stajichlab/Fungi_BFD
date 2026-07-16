@@ -901,8 +901,8 @@ process SRA_FETCH_SE {
 
     # Collect SE accessions from the query CSV:
     #   SE_trinity entries: col 6 (layout) may be PAIRED in SRA but blacklist says SE_trinity.
-    #                       Download with --split-files and take _1 only (real SE data).
-    #   SINGLE layout entries: col 6 == SINGLE; pfd gives ACC.fastq.gz or ACC_1.fastq.gz.
+    #                       Download with --split-3 and take _1 (real SE mate) if present.
+    #   SINGLE layout entries: col 6 == SINGLE; --split-3 gives ACC.fastq.gz (no _1/_2).
     SE_ACCESSIONS=""
     while IFS=',' read -r stag tid acc spots platform layout rest; do
         [ "\$stag" = "species_tag" ] && continue
@@ -926,11 +926,15 @@ process SRA_FETCH_SE {
         ACTION=\$(acc_action "\$ACC")
         echo "[INFO] Downloading \$ACC (SE mode, action: \${ACTION:-default}) ..."
 
-        # Download with --split-files. For SE_trinity (mislabeled PAIRED) this yields _1/_2;
-        # we take only _1 (the actual SE reads) and discard _2. For genuine SINGLE layout,
-        # pfd typically produces ACC_1.fastq.gz or ACC.fastq.gz.
+        # Download with --split-3 (NOT --split-files): --split-files forces paired
+        # splitting and fails on genuine single-end runs, which have no second mate to
+        # split out. --split-3 routes reads by what each spot actually contains:
+        #   genuine SINGLE layout        -> all reads land in ACC.fastq.gz (no _1/_2)
+        #   SE_trinity, 2 reads per spot -> ACC_1.fastq.gz + ACC_2.fastq.gz (take _1)
+        #   SE_trinity, 1 read per spot  -> unpaired reads land in ACC.fastq.gz
+        # The SE_FILE detection below picks _1 first (SE_trinity mate), else ACC.fastq.gz.
         parallel-fastq-dump --sra-id "\$ACC" --threads ${task.cpus} \\
-            --outdir reads/ --split-files --gzip --tmpdir "\$TMPDIR" || {
+            --outdir reads/ --split-3 --gzip --tmpdir "\$TMPDIR" || {
             echo "[WARN] pfd failed for \$ACC; trying EBI FTP..."
             module load aria2
             EBI_DIR=\$(ebi_ftp_dir "\$ACC")
