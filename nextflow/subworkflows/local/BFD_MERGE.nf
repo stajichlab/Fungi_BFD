@@ -25,24 +25,11 @@ include { MERGE_GENE_STATS } from '../../modules/BFD/MERGE_GENE_STATS/main.nf'
 include { MERGE_ASM_STATS  } from '../../modules/BFD/MERGE_ASM_STATS/main.nf'
 include { MERGE_SAMPLES    } from '../../modules/BFD/MERGE_SAMPLES/main.nf'
 
-// Collapse a channel of input files into one sorted manifest, TAB-delimited:
-//     <absolute_path>\t<mtime_ms>\t<size_bytes>
-// The merge scripts read the path from the first field directly off its stable
-// storeDir location, so inputs must live on the shared filesystem (they do —
-// every per-genome stat is storeDir-cached).
-def toManifest(ch, String name) {
-    ch.flatten()
-      .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
-      .collectFile(name: name, newLine: true, sort: true)
-}
+include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
 
-// Build a gated glob channel rooted in params.genome_stats_outdir.
+// Root a gated glob in params.genome_stats_outdir.
 def gatedGlobStats(sync_ch, String glob) {
-    sync_ch
-        .flatMap { files("${params.genome_stats_outdir}/${glob}") }
-        .filter  { it.size() > 0 }
-        .collect()
-        .filter  { !it.isEmpty() }
+    gatedGlobIn(sync_ch, params.genome_stats_outdir, glob)
 }
 
 workflow BFD_MERGE {

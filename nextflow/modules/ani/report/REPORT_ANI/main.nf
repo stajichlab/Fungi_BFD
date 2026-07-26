@@ -8,8 +8,8 @@ process REPORT_ANI {
         tuple val(group_name), path(ani_tsv), path(names_tsv)
 
     output:
-        path("${group_name}_ANI_report.txt")
-        path("${group_name}_genome_names.tsv")
+        path("${group_name}_ANI_report.txt"), emit: report
+        path("${group_name}_genome_names.tsv"), emit: names
 
     script:
     """

@@ -6,7 +6,11 @@ process SKANI_DIST_QUERY {
     cpus   { ref_sketches.size() > 2000 ? 32 : ref_sketches.size() > 500 ? 16 : 8 }
     memory { ref_sketches.size() > 2000 ? '64 GB' : ref_sketches.size() > 500 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/skani_query/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new query/reference genomes are
+    // added later -- see SKANI_COMPARE for the same fix and the .living/learnings.md
+    // entry that found this.
+    publishDir { "${params.outdir}/skani_query/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(query_sketches, stageAs: 'query/*'), path(ref_sketches, stageAs: 'ref/*')

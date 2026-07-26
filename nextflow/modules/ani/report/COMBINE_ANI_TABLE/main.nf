@@ -7,8 +7,8 @@ process COMBINE_ANI_TABLE {
     publishDir "${params.outdir}/${params.ani_method}/${params.compare}", mode: 'copy'
 
     input:
-        path ani_tsvs,   stageAs: 'ani_in/*'
-        path names_tsvs, stageAs: 'names_in/*'
+        path ani_manifest
+        path names_manifest
 
     output:
         path("all_pairs.csv")
@@ -17,8 +17,8 @@ process COMBINE_ANI_TABLE {
     script:
     """
     python3 ${projectDir}/bin/combine_ani_table.py \\
-        --ani-dir   ani_in \\
-        --names-dir names_in \\
+        --ani-manifest   ${ani_manifest} \\
+        --names-manifest ${names_manifest} \\
         --compare-level "${params.compare}" \\
         --csv-output all_pairs.csv \\
         --db-output  ani.db

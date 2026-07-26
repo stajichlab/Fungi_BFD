@@ -12,7 +12,7 @@
 // Parameter defaults live in conf/profile_ANI.config.
 //
 
-include { assertRank; writeNamesTsv } from '../modules/common/utils.nf'
+include { assertRank; writeNamesTsv; gatedGlobIn; toManifest } from '../modules/common/utils.nf'
 include { ANI_SAMPLES }               from '../subworkflows/local/ANI_SAMPLES.nf'
 include { ANI_COMPARE_METHOD }        from '../subworkflows/local/ANI_COMPARE_METHOD.nf'
 include { REPORT_ANI }                from '../modules/ani/report/REPORT_ANI/main.nf'
@@ -66,8 +66,30 @@ workflow COMPARE_ANI {
     REPORT_ANI(ani_tsv_ch.join(names_map, by: 0))
 
     // ── Combine every group's pairs + labels into one queryable table ─────────
+    // Union two sources so no group is ever silently dropped:
+    //  (a) this run's own live channel items — available immediately and race-free,
+    //      but only covering groups actively touched *this* invocation. Collecting
+    //      only these on a -resume run silently lost every unchanged/cached group,
+    //      which is the bug this replaced.
+    //  (b) a disk glob of everything already published under params.outdir, gated
+    //      on this run's completion — catches groups from prior runs that -resume
+    //      did not re-touch. publishDir's copy is asynchronous relative to a
+    //      process's channel emission, so this glob alone can race ahead of a
+    //      current-run group's own publish and miss it.
+    // Together: (a) guarantees current-run coverage regardless of (b)'s race,
+    // (b) guarantees historical coverage. combine_ani_table.py dedupes a group
+    // appearing via both by manifest mtime, so the union never double-counts.
+    // Scalar barriers (not list-valued) per the 2026-06-25 MERGE-gating decision.
+    def ani_sync   = ani_tsv_ch.collect().map { true }.ifEmpty(true)
+    def names_sync = REPORT_ANI.out.names.collect().map { true }.ifEmpty(true)
+
+    def ani_all = gatedGlobIn(ani_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*.ani.tsv")
+        .mix(ani_tsv_ch.map { _gn, tsv -> tsv }.collect())
+    def names_all = gatedGlobIn(names_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*_genome_names.tsv")
+        .mix(REPORT_ANI.out.names.collect())
+
     COMBINE_ANI_TABLE(
-        ani_tsv_ch.map { _gn, tsv -> tsv }.collect(),
-        names_map.map  { _gn, tsv -> tsv }.collect()
+        toManifest(ani_all,   'ani_tsv.manifest.txt'),
+        toManifest(names_all, 'names_tsv.manifest.txt')
     )
 }

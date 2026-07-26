@@ -1,5 +1,7 @@
 #!/usr/bin/env nextflow
 
+include { cleanStrain; makeSampleTag } from './modules/common/utils.nf'
+
 /*
  * PHYling Phylogenomics Pipeline
  * Multi-locus phylogeny from protein or CDS input using PHYling align/filter/tree.
@@ -214,9 +216,9 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = SampleUtils.cleanStrain(row.STRAIN?.trim() ?: '')
+            def strain   = cleanStrain(row.STRAIN?.trim() ?: '')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def fasta    = file("${input_dir}/${basename}${suffix}", glob: false)
             if (!fasta.exists()) {
                 log.warn "PHYling: skipping ${basename} (${locustag}): ${basename}${suffix} not found"

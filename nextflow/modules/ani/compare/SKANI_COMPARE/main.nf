@@ -6,7 +6,14 @@ process SKANI_COMPARE {
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '64 GB' : sketches.size() > 200 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new genomes are added to that
+    // group later -- it silently keeps serving the stale pre-addition result forever,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // correctly detects a changed sketch/genome list and reruns automatically
+    // (found via a genome added 2026-07-19 that never appeared in the GENUS-level
+    // Aspergillus comparison even after later reruns -- see .living/learnings.md).
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(sketches)

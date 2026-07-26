@@ -23,6 +23,7 @@ include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
 include { taxonRowFilter    } from '../modules/common/utils.nf'
+include { cleanStrain; makeSampleTag } from '../modules/common/utils.nf'
 
 workflow BFD {
 
@@ -50,10 +51,10 @@ workflow BFD {
             // meta.id is the filesystem-safe SPECIES_STRAIN tag and the primary key
             // every module names its outputs after (plan section 2.4).
             [
-                id      : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: ''),
+                id      : makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: ''),
                 locustag: row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim(),
                 species : row.SPECIES?.trim() ?: '',
-                strain  : SampleUtils.cleanStrain(row.STRAIN?.trim() ?: ''),
+                strain  : cleanStrain(row.STRAIN?.trim() ?: ''),
             ]
         }
         .take((params.n_test as int) > 0 ? (params.n_test as int) : -1)
@@ -110,7 +111,7 @@ workflow BFD {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .map { row ->
-            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(basename, row.ASMID?.trim() ?: '')
         }
         .filter { basename, asmid -> asmid }

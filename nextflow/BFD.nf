@@ -25,6 +25,7 @@
 // skip_merge, n_test) are defined in nextflow.config — do not redeclare defaults here.
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+include { cleanStrain; makeSampleTag } from './modules/common/utils.nf'
 
 // ════════════════════════════════════════════════════════════════════════════
 // RUN PROCESSES  (storeDir → skip automatically if all outputs already exist)
@@ -1196,9 +1197,9 @@ workflow {
         .filter(taxonFilter)
         .map { row ->
             def species  = row.SPECIES?.trim() ?: ''
-            def strain   = SampleUtils.cleanStrain(row.STRAIN?.trim() ?: '')
+            def strain   = cleanStrain(row.STRAIN?.trim() ?: '')
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(locustag, basename, species, strain)
         }
         .take((params.n_test as int) > 0 ? (params.n_test as int) : -1)
@@ -1254,7 +1255,7 @@ workflow {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .map { row ->
-            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(basename, row.ASMID?.trim() ?: '')
         }
         .filter { basename, asmid -> asmid }

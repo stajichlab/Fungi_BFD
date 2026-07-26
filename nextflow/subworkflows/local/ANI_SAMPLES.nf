@@ -18,6 +18,7 @@
 //
 
 include { assertRank; taxonRowFilter; genomeStem } from '../../modules/common/utils.nf'
+include { sanitizeTag } from '../../modules/common/utils.nf'
 
 workflow ANI_SAMPLES {
     take:
@@ -39,7 +40,11 @@ workflow ANI_SAMPLES {
         .filter(rowFilter)
         .map { row ->
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def groupKey = row[compare_rank]?.trim() ?: ''
+            // Sanitised for use as group_name in file/dir names (e.g.
+            // ${group_name}.full.ani.tsv) — GENUS/FAMILY rarely need it, but SPECIES
+            // values ("Aspergillus fumigatus") contain spaces that must not land raw
+            // in a shell-globbed filename.
+            def groupKey = sanitizeTag(row[compare_rank])
             def stem     = genomeStem(row, nameStyle)
             def genome   = file("${params.genome_dir}/${stem}${params.genome_suffix}", glob: false)
 

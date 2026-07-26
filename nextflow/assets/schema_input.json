@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/stajichlab/BigFungiData/main/nextflow/assets/schema_input.json",
+    "title": "BigFungiData - samples.csv schema",
+    "description": "Validation schema for the samples.csv sample sheet consumed by funannotate.nf and BFD.nf. Columns the workflows read are validated for presence and type; extra taxonomy columns are accepted but optional.",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "ASMID": {
+                "type": "string",
+                "pattern": "^GC[AF]_\\S+$",
+                "errorMessage": "ASMID is required and must be an NCBI assembly accession beginning with GCA_ or GCF_ (e.g. GCF_010015735.1_Aaoar1)."
+            },
+            "SPECIES_IN": {
+                "type": "string",
+                "errorMessage": "SPECIES_IN must be a string (raw species+strain label as supplied)."
+            },
+            "STRAIN": {
+                "type": "string",
+                "errorMessage": "STRAIN must be a string (may be empty)."
+            },
+            "BIOPROJECT": {
+                "type": "string",
+                "errorMessage": "BIOPROJECT must be a string."
+            },
+            "NCBI_TAXONID": {
+                "type": "string",
+                "pattern": "^[0-9]+$",
+                "errorMessage": "NCBI_TAXONID is required and must be an integer taxon id (digits only)."
+            },
+            "BUSCO_LINEAGE": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "BUSCO_LINEAGE is required and must be a non-empty lineage token (e.g. dikarya, fungi_odb12)."
+            },
+            "PHYLUM":    { "type": "string" },
+            "SUBPHYLUM": { "type": "string" },
+            "CLASS":     { "type": "string" },
+            "SUBCLASS":  { "type": "string" },
+            "ORDER":     { "type": "string" },
+            "FAMILY":    { "type": "string" },
+            "GENUS":     { "type": "string" },
+            "SPECIES": {
+                "type": "string",
+                "pattern": "^\\S.*$",
+                "errorMessage": "SPECIES is required and must be a non-empty binomial (e.g. 'Aaosphaeria arxii')."
+            },
+            "TRANSL_TABLE": {
+                "type": "string",
+                "pattern": "^[0-9]*$",
+                "errorMessage": "TRANSL_TABLE must be an integer NCBI translation table id (e.g. 1). Optional; the workflow defaults to 1 when absent."
+            },
+            "LOCUSTAG": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "errorMessage": "LOCUSTAG is required and must be a non-empty locus-tag prefix."
+            }
+        },
+        "required": ["ASMID", "NCBI_TAXONID", "BUSCO_LINEAGE", "SPECIES", "LOCUSTAG"]
+    }
+}

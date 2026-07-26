@@ -34,7 +34,7 @@ include { MERGE_IDP       } from '../../modules/BFD/MERGE_IDP/main.nf'
 include { MERGE_WOLFPSORT } from '../../modules/BFD/MERGE_WOLFPSORT/main.nf'
 include { MERGE_PREDGPI   } from '../../modules/BFD/MERGE_PREDGPI/main.nf'
 
-include { clearIfStale } from '../../modules/common/utils.nf'
+include { clearIfStale; gatedGlobIn } from '../../modules/common/utils.nf'
 
 // Attach a staleness check to the protein channel for one tool: delete any cached
 // output older than the proteins file, then pass the tuple through unchanged.
@@ -47,16 +47,9 @@ def staleGuard(ch, List relOuts) {
     }
 }
 
-// Build a gated glob channel rooted in params.outdir.
-//   sync_ch — emits once the RUN step is done (or Channel.of(true))
-//   glob    — shell-style glob relative to params.outdir
-// Returns a channel of matching non-empty Paths, or empty if none found.
+// Root a gated glob in params.outdir.
 def gatedGlob(sync_ch, String glob) {
-    sync_ch
-        .flatMap { files("${params.outdir}/${glob}") }
-        .filter  { it.size() > 0 }
-        .collect()
-        .filter  { !it.isEmpty() }
+    gatedGlobIn(sync_ch, params.outdir, glob)
 }
 
 // Pick the merge input for a tool: this run's collected outputs, or a glob over

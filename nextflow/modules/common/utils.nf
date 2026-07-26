@@ -23,13 +23,159 @@ def tablesDir() {
         : "${params.tables}/All_Taxa"
 }
 
+// ── Sample identity ─────────────────────────────────────────────────────────
+//
+// Moved here from lib/SampleUtils.groovy: Groovy classes on the lib/ classpath
+// are invisible to Nextflow's strict language spec (§2.1). The Python equivalents
+// are collect_busco_stats.py::build_basename_map() and
+// fix_low_trinity.py::species_key_from_row() — keep them in sync.
+
+// Canonicalise a raw strain value into a human-readable strain name.
+// 
+// - strips leading/trailing whitespace and quote characters (', ")
+// - takes only the first semicolon-delimited token (some rows list
+// multiple synonymous strains separated by ';')
+// - replaces colons with spaces (colons appear as ' colon ' separators)
+// - handles asterisks: a '*' at the start or end of the strain is removed
+// entirely; a '*' between two other words is replaced with '-'
+// 
+// Examples:
+// cleanStrain("Af293; CBS 101") → "Af293"
+// cleanStrain("T-34*")          → "T-34"
+// cleanStrain("ABC*DEF")        → "ABC-DEF"
+// cleanStrain("ARSEF * 2860")   → "ARSEF-2860"
+def cleanStrain(String rawStrain) {
+    return (rawStrain ?: '').trim()
+                .replaceAll(/['"]/, '')
+                .split(';')[0]
+                .trim()
+                .replace(':', ' ')
+                .replaceAll(/^\s*\*+/, '')      // '*' at the start of the strain -> removed
+                .replaceAll(/\*+\s*$/, '')      // '*' at the end of the strain   -> removed
+                .replaceAll(/\s*\*+\s*/, '-')   // '*' between two words          -> '-'
+                .trim()
+}
+
+// Canonicalise a raw strain value into a human-readable strain name.
+// 
+// - strips leading/trailing whitespace and quote characters (', ")
+// - takes only the first semicolon-delimited token (some rows list
+// multiple synonymous strains separated by ';')
+// - replaces colons with spaces (colons appear as ' colon ' separators)
+// - handles asterisks: a '*' at the start or end of the strain is removed
+// entirely; a '*' between two other words is replaced with '-'
+// 
+// Examples:
+// cleanStrain("Af293; CBS 101") → "Af293"
+// cleanStrain("T-34*")          → "T-34"
+// cleanStrain("ABC*DEF")        → "ABC-DEF"
+// cleanStrain("ARSEF * 2860")   → "ARSEF-2860"
+// static String cleanStrain(String rawStrain) {
+// return (rawStrain ?: '').trim()
+// .replaceAll(/['"]/, '')
+// .split(';')[0]
+// .trim()
+// .replace(':', ' ')
+// .replaceAll(/^\s*\*+/, '')      // '*' at the start of the strain -> removed
+// .replaceAll(/\*+\s*$/, '')      // '*' at the end of the strain   -> removed
+// .replaceAll(/\s*\*+\s*/, '-')   // '*' between two words          -> '-'
+// .trim()
+// }
+// Build a filesystem-safe "{species}_{strain}" tag from raw samples.csv values.
+// 
+// Canonicalises:
+// - strips leading/trailing whitespace and quote characters (', ") from both fields
+// - cleans the strain via {@link #cleanStrain} (first ';' token, colon→space,
+// asterisk handling)
+// - collapses runs of whitespace, /, #, [, ], ?, {, } into single underscores
+// 
+// Examples:
+// makeSampleTag("Saccharomyces cerevisiae", "CBS 1171")    → "Saccharomyces_cerevisiae_CBS_1171"
+// makeSampleTag("Aspergillus fumigatus", "Af293; CBS 101")  → "Aspergillus_fumigatus_Af293"
+// makeSampleTag("Fusarium oxysporum", "")                   → "Fusarium_oxysporum"
+// makeSampleTag("Beauveria bassiana", "ARSEF 2860*")        → "Beauveria_bassiana_ARSEF_2860"
+def makeSampleTag(String rawSpecies, String rawStrain) {
+    def sp = (rawSpecies ?: '').trim().replaceAll(/['"]/, '')
+    def st = cleanStrain(rawStrain)
+    return [sp, st].findAll { it }
+                   .join('_')
+                   .replaceAll(/[\s\/\#\[\]\?\{\}]+/, '_')
+}
+
+// Canonicalise a raw strain value into a human-readable strain name.
+// 
+// - strips leading/trailing whitespace and quote characters (', ")
+// - takes only the first semicolon-delimited token (some rows list
+// multiple synonymous strains separated by ';')
+// - replaces colons with spaces (colons appear as ' colon ' separators)
+// - handles asterisks: a '*' at the start or end of the strain is removed
+// entirely; a '*' between two other words is replaced with '-'
+// 
+// Examples:
+// cleanStrain("Af293; CBS 101") → "Af293"
+// cleanStrain("T-34*")          → "T-34"
+// cleanStrain("ABC*DEF")        → "ABC-DEF"
+// cleanStrain("ARSEF * 2860")   → "ARSEF-2860"
+// static String cleanStrain(String rawStrain) {
+// return (rawStrain ?: '').trim()
+// .replaceAll(/['"]/, '')
+// .split(';')[0]
+// .trim()
+// .replace(':', ' ')
+// .replaceAll(/^\s*\*+/, '')      // '*' at the start of the strain -> removed
+// .replaceAll(/\*+\s*$/, '')      // '*' at the end of the strain   -> removed
+// .replaceAll(/\s*\*+\s*/, '-')   // '*' between two words          -> '-'
+// .trim()
+// }
+// Build a filesystem-safe "{species}_{strain}" tag from raw samples.csv values.
+// 
+// Canonicalises:
+// - strips leading/trailing whitespace and quote characters (', ") from both fields
+// - cleans the strain via {@link #cleanStrain} (first ';' token, colon→space,
+// asterisk handling)
+// - collapses runs of whitespace, /, #, [, ], ?, {, } into single underscores
+// 
+// Examples:
+// makeSampleTag("Saccharomyces cerevisiae", "CBS 1171")    → "Saccharomyces_cerevisiae_CBS_1171"
+// makeSampleTag("Aspergillus fumigatus", "Af293; CBS 101")  → "Aspergillus_fumigatus_Af293"
+// makeSampleTag("Fusarium oxysporum", "")                   → "Fusarium_oxysporum"
+// makeSampleTag("Beauveria bassiana", "ARSEF 2860*")        → "Beauveria_bassiana_ARSEF_2860"
+// static String makeSampleTag(String rawSpecies, String rawStrain) {
+// def sp = (rawSpecies ?: '').trim().replaceAll(/['"]/, '')
+// def st = cleanStrain(rawStrain)
+// return [sp, st].findAll { it }
+// .join('_')
+// .replaceAll(/[\s\/\#\[\]\?\{\}]+/, '_')
+// }
+// Sanitise a single free-text taxonomic value (e.g. a samples.csv SPECIES,
+// GENUS, or FAMILY field) into a filesystem-safe tag, for use as a
+// `group_name` in file/directory names (e.g. `${group_name}.full.ani.tsv`
+// in compare_ANI.nf/query_ANI.nf). GENUS/FAMILY/etc. rarely need this (no
+// spaces), but SPECIES values ("Aspergillus fumigatus") do -- a raw,
+// unsanitised group_name with an embedded space is a real risk for
+// downstream shell globbing/quoting in the same processes that consume it.
+// 
+// Uses the same whitespace/quote/special-char handling as {@link
+// #makeSampleTag}'s final step, so a sanitised SPECIES value here matches
+// the species-only prefix of makeSampleTag's own output for the same
+// species string.
+// 
+// Examples:
+// sanitizeTag("Aspergillus fumigatus") → "Aspergillus_fumigatus"
+// sanitizeTag("Fusarium/oxysporum complex") → "Fusarium_oxysporum_complex"
+def sanitizeTag(String raw) {
+    return (raw ?: '').trim()
+                .replaceAll(/['"]/, '')
+                .replaceAll(/[\s\/\#\[\]\?\{\}]+/, '_')
+}
+
 // ── Taxonomy ────────────────────────────────────────────────────────────────
 
 // Ranks recognised in samples.csv, ordered broadest → narrowest. Order is
 // meaningful: query_ANI requires --query_rank to be strictly narrower than
 // --compare, which is an index comparison in this list.
 def taxonomicRanks() {
-    ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS']
+    ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS','SPECIES']
 }
 
 // Validate a rank parameter and return it upper-cased.
@@ -76,7 +222,7 @@ def skaniPresetFlag(String p) {
 def genomeStem(row, String nameStyle) {
     nameStyle == 'asmid'
         ? row.ASMID?.trim()
-        : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+        : makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
 }
 
 // Write a group's genome-names lookup TSV — the authoritative genome universe
@@ -96,6 +242,44 @@ def writeNamesTsv(String group_name, List metas, String prefix = 'names') {
     def f = file("${workflow.workDir}/${prefix}_${group_name}.tsv")
     f.text = header + rows.join('\n') + "\n"
     f
+}
+
+// ── Gated globs and manifests ───────────────────────────────────────────────
+
+// Gather files by filesystem glob (not by live channel .collect()), gated behind
+// a completion signal.
+//
+// A live channel only contains items emitted *during this run's execution*. On a
+// -resume run where most work is cached, only the actively-recomputed items flow
+// through it, so a merge/combine step collecting off that channel silently loses
+// everything else. Globbing the published files on disk instead makes the true
+// input "everything ever computed", independent of what one invocation saw.
+// (Found twice independently: BFD's MERGE_* steps, 2026-06-25, and
+// COMBINE_ANI_TABLE's ani.db, 2026-07-23 — see .living/learnings.md.)
+def gatedGlobIn(sync_ch, String baseDir, String glob) {
+    sync_ch
+        .flatMap { files("${baseDir}/${glob}") }
+        .filter  { it.size() > 0 }
+        .collect()
+        .filter  { !it.isEmpty() }
+}
+
+// Collapse a channel of input files into one sorted manifest, TAB-delimited:
+//     <absolute_path>\t<mtime_ms>\t<size_bytes>
+//
+// Consuming processes read the path from field 1 directly off its stable
+// published location, instead of staging thousands of inputs via `path 'in/*'` —
+// at ~8k genomes that staging command grew enormous (risking "Argument list too
+// long") and created a symlink per file.
+//
+// Baking mtime+size into the manifest *content* also gives the staleness check
+// for free: if any input is regenerated the manifest content changes, so the
+// task's input hash changes and -resume re-runs it; if nothing changed the
+// manifest is byte-identical and the task is a cache hit.
+def toManifest(ch, String name) {
+    ch.flatten()
+      .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
+      .collectFile(name: name, newLine: true, sort: true)
 }
 
 // ── storeDir staleness ──────────────────────────────────────────────────────

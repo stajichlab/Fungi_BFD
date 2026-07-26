@@ -1,5 +1,7 @@
 #!/usr/bin/env nextflow
 
+include { makeSampleTag; sanitizeTag } from './modules/common/utils.nf'
+
 /*
  * query_ANI — asymmetric orphan-vs-reference ANI search
  *
@@ -277,11 +279,11 @@ workflow {
             // Sanitised for use as group_name in file/dir names (e.g. ${group_name}.full.ani.tsv)
             // -- GENUS/FAMILY/etc. rarely need this, but SPECIES values ("Aspergillus
             // fumigatus") contain spaces that must not land raw in a shell-globbed filename.
-            def groupKey = SampleUtils.sanitizeTag(row[compareRank])
+            def groupKey = sanitizeTag(row[compareRank])
             def isQuery  = !(row[queryRank]?.trim())
             def stem     = nameStyle == 'asmid'
                               ? row.ASMID?.trim()
-                              : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+                              : makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def genome   = file("${params.genome_dir}/${stem}${params.genome_suffix}", glob: false)
 
             if (!groupKey) {

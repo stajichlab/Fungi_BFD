@@ -12,6 +12,7 @@
  */
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+include { makeSampleTag } from './modules/common/utils.nf'
 
 // Metadata tuple order used throughout:
 //   val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -1935,7 +1936,7 @@ workflow {
         .map { row ->
             def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
             def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
-            def out           = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+            def out           = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def asmid         = row.ASMID?.trim()
             def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def busco         = row.BUSCO_LINEAGE?.trim()
@@ -2305,7 +2306,7 @@ workflow {
             .map { row ->
                 def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
                 def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
-                def out           = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
+                def out           = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
                 def asmid         = row.ASMID?.trim()
                 def locustag      = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
                 def busco         = row.BUSCO_LINEAGE?.trim()

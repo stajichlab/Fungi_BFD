@@ -1,5 +1,7 @@
 #!/usr/bin/env nextflow
 
+include { makeSampleTag } from './modules/common/utils.nf'
+
 /*
  * comparative_genomics.nf — comparative genomics clustering workflows.
  *
@@ -123,8 +125,8 @@ workflow PREPARE_COMPARATIVE {
             // BASENAME: filesystem-safe "{species}_{strain}" tag — matches the
             // input/pep/{tag}.proteins.fa and input/cds/{tag}.cds-transcripts.fa
             // filenames. Reuses the same canonicaliser funannotate.nf uses to
-            // write those files (nextflow/lib/SampleUtils.groovy).
-            def base = SampleUtils.makeSampleTag(row['SPECIES'] ?: '', row['STRAIN'] ?: '')
+            // write those files (nextflow/modules/common/utils.nf).
+            def base = makeSampleTag(row['SPECIES'] ?: '', row['STRAIN'] ?: '')
             [lt, grp, base]
         }
 
