@@ -1,14 +1,14 @@
 process RUN_SIGNALP {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'signalp'
     storeDir   "${params.outdir}/signalp"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}.signalp.gff3.gz"),         emit: gff3
-        path("${basename}.signalp.results.txt.gz"),  emit: results
+        path("${meta.id}.signalp.gff3.gz"),         emit: gff3
+        path("${meta.id}.signalp.results.txt.gz"),  emit: results
 
     script:
     """
@@ -16,14 +16,14 @@ process RUN_SIGNALP {
     OUTD=\$(mktemp -d)
     signalp6 -od \$OUTD -org euk --mode fast -format txt \\
         -fasta ${proteins} --write_procs ${task.cpus} -bs 100
-    pigz -c \$OUTD/output.gff3             > ${basename}.signalp.gff3.gz
-    pigz -c \$OUTD/prediction_results.txt  > ${basename}.signalp.results.txt.gz
+    pigz -c \$OUTD/output.gff3             > ${meta.id}.signalp.gff3.gz
+    pigz -c \$OUTD/prediction_results.txt  > ${meta.id}.signalp.results.txt.gz
     rm -rf \$OUTD
     """
 
     stub:
     """
-    printf '##gff-version 3\\n' | gzip > ${basename}.signalp.gff3.gz
-    printf '# SignalP-6.0\\n'   | gzip > ${basename}.signalp.results.txt.gz
+    printf '##gff-version 3\\n' | gzip > ${meta.id}.signalp.gff3.gz
+    printf '# SignalP-6.0\\n'   | gzip > ${meta.id}.signalp.results.txt.gz
     """
 }

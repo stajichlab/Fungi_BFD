@@ -6,18 +6,16 @@ include { SETUP_SYMLINKS } from '../../modules/common/SETUP_SYMLINKS/main.nf'
 
 workflow INPUT_SETUP {
     take:
-    ch   // tuple(locustag, basename, species, strain)
+    ch   // meta maps
 
     main:
     rows_file = ch
-        .map { locustag, basename, species, strain -> "${basename}\t${locustag}" }
+        .map { meta -> "${meta.id}\t${meta.locustag}" }
         .collectFile(name: 'setup_rows.tsv', newLine: true)
     SETUP_SYMLINKS(rows_file)
     done_ch = SETUP_SYMLINKS.out.manifest
         .combine(ch)
-        .map { _manifest, locustag, basename, species, strain ->
-            tuple(locustag, basename, species, strain)
-        }
+        .map { _manifest, meta -> meta }
 
     emit:
     done = done_ch

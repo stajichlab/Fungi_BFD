@@ -1,31 +1,31 @@
 process RUN_IDP {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'idp'
     storeDir   "${params.outdir}/aiupred"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}.aiupred.txt.gz"),     emit: raw
-        path("${basename}.idp.csv.gz"),         emit: idp_csv
-        path("${basename}.idp_summary.csv.gz"), emit: idp_summary_csv
+        path("${meta.id}.aiupred.txt.gz"),     emit: raw
+        path("${meta.id}.idp.csv.gz"),         emit: idp_csv
+        path("${meta.id}.idp_summary.csv.gz"), emit: idp_summary_csv
 
     script:
     """
     module load aiupred
-    aiupred.py -i ${proteins} -o ${basename}.aiupred.txt
-    pigz ${basename}.aiupred.txt
-    python3 ${params.scripts}/gather_AIUPred.py ${basename}.aiupred.txt.gz \\
-        --outfile      ${basename}.idp.csv \\
-        --outfilesum   ${basename}.idp_summary.csv
-    pigz ${basename}.idp.csv ${basename}.idp_summary.csv
+    aiupred.py -i ${proteins} -o ${meta.id}.aiupred.txt
+    pigz ${meta.id}.aiupred.txt
+    python3 ${params.scripts}/gather_AIUPred.py ${meta.id}.aiupred.txt.gz \\
+        --outfile      ${meta.id}.idp.csv \\
+        --outfilesum   ${meta.id}.idp_summary.csv
+    pigz ${meta.id}.idp.csv ${meta.id}.idp_summary.csv
     """
 
     stub:
     """
-    printf '' | gzip > ${basename}.aiupred.txt.gz
-    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${basename}.idp.csv.gz
-    printf 'protein_id,idp_status\\n'                                     | gzip > ${basename}.idp_summary.csv.gz
+    printf '' | gzip > ${meta.id}.aiupred.txt.gz
+    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > ${meta.id}.idp.csv.gz
+    printf 'protein_id,idp_status\\n'                                     | gzip > ${meta.id}.idp_summary.csv.gz
     """
 }

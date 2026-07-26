@@ -18,14 +18,18 @@ layout, with conventions that survive Nextflow's strict language spec.
 | 1b | `modules/common/` process modules | ⚠️ Partial — `SETUP_SYMLINKS` done; `SAMPLES_READ` is dead+incorrect, must be deleted |
 | 1c | `modules/BFD/` — 31 process modules | ✅ Done, verified byte-identical |
 | 1d | `workflows/BFD.nf` + `main.nf` | ⚠️ Done but not decomposed into subworkflows |
-| 1e | Subworkflow decomposition (`BFD_FUNCTIONAL`, `BFD_GENOME_STATS`, `BFD_MERGE`) | ❌ Not started |
+| 1e | Subworkflow decomposition (`BFD_FUNCTIONAL`, `BFD_GENOME_STATS`, `BFD_MERGE`) | ✅ Done, verified |
 | 1f | Cut `run_*.sh` over to `main.nf`, delete legacy `BFD.nf` | ❌ Not started |
-| 2 | funannotate | ❌ Blocked on §2 conventions being frozen |
+| 1g | `meta` map across all 31 BFD modules | ✅ Done, verified |
+| 2 | funannotate | ❌ Not blocked any more — §2 conventions are frozen and proven on BFD + ANI |
 | 3a | ANI (`compare_ANI` + `query_ANI`) | ✅ Done, verified equivalent |
 | 3b | comparative / earlgrey / phyling | ❌ Not started |
 
-**Phase 1 is NOT complete.** Process extraction is done and verified; workflow-level
-decomposition and the production cutover are not. Do not start Phase 2 until 1e and 1f land.
+**Phase 1 is complete except the cutover (1f).** The launcher scripts are sample submit
+scripts and are being repointed by hand, so 1f is not gating Phase 2.
+
+`workflows/BFD.nf` is now 161 lines (was 522) and every module takes a `meta` map, so §2.4 and
+§2.5 are satisfied by real code rather than aspiration — Phase 2 can copy a working pattern.
 
 ### Verified equivalence (2026-07-25)
 
@@ -144,12 +148,11 @@ tuples mean: adding a field edits every module signature and every call site; no
 that argument 3 is species rather than strain across 31 modules; and no nf-core module or
 subworkflow can ever be dropped in, because they all expect `tuple val(meta), path(x)`.
 
-The refactor as implemented froze the positional convention into 31 files, so the migration
-now costs 31 call sites instead of the 9 inline blocks it would have cost before. **It gets
-worse, not better, with every module added — so do this before Phase 2, not after.**
-
-If you decide against `meta`, delete this subsection and write the reason in §8 so it reads as
-a decision rather than an oversight. Do not leave it ambiguous.
+**Applied to all 31 BFD modules on 2026-07-26** (and to ANI when it was migrated). The audit
+that settled it: all nine RUN_* tools declared `val(species)` and `val(strain)` and used
+**neither** — two dead slots threaded through 9 modules and 9 call sites purely because the
+tuple shape had to match. Extra fields now ride along where they are needed (`meta.lineage`
+for BUSCO, `meta.asmid` for CALC_ASM_STATS) without touching any other signature.
 
 ### 2.5 `workflows/*.nf` orchestrates; it does not contain the pipeline
 
@@ -355,8 +358,8 @@ Freeze the conventions on the small pipeline first.
 |---|------|-----|:--------:|
 | 1 | Delete `modules/common/SAMPLES_READ/` — dead and incorrect | §2.7 | **High** |
 | 2 | Repoint `run_*.sh` to `main.nf`; delete legacy `BFD.nf` | §2.11 | **High** |
-| 3 | Extract `BFD_FUNCTIONAL` / `BFD_GENOME_STATS` / `BFD_MERGE` | §2.5 | **High** |
-| 4 | Decide and apply the `meta` map | §2.4 | **High** |
+| ~~3~~ | ~~Extract `BFD_FUNCTIONAL` / `BFD_GENOME_STATS` / `BFD_MERGE`~~ — done 2026-07-26 | §2.5 | ✅ |
+| ~~4~~ | ~~Decide and apply the `meta` map~~ — done 2026-07-26; all 31 BFD modules take `tuple val(meta), ...` | §2.4 | ✅ |
 | 5 | Migrate `SampleUtils` off `lib/` (3 remaining lint errors) | §2.1 | Medium |
 | 6 | Rename 9 `PFAM/`→`RUN_PFAM/` dirs; regroup into functional/genestats/merge | §2.2, §2.3 | Medium |
 | 7 | Create `conf/modules.config`; remove `params.*` from modules | §2.6 | Medium |
@@ -367,7 +370,7 @@ Freeze the conventions on the small pipeline first.
 | 12 | `params.asmid` appears unused in BFD — confirm and remove | — | Low |
 | 14 | `SKANI_SKETCH`'s `tag` renders `${genomes.size()}` as a *byte count* when a chunk holds exactly one genome (a lone `path` input binds a Path, not a List) — cosmetic, pre-existing, e.g. "[1834 genomes]" | — | Low |
 | 15 | Migrate `comparative_genomics.nf`, `earlgrey_mask.nf`, `phyling.nf` (Phase 3b) | §4 | Medium |
-| 13 | **Race:** `MERGE_AA_FREQ`/`MERGE_CODON_FREQ` fire nondeterministically under `merge_all=false` (`.filter { it.exists() }` races `publishDir`). Pre-existing; reachable in production via `--taxon`. Gate on the published output rather than testing the disk | §7.3 | **High** |
+| ~~13~~ | ~~**Race:** `MERGE_AA_FREQ`/`MERGE_CODON_FREQ` fire nondeterministically under `merge_all=false` (`.filter { it.exists() }` races `publishDir`). Pre-existing; reachable in production via `--taxon`. Gate on the published output rather than testing the disk~~ — fixed 2026-07-26: `BATCH_*_FREQ` moved to `storeDir`, merge list is now the union of pre-run cached paths and real process outputs | §7.3 | ✅ |
 
 ---
 
@@ -452,8 +455,8 @@ Baseline established 2026-07-25: **43 of 44 tasks match exactly, with identical 
 and identical decompressed content.** Keep the legacy `.nf` until its replacement reproduces
 this, then delete it (§2.11).
 
-**The comparison is not exactly reproducible, and the cause is a pipeline bug, not the
-refactor.** `MERGE_AA_FREQ` and `MERGE_CODON_FREQ` fire or don't, run to run, for the *same*
+**(Historical — fixed 2026-07-26, see remediation item 13.)** The comparison was not exactly
+reproducible, and the cause was a pipeline bug, not the refactor. `MERGE_AA_FREQ` and `MERGE_CODON_FREQ` fire or don't, run to run, for the *same*
 file — six clean runs of the unmodified `BFD.nf` gave AA-only (44 tasks), CODON-only (44), and
 both (45). Cause: `workflows/BFD.nf:492` and `:504` use `.filter { it.exists() }` to test the
 disk at channel-evaluation time, racing `BATCH_*_FREQ`'s `publishDir`. The `aa_sync` barrier

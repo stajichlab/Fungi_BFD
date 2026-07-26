@@ -39,11 +39,11 @@ include { clearIfStale } from '../../modules/common/utils.nf'
 // Attach a staleness check to the protein channel for one tool: delete any cached
 // output older than the proteins file, then pass the tuple through unchanged.
 def staleGuard(ch, List relOuts) {
-    ch.map { locustag, basename, sp, st, prot ->
+    ch.map { meta, prot ->
         clearIfStale(prot, relOuts.collect { rel ->
-            file("${params.outdir}/${rel.replace('@', basename)}")
+            file("${params.outdir}/${rel.replace('@', meta.id)}")
         })
-        tuple(locustag, basename, sp, st, prot)
+        tuple(meta, prot)
     }
 }
 
@@ -71,7 +71,7 @@ def mergeInput(boolean useGlob, boolean ran, out_ch, String glob) {
 
 workflow BFD_FUNCTIONAL {
     take:
-    proteins_ch   // tuple(locustag, basename, species, strain, proteins)
+    proteins_ch   // tuple(meta, proteins)
     use_glob      // merge_all is set and no --taxon narrowing is active
     skip_merge
 

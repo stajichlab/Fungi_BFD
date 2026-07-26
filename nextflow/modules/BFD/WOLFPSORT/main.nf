@@ -1,23 +1,23 @@
 process RUN_WOLFPSORT {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'wolfpsort'
     storeDir   "${params.outdir}/wolfpsort"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}.wolfpsort.results.txt.gz"), emit: results
+        path("${meta.id}.wolfpsort.results.txt.gz"), emit: results
 
     script:
     """
     module load wolfpsort
-    cat ${proteins} | runWolfPsortSummary fungi > ${basename}.wolfpsort.results.txt
-    pigz ${basename}.wolfpsort.results.txt
+    cat ${proteins} | runWolfPsortSummary fungi > ${meta.id}.wolfpsort.results.txt
+    pigz ${meta.id}.wolfpsort.results.txt
     """
 
     stub:
     """
-    printf '# WoLF PSORT\\n' | gzip > ${basename}.wolfpsort.results.txt.gz
+    printf '# WoLF PSORT\\n' | gzip > ${meta.id}.wolfpsort.results.txt.gz
     """
 }

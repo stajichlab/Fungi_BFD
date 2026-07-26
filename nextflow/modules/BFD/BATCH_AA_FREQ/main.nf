@@ -8,13 +8,13 @@ process BATCH_AA_FREQ {
     storeDir "${params.genome_stats_outdir}/aa_freq"
 
     input:
-    tuple val(locustags), val(basenames), path(prots)
+    tuple val(metas), path(prots)
 
     output:
     path "*.aa_freq.csv.gz", emit: csv
 
     script:
-    def baseList = basenames instanceof List ? basenames : [basenames]
+    def baseList = (metas instanceof List ? metas : [metas]).collect { m -> m.id }
     def protList = prots     instanceof List ? prots     : [prots]
     def cmds = [baseList, protList].transpose().collect { basename, prot ->
         "python3 ${params.scripts}/calculate_AA_freq.py ${prot.name} -o ${basename}.aa_freq.csv.gz"
@@ -25,7 +25,7 @@ process BATCH_AA_FREQ {
     """
 
     stub:
-    def baseList = basenames instanceof List ? basenames : [basenames]
+    def baseList = (metas instanceof List ? metas : [metas]).collect { m -> m.id }
     """
     ${ baseList.collect { "printf 'species_prefix,amino_acid,frequency\\n' | gzip > ${it}.aa_freq.csv.gz" }.join('\n') }
     """

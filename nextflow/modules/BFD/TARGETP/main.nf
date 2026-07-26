@@ -1,26 +1,26 @@
 process RUN_TARGETP {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'targetp'
     storeDir   "${params.outdir}/targetP"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}_summary.targetp2.gz"), emit: summary
+        path("${meta.id}_summary.targetp2.gz"), emit: summary
 
     script:
     """
     TMPD=\$(mktemp -d)
     module load targetp
     targetp -batch 50 -tmp \$TMPD -format short \\
-        -fasta ${proteins} -org non-pl -prefix ${basename}
-    pigz -f ${basename}_summary.targetp2
+        -fasta ${proteins} -org non-pl -prefix ${meta.id}
+    pigz -f ${meta.id}_summary.targetp2
     rm -rf \$TMPD
     """
 
     stub:
     """
-    printf '# TargetP-2.0\\n' | gzip > ${basename}_summary.targetp2.gz
+    printf '# TargetP-2.0\\n' | gzip > ${meta.id}_summary.targetp2.gz
     """
 }

@@ -1,24 +1,24 @@
 process CALC_ASM_STATS {
     label    'asmstats'
-    tag      asmid
+    tag      "${meta.asmid}"
     storeDir "${params.genome_stats_outdir}/asm_stats"
 
     input:
-    tuple val(asmid), val(basename), path(genome)
+    tuple val(meta), path(genome)
 
     output:
-    path "${asmid}.stats.txt", emit: stats
+    path "${meta.asmid}.stats.txt", emit: stats
 
     script:
     """
     module load AAFTF/0.6.0
-    AAFTF assess -i ${genome} -r ${asmid}.stats.txt
+    AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
     """
 
     stub:
     """
-    cat > ${asmid}.stats.txt <<'EOF'
-Assembly statistics for: ${basename}.scaffolds.fa
+    cat > ${meta.asmid}.stats.txt <<'EOF'
+Assembly statistics for: ${meta.id}.scaffolds.fa
    CONTIG COUNT  =  10
    TOTAL LENGTH  =  1000000
             MIN  =  500

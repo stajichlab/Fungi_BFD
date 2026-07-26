@@ -32,34 +32,34 @@ include { clearIfStale } from '../../modules/common/utils.nf'
 // publishing, and publishDir copies asynchronously *after* a task completes, so
 // MERGE_AA_FREQ / MERGE_CODON_FREQ fired or not depending on who won the race.
 def planFreq(ch, String subdir, String suffix) {
-    ch.map { locustag, basename, input ->
-        def out = file("${params.genome_stats_outdir}/${subdir}/${basename}.${suffix}")
+    ch.map { meta, input ->
+        def out = file("${params.genome_stats_outdir}/${subdir}/${meta.id}.${suffix}")
         clearIfStale(input, [out])
-        tuple(locustag, basename, input, out, out.exists())
+        tuple(meta, input, out, out.exists())
     }
     .branch {
-        cached: it[4]
-        todo  : !it[4]
+        cached: it[3]
+        todo  : !it[3]
     }
 }
 
 // Collate the not-yet-computed genomes into freq_batch_size jobs.
 def batchFreq(todo_ch) {
     todo_ch
-        .map { locustag, basename, input, _out, _cached -> tuple(locustag, basename, input) }
+        .map { meta, input, _out, _cached -> tuple(meta, input) }
         .buffer(size: params.freq_batch_size as int, remainder: true)
-        .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
+        .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
 }
 
 workflow BFD_GENOME_STATS {
     take:
-    aa_freq_ch       // tuple(locustag, basename, proteins)
-    codon_freq_ch    // tuple(locustag, basename, cds)
-    intergenic_ch    // tuple(locustag, basename, gff)
-    gene_stats_ch    // tuple(locustag, basename, gff, genome)
-    asm_stats_ch     // tuple(asmid, basename, genome)
-    busco_genome_ch  // tuple(locustag, basename, lineage, genome)
-    busco_pep_ch     // tuple(locustag, basename, lineage, proteins)
+    aa_freq_ch       // tuple(meta, proteins)
+    codon_freq_ch    // tuple(meta, cds)
+    intergenic_ch    // tuple(meta, gff)
+    gene_stats_ch    // tuple(meta, gff, genome)
+    asm_stats_ch     // tuple(meta, genome)  (meta.asmid set)
+    busco_genome_ch  // tuple(meta, genome)  (meta.lineage set)
+    busco_pep_ch     // tuple(meta, proteins)  (meta.lineage set)
 
     main:
     def stats = "${params.genome_stats_outdir}"
@@ -77,47 +77,47 @@ workflow BFD_GENOME_STATS {
     }
 
     if (params.run_intergenic.toBoolean())
-        CALC_INTERGENIC(intergenic_ch.map { locustag, basename, gff ->
-            clearIfStale(gff, [file("${stats}/intergenic_stats/${basename}.gene_intergenic_distances.csv.gz")])
-            tuple(locustag, basename, gff)
+        CALC_INTERGENIC(intergenic_ch.map { meta, gff ->
+            clearIfStale(gff, [file("${stats}/intergenic_stats/${meta.id}.gene_intergenic_distances.csv.gz")])
+            tuple(meta, gff)
         })
 
     if (params.run_gene_stats.toBoolean())
-        CALC_GENE_STATS(gene_stats_ch.map { locustag, basename, gff, dna ->
+        CALC_GENE_STATS(gene_stats_ch.map { meta, gff, dna ->
             def outs = ['gene_info', 'gene_exons', 'gene_CDS', 'gene_introns',
                         'gene_transcripts', 'gene_trnas', 'gene_proteins'].collect {
-                file("${stats}/gene_stats/${basename}.${it}.csv.gz")
+                file("${stats}/gene_stats/${meta.id}.${it}.csv.gz")
             }
             // GFF3 (re-annotation) and genome FASTA are both inputs; either being
             // newer than the cached outputs should force a re-run.
             clearIfStale(gff, outs)
             clearIfStale(dna, outs)
-            tuple(locustag, basename, gff, dna)
+            tuple(meta, gff, dna)
         })
 
     if (params.run_asm_stats.toBoolean())
-        CALC_ASM_STATS(asm_stats_ch.map { asmid, basename, genome ->
-            clearIfStale(genome, [file("${stats}/asm_stats/${asmid}.stats.txt")])
-            tuple(asmid, basename, genome)
+        CALC_ASM_STATS(asm_stats_ch.map { meta, genome ->
+            clearIfStale(genome, [file("${stats}/asm_stats/${meta.asmid}.stats.txt")])
+            tuple(meta, genome)
         })
 
     if (params.run_busco_genome.toBoolean())
-        BUSCO_GENOME(busco_genome_ch.map { locustag, basename, lineage, genome ->
-            clearIfStale(genome, [file("${stats}/BUSCO_genome/${basename}.BUSCO_summary.${lineage}.txt")])
-            tuple(locustag, basename, lineage, genome)
+        BUSCO_GENOME(busco_genome_ch.map { meta, genome ->
+            clearIfStale(genome, [file("${stats}/BUSCO_genome/${meta.id}.BUSCO_summary.${meta.lineage}.txt")])
+            tuple(meta, genome)
         })
 
     if (params.run_busco_pep.toBoolean())
-        BUSCO_PEP(busco_pep_ch.map { locustag, basename, lineage, prot ->
-            clearIfStale(prot, [file("${stats}/BUSCO_protein/${basename}.BUSCO_summary.${lineage}.txt")])
-            tuple(locustag, basename, lineage, prot)
+        BUSCO_PEP(busco_pep_ch.map { meta, prot ->
+            clearIfStale(prot, [file("${stats}/BUSCO_protein/${meta.id}.BUSCO_summary.${meta.lineage}.txt")])
+            tuple(meta, prot)
         })
 
     emit:
     // Emitted for BFD_MERGE. The *_plan channels carry the genomes that were
     // already cached; the BATCH_* outputs carry the ones this run computed.
-    aa_cached      = aa_plan    ? aa_plan.cached.map    { it[3] } : Channel.empty()
-    codon_cached   = codon_plan ? codon_plan.cached.map { it[3] } : Channel.empty()
+    aa_cached      = aa_plan    ? aa_plan.cached.map    { it[2] } : Channel.empty()
+    codon_cached   = codon_plan ? codon_plan.cached.map { it[2] } : Channel.empty()
     aa_csv         = params.run_aa_freq.toBoolean()      ? BATCH_AA_FREQ.out.csv    : Channel.empty()
     codon_csv      = params.run_codon_freq.toBoolean()   ? BATCH_CODON_FREQ.out.csv : Channel.empty()
     intergenic_csv = params.run_intergenic.toBoolean()   ? CALC_INTERGENIC.out.csv  : Channel.empty()

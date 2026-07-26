@@ -1,14 +1,14 @@
 process RUN_PFAM {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'pfam'
     storeDir   "${params.outdir}/pfam_hmmscan"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}.domtblout.gz"),    emit: domtbl
-        path("${basename}.tblout.gz"),  emit: tblout
+        path("${meta.id}.domtblout.gz"),    emit: domtbl
+        path("${meta.id}.tblout.gz"),  emit: tblout
 
     script:
     def mpi_launch = params.pfam_tasks > 1 ? "srun -N ${params.pfam_nodes} -n ${params.pfam_tasks}" : ""
@@ -21,15 +21,15 @@ process RUN_PFAM {
     fi
     module load db-pfam
     ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali --cpu ${task.cpus} \\
-        --domtbl    ${basename}.domtblout \\
-        --tblout    ${basename}.tblout \\
+        --domtbl    ${meta.id}.domtblout \\
+        --tblout    ${meta.id}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
-    pigz ${basename}.domtblout ${basename}.tblout
+    pigz ${meta.id}.domtblout ${meta.id}.tblout
     """
 
     stub:
     """
-    printf '#\\n' | gzip > ${basename}.domtblout.gz
-    printf '' | gzip     > ${basename}.tblout.gz
+    printf '#\\n' | gzip > ${meta.id}.domtblout.gz
+    printf '' | gzip     > ${meta.id}.tblout.gz
     """
 }

@@ -40,18 +40,21 @@ workflow BFD {
     def taxonFilter = taxonRowFilter()
 
     // ── Base sample channel ──────────────────────────────────────────────────
-    // Emits tuple(locustag, basename, species, strain) per row.
+    // Emits one meta map per row.
     // STRAIN: first ';'-delimited token; single quotes stripped.
     def rows_ch = Channel
         .fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
         .map { row ->
-            def species  = row.SPECIES?.trim() ?: ''
-            def strain   = SampleUtils.cleanStrain(row.STRAIN?.trim() ?: '')
-            def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
-            def basename = SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
-            tuple(locustag, basename, species, strain)
+            // meta.id is the filesystem-safe SPECIES_STRAIN tag and the primary key
+            // every module names its outputs after (plan section 2.4).
+            [
+                id      : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: ''),
+                locustag: row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim(),
+                species : row.SPECIES?.trim() ?: '',
+                strain  : SampleUtils.cleanStrain(row.STRAIN?.trim() ?: ''),
+            ]
         }
         .take((params.n_test as int) > 0 ? (params.n_test as int) : -1)
 
@@ -68,35 +71,35 @@ workflow BFD {
     // Each drops genomes whose input file is absent, so a missing file skips that
     // genome for that analysis instead of failing the run.
     def proteins_ch = ready_ch
-        .map { locustag, basename, species, strain ->
-            def prot = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
+        .map { meta ->
+            def prot = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
             if (!prot.exists()) {
-                log.warn "Skipping ${basename} (${locustag}): protein file not found"
+                log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
                 return null
             }
-            return tuple(locustag, basename, species, strain, prot)
+            return tuple(meta, prot)
         }
         .filter { it != null }
 
-    def aa_freq_ch = ready_ch.map { locustag, basename, species, strain ->
-        def f = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
-        f.exists() ? tuple(locustag, basename, f) : null
+    def aa_freq_ch = ready_ch.map { meta ->
+        def f = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
+        f.exists() ? tuple(meta, f) : null
     }.filter { it != null }
 
-    def codon_freq_ch = ready_ch.map { locustag, basename, species, strain ->
-        def f = file("${params.cds_dir}/${basename}.cds-transcripts.fa", glob: false)
-        f.exists() ? tuple(locustag, basename, f) : null
+    def codon_freq_ch = ready_ch.map { meta ->
+        def f = file("${params.cds_dir}/${meta.id}.cds-transcripts.fa", glob: false)
+        f.exists() ? tuple(meta, f) : null
     }.filter { it != null }
 
-    def intergenic_ch = ready_ch.map { locustag, basename, species, strain ->
-        def f = file("${params.gff_dir}/${basename}.gff3", glob: false)
-        f.exists() ? tuple(locustag, basename, f) : null
+    def intergenic_ch = ready_ch.map { meta ->
+        def f = file("${params.gff_dir}/${meta.id}.gff3", glob: false)
+        f.exists() ? tuple(meta, f) : null
     }.filter { it != null }
 
-    def gene_stats_ch = ready_ch.map { locustag, basename, species, strain ->
-        def gff = file("${params.gff_dir}/${basename}.gff3", glob: false)
-        def dna = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
-        (gff.exists() && dna.exists()) ? tuple(locustag, basename, gff, dna) : null
+    def gene_stats_ch = ready_ch.map { meta ->
+        def gff = file("${params.gff_dir}/${meta.id}.gff3", glob: false)
+        def dna = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
+        (gff.exists() && dna.exists()) ? tuple(meta, gff, dna) : null
     }.filter { it != null }
 
     // Assembly-stats input: AAFTF assess reads the genome FASTA and the merged
@@ -113,25 +116,25 @@ workflow BFD {
         .filter { basename, asmid -> asmid }
 
     def asm_stats_ch = ready_ch
-        .map { locustag, basename, species, strain ->
-            def f = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
-            f.exists() ? tuple(basename, f) : null
+        .map { meta ->
+            def f = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
+            f.exists() ? tuple(meta.id, meta, f) : null
         }
         .filter { it != null }
-        .join(asmid_by_basename_ch)            // key = basename → (basename, genome, asmid)
-        .map { basename, genome, asmid -> tuple(asmid, basename, genome) }
+        .join(asmid_by_basename_ch)            // key = meta.id → (id, meta, genome, asmid)
+        .map { _id, meta, genome, asmid -> tuple(meta + [asmid: asmid], genome) }
 
     // BUSCO lineage: params.busco_lineage (default fungi_odb12) globally. The
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
-    def busco_genome_ch = ready_ch.map { locustag, basename, species, strain ->
-        def f = file("${params.genome_dir}/${basename}.scaffolds.fa", glob: false)
-        f.exists() ? tuple(locustag, basename, params.busco_lineage, f) : null
+    def busco_genome_ch = ready_ch.map { meta ->
+        def f = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
+        f.exists() ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
-    def busco_pep_ch = ready_ch.map { locustag, basename, species, strain ->
-        def f = file("${params.pep_dir}/${basename}.proteins.fa", glob: false)
-        f.exists() ? tuple(locustag, basename, params.busco_lineage, f) : null
+    def busco_pep_ch = ready_ch.map { meta ->
+        def f = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
+        f.exists() ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
     // ── Run ──────────────────────────────────────────────────────────────────
@@ -152,7 +155,7 @@ workflow BFD {
         // Keys come from the post-setup channel, so a --taxon run yields a
         // manifest restricted to that clade.
         def matched_keys_file = ready_ch
-            .map { locustag, basename, species, strain -> (locustag ?: '').trim() }
+            .map { meta -> (meta.locustag ?: '').trim() }
             .filter { it }
             .collectFile(name: 'matched_locustags.txt', newLine: true)
 

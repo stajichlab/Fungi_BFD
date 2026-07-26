@@ -1,13 +1,13 @@
 process RUN_MEROPS {
-    tag        "${locustag}"
+    tag        "${meta.locustag}"
     label      'merops'
     storeDir   "${params.outdir}/merops"
 
     input:
-        tuple val(locustag), val(basename), val(species), val(strain), path(proteins)
+        tuple val(meta), path(proteins)
 
     output:
-        path("${basename}.blasttab.gz"), emit: blasttab
+        path("${meta.id}.blasttab.gz"), emit: blasttab
 
     script:
     """
@@ -15,18 +15,18 @@ process RUN_MEROPS {
     module load db-merops
     blastp -query ${proteins} \\
         -db \$MEROPS_DB/merops_scan.lib \\
-        -out ${basename}.blasttab \\
+        -out ${meta.id}.blasttab \\
         -num_threads ${task.cpus} \\
         -seg yes -soft_masking true \\
         -max_target_seqs 10 \\
         -evalue 1e-10 \\
         -outfmt 6 \\
         -use_sw_tback
-    pigz ${basename}.blasttab
+    pigz ${meta.id}.blasttab
     """
 
     stub:
     """
-    printf '' | gzip > ${basename}.blasttab.gz
+    printf '' | gzip > ${meta.id}.blasttab.gz
     """
 }
