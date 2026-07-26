@@ -25,6 +25,35 @@ def gatedGlobStats(sync_ch, String glob) {
     gatedGlobIn(sync_ch, params.genome_stats_outdir, glob)
 }
 
+// Split a per-genome frequency channel into genomes whose output already exists
+// and genomes that still need computing.
+//
+// The exists() test happens exactly once, here, at channel-construction time and
+// therefore before any BATCH_* task has run — so both the batch contents and the
+// merge's file list are deterministic. Previously the merge rebuilt its file list
+// by re-testing exists() on expected output paths while BATCH_* was still
+// publishing, and publishDir copies asynchronously *after* a task completes, so
+// MERGE_AA_FREQ / MERGE_CODON_FREQ fired or not depending on who won the race.
+def planFreq(ch, String subdir, String suffix) {
+    ch.map { locustag, basename, input ->
+        def out = file("${params.genome_stats_outdir}/${subdir}/${basename}.${suffix}")
+        clearIfStale(input, [out])
+        tuple(locustag, basename, input, out, out.exists())
+    }
+    .branch {
+        cached: it[4]
+        todo  : !it[4]
+    }
+}
+
+// Collate the not-yet-computed genomes into freq_batch_size jobs.
+def batchFreq(todo_ch) {
+    todo_ch
+        .map { locustag, basename, input, _out, _cached -> tuple(locustag, basename, input) }
+        .buffer(size: params.freq_batch_size as int, remainder: true)
+        .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
+}
+
 def toManifest(ch, String name) {
     ch.flatten()
       .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
@@ -371,29 +400,16 @@ workflow BFD {
     // ── Per-genome statistics + MERGE ──────────────────────────────────────────
     def use_glob = params.merge_all.toBoolean() && !params.taxon
 
+    def aa_plan
+    def codon_plan
+
     if (params.run_aa_freq.toBoolean()) {
-        def aa_batch_ch = aa_freq_ch
-            .map { locustag, basename, prot ->
-                clearIfStale(prot, [file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz")])
-                file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz").exists()
-                    ? null : tuple(locustag, basename, prot)
-            }
-            .filter { it != null }
-            .buffer(size: params.freq_batch_size as int, remainder: true)
-            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
-        BATCH_AA_FREQ(aa_batch_ch)
+        aa_plan = planFreq(aa_freq_ch, 'aa_freq', 'aa_freq.csv.gz')
+        BATCH_AA_FREQ(batchFreq(aa_plan.todo))
     }
     if (params.run_codon_freq.toBoolean()) {
-        def codon_batch_ch = codon_freq_ch
-            .map { locustag, basename, prot ->
-                clearIfStale(prot, [file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz")])
-                file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz").exists()
-                    ? null : tuple(locustag, basename, prot)
-            }
-            .filter { it != null }
-            .buffer(size: params.freq_batch_size as int, remainder: true)
-            .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
-        BATCH_CODON_FREQ(codon_batch_ch)
+        codon_plan = planFreq(codon_freq_ch, 'codon_freq', 'codon_freq.csv.gz')
+        BATCH_CODON_FREQ(batchFreq(codon_plan.todo))
     }
     if (params.run_intergenic.toBoolean())
         CALC_INTERGENIC(intergenic_ch.map { locustag, basename, gff ->
@@ -481,27 +497,20 @@ workflow BFD {
                 MERGE_ASM_STATS(toManifest(gatedGlobStats(Channel.of(true), "asm_stats/*.stats.txt"), 'asm_stats.manifest.txt'))
             }
         } else {
+            // Merge the genomes that were already cached (paths resolved before the
+            // run started) plus the ones this run produced (real process outputs;
+            // with storeDir these are the stored paths, guaranteed to exist when
+            // emitted). Together they cover every genome in the run, with no
+            // existence test racing an in-flight publish.
             if (params.run_aa_freq.toBoolean()) {
-                def aa_sync  = BATCH_AA_FREQ.out.csv.flatten().collect().map { true }.ifEmpty(true)
-                def aa_paths = aa_freq_ch.map { locustag, basename, _ignored ->
-                    file("${params.genome_stats_outdir}/aa_freq/${basename}.aa_freq.csv.gz")
-                }
                 MERGE_AA_FREQ(toManifest(
-                    aa_sync.combine(aa_paths)
-                           .map { _s, f -> f }
-                           .filter { it.exists() },
+                    aa_plan.cached.map { it[3] }.mix(BATCH_AA_FREQ.out.csv.flatten()),
                     'aa_freq.manifest.txt'
                 ))
             }
             if (params.run_codon_freq.toBoolean()) {
-                def codon_sync  = BATCH_CODON_FREQ.out.csv.flatten().collect().map { true }.ifEmpty(true)
-                def codon_paths = codon_freq_ch.map { locustag, basename, _ignored ->
-                    file("${params.genome_stats_outdir}/codon_freq/${basename}.codon_freq.csv.gz")
-                }
                 MERGE_CODON_FREQ(toManifest(
-                    codon_sync.combine(codon_paths)
-                              .map { _s, f -> f }
-                              .filter { it.exists() },
+                    codon_plan.cached.map { it[3] }.mix(BATCH_CODON_FREQ.out.csv.flatten()),
                     'codon_freq.manifest.txt'
                 ))
             }

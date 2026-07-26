@@ -1,6 +1,11 @@
 process BATCH_CODON_FREQ {
     label      'genestats'
-    publishDir "${params.genome_stats_outdir}/codon_freq", mode: 'copy'
+    // storeDir, not publishDir: publishDir copies asynchronously AFTER the task
+    // completes, so `out.csv` emitted paths that did not exist yet and the
+    // downstream manifest sampled exists()/size() on a file still being copied --
+    // MERGE_CODON_FREQ then fired or not at random. storeDir moves outputs into
+    // the same directory and emits the stored paths, so they are guaranteed present.
+    storeDir "${params.genome_stats_outdir}/codon_freq"
 
     input:
     tuple val(locustags), val(basenames), path(prots)
