@@ -1,0 +1,35 @@
+// ── mash dist over cached sketches ───────────────────────────────────────────
+process MASH_COMPARE {
+    tag   "${group_name} n=${sketches.size()}"
+    label 'mash'
+
+    cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
+    memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
+
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+
+    input:
+        tuple val(group_name), path(sketches)
+
+    output:
+        tuple val(group_name), path("${group_name}.full.ani.tsv")
+
+    script:
+    """
+    ls *.msh > sketch_list.txt
+    mash paste combined -l sketch_list.txt
+    mash dist -p ${task.cpus} combined.msh combined.msh > mash_raw.tsv
+
+    # mash cols: ref  query  distance  p-value  shared-hashes  ->  ANI = 100*(1-dist)
+    awk -F'\\t' '{
+        nr=split(\$1,b,"/"); r=b[nr];
+        nq=split(\$2,a,"/"); q=a[nq];
+        if (q!=r) printf "%s\\t%s\\t%.4f\\n", q, r, (1-\$3)*100
+    }' mash_raw.tsv > ${group_name}.full.ani.tsv
+    """
+
+    stub:
+    """
+    printf 'q\\tr\\t99.0\\n' > ${group_name}.full.ani.tsv
+    """
+}

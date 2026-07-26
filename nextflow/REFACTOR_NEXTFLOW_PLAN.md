@@ -21,7 +21,8 @@ layout, with conventions that survive Nextflow's strict language spec.
 | 1e | Subworkflow decomposition (`BFD_FUNCTIONAL`, `BFD_GENOME_STATS`, `BFD_MERGE`) | ❌ Not started |
 | 1f | Cut `run_*.sh` over to `main.nf`, delete legacy `BFD.nf` | ❌ Not started |
 | 2 | funannotate | ❌ Blocked on §2 conventions being frozen |
-| 3 | ANI / comparative / earlgrey / phyling | ❌ Not started |
+| 3a | ANI (`compare_ANI` + `query_ANI`) | ✅ Done, verified equivalent |
+| 3b | comparative / earlgrey / phyling | ❌ Not started |
 
 **Phase 1 is NOT complete.** Process extraction is done and verified; workflow-level
 decomposition and the production cutover are not. Do not start Phase 2 until 1e and 1f land.
@@ -35,8 +36,31 @@ The extraction was checked mechanically, not by eye:
 - Clean-output stub comparison of `BFD.nf` vs `main.nf`: **44 tasks each, identical process
   set and counts, 81 published output files with identical paths and identical decompressed
   content.** Command in §7.
-- `nextflow lint`: 35 errors → 3. The 3 remaining (`SampleUtils`) are pre-existing and also
-  present in the original `BFD.nf`; the refactor no longer adds strict-syntax debt.
+- `nextflow lint`: 35 errors → 4. Three are pre-existing `SampleUtils` references also present
+  in the original `BFD.nf`; the fourth is `utils.nf::genomeStem`, which is deliberately the
+  single chokepoint every migrated pipeline funnels through, so §2.1's Phase-2 migration
+  becomes a one-line change rather than an N-call-site sweep.
+
+### ANI migration (Phase 3a, 2026-07-26)
+
+`compare_ANI.nf` (710 lines) and `query_ANI.nf` (359) became 15 modules under `modules/ani/`,
+two subworkflows, and two workflow files of 73 and 114 lines. Shared components extracted:
+
+| Was duplicated | Now |
+|----------------|-----|
+| `skaniPresetFlag()` — verbatim in both files | `modules/common/utils.nf` |
+| `SKANI_SKETCH` — verbatim in both (differed only in a variable name) | one `modules/ani/sketch/SKANI_SKETCH` module, so both workflows literally share the sketch cache |
+| samples.csv parsing — identical but for an `is_query` flag | `subworkflows/local/ANI_SAMPLES.nf`, always computing the flag |
+| `--taxon` filter parsing — also duplicated in BFD | `utils.nf::taxonRowFilter()` |
+| rank validation, `--genome_name_style` handling | `utils.nf::assertRank()` / `genomeStem()` |
+| names-TSV construction — 5 columns vs 6 | `utils.nf::writeNamesTsv()`, role column inferred |
+| 23 + 18 top-level `params.x =` defaults | `conf/profile_ANI.config` (§2.10 requires this) |
+
+Verified by the §7.3 procedure against a purpose-built fixture
+(`tests/data/test_samples_ani.csv`: two references plus one orphan in one CLASS):
+
+- `compare_ANI`: 4 tasks, identical process set, 5 output files, identical contents.
+- `query_ANI`: 5 tasks, identical process set, 4 output files, identical contents.
 
 ---
 
@@ -207,18 +231,41 @@ The extraction stripped explanatory comments from every module. Some were load-b
 **Rule:** extraction is verbatim, comments included. A comment explaining a non-obvious
 constraint is the highest-value thing in the file.
 
-### 2.10 Named entry workflows
+### 2.10 Pipeline selection is by `--pipeline`, never `-entry`
 
-`main.nf` currently claims to route `-profile` to a workflow and does not — it unconditionally
-calls `BFD()`. Once a second pipeline is migrated this breaks. Use explicit entries:
+**Do not use `-entry`.** Nextflow's strict parser rejects it outright:
+
+```
+ERROR ~ The `-entry` option is not supported with the strict parser
+        -- use a param to run a named workflow from the entry workflow
+```
+
+(Verified on 26.04, 2026-07-25. An earlier draft of this plan recommended `-entry`; that
+guidance was wrong.) The forward-compatible form is one entry workflow dispatching on a param:
 
 ```nextflow
 // main.nf
-workflow BFD          { include… ; BFD_WF() }
-workflow FUNANNOTATE  { … }
+include { BFD }         from './workflows/BFD.nf'
+include { COMPARE_ANI } from './workflows/compare_ANI.nf'
+
+params.pipeline = 'BFD'          // default keeps bare `-profile BFD` working
+
+workflow {
+    // if/else, NOT switch -- the strict parser rejects switch statements too.
+    def pipeline = (params.pipeline as String).toLowerCase()
+    if (pipeline == 'bfd')              { BFD() }
+    else if (pipeline == 'compare_ani') { COMPARE_ANI() }
+    else { error "--pipeline must be one of: BFD, compare_ani, query_ani" }
+}
 ```
-invoked as `nextflow run nextflow/main.nf -entry BFD -profile BFD`. Fix `main.nf:6`'s comment
-either way — a comment describing behaviour the code does not have is worse than none.
+
+Note the consequence: every included workflow's *top-level* statements execute on every run,
+whichever pipeline is selected. Pipelines must therefore not declare `params.x = ...` defaults
+at file scope — two pipelines with different defaults for the same name would clobber each
+other. Defaults belong in `conf/profile_*.config` (§2.6). This is exactly why the ANI
+parameters moved out of `compare_ANI.nf`/`query_ANI.nf` and into `conf/profile_ANI.config`,
+with the single genuine conflict (`--compare`: `GENUS` vs `CLASS`) resolved by a dedicated
+`ani_query` profile rather than a clobbered default.
 
 ### 2.11 No dual maintenance
 
@@ -318,6 +365,8 @@ Freeze the conventions on the small pipeline first.
 | 10 | Fix `main.nf` routing comment / add named entries | §2.10 | Low |
 | 11 | Cover the `merge_all=true` glob branch in tests | §7 | Low |
 | 12 | `params.asmid` appears unused in BFD — confirm and remove | — | Low |
+| 14 | `SKANI_SKETCH`'s `tag` renders `${genomes.size()}` as a *byte count* when a chunk holds exactly one genome (a lone `path` input binds a Path, not a List) — cosmetic, pre-existing, e.g. "[1834 genomes]" | — | Low |
+| 15 | Migrate `comparative_genomics.nf`, `earlgrey_mask.nf`, `phyling.nf` (Phase 3b) | §4 | Medium |
 | 13 | **Race:** `MERGE_AA_FREQ`/`MERGE_CODON_FREQ` fire nondeterministically under `merge_all=false` (`.filter { it.exists() }` races `publishDir`). Pre-existing; reachable in production via `--taxon`. Gate on the published output rather than testing the disk | §7.3 | **High** |
 
 ---

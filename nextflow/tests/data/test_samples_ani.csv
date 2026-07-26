@@ -1,0 +1,4 @@
+ASMID,SPECIES_IN,STRAIN,BIOPROJECT,NCBI_TAXONID,BUSCO_LINEAGE,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES,LOCUSTAG
+GCF_TEST001,Testus fungus STRAIN1,STRAIN1,PRJNA000001,000001,dikarya,Ascomycota,Pezizomycotina,Dothideomycetes,,,,Testus,Testus fungus,FF5840CF
+GCF_TEST003,Tertius fungus STRAIN3,STRAIN3,PRJNA000003,000003,dikarya,Ascomycota,Pezizomycotina,Dothideomycetes,,,,Tertius,Tertius fungus,AA1234BB
+GCF_TEST002,Secondus fungus STRAIN2,STRAIN2,PRJNA000002,000002,dikarya,Ascomycota,Pezizomycotina,Dothideomycetes,,,,,Secondus fungus,F2EE6837
