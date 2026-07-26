@@ -18,3 +18,14 @@ logs/
 results/
 tests/output/
 nextflow/tests/output/function/
+
+# Test fixtures must be committed. The bare pep/, cds/, gff3/ and genome/ rules above
+# match those directory names anywhere in the tree, which otherwise silently swallows
+# the synthetic inputs that `-profile test -stub-run` depends on — the pipeline would
+# then run zero processes for anyone who clones the repo.
+!nextflow/tests/data/input/
+!nextflow/tests/data/input/pep/
+!nextflow/tests/data/input/cds/
+!nextflow/tests/data/input/gff3/
+!nextflow/tests/data/input/dna/
+!nextflow/tests/data/input/trna/
