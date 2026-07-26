@@ -60,4 +60,28 @@ class SampleUtils {
                        .join('_')
                        .replaceAll(/[\s\/\#\[\]\?\{\}]+/, '_')
     }
+
+    /**
+     * Sanitise a single free-text taxonomic value (e.g. a samples.csv SPECIES,
+     * GENUS, or FAMILY field) into a filesystem-safe tag, for use as a
+     * `group_name` in file/directory names (e.g. `${group_name}.full.ani.tsv`
+     * in compare_ANI.nf/query_ANI.nf). GENUS/FAMILY/etc. rarely need this (no
+     * spaces), but SPECIES values ("Aspergillus fumigatus") do -- a raw,
+     * unsanitised group_name with an embedded space is a real risk for
+     * downstream shell globbing/quoting in the same processes that consume it.
+     *
+     * Uses the same whitespace/quote/special-char handling as {@link
+     * #makeSampleTag}'s final step, so a sanitised SPECIES value here matches
+     * the species-only prefix of makeSampleTag's own output for the same
+     * species string.
+     *
+     * Examples:
+     *   sanitizeTag("Aspergillus fumigatus") → "Aspergillus_fumigatus"
+     *   sanitizeTag("Fusarium/oxysporum complex") → "Fusarium_oxysporum_complex"
+     */
+    static String sanitizeTag(String raw) {
+        return (raw ?: '').trim()
+                    .replaceAll(/['"]/, '')
+                    .replaceAll(/[\s\/\#\[\]\?\{\}]+/, '_')
+    }
 }
