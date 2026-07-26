@@ -103,6 +103,37 @@ def skaniPresetFlag(String p) {
     flags[key]
 }
 
+// Gather files by filesystem glob (not by live channel .collect()), gated behind
+// a completion signal. Ported from BFD.nf's gatedGlobIn/toManifest (2026-06-25
+// MERGE_* manifest decision) to fix the same class of bug found here: COMBINE_ANI_TABLE
+// used to .collect() directly off ani_tsv_ch/names_map, which only contains items
+// emitted *during this run's execution* -- on a -resume run where most groups are
+// unchanged/cached, only the actively-recomputed group(s) reliably flow through that
+// live channel, so the combined ani.db silently lost every other group. Globbing the
+// actual published files on disk instead makes COMBINE_ANI_TABLE's true input "every
+// group ever computed", independent of what any single invocation's channel saw.
+// See .living/learnings.md "COMBINE_ANI_TABLE's merged ani.db reflects only whichever
+// group(s) were active..." (2026-07-23).
+def gatedGlobIn(sync_ch, String baseDir, String glob) {
+    sync_ch
+        .flatMap { files("${baseDir}/${glob}") }
+        .filter  { it.size() > 0 }
+        .collect()
+        .filter  { !it.isEmpty() }
+}
+
+// Collapse a channel of input files into a single sorted manifest file, one
+// TAB-delimited "<absolute_path>\t<mtime_ms>\t<size_bytes>" record per line.
+// Baking mtime+size into the manifest *content* means Nextflow's normal input-hash
+// caching (not storeDir's existence-only check) correctly detects when any input
+// file changed, so COMBINE_ANI_TABLE only re-runs when the actual file set/content
+// changed, and stays cache-hit/skipped via -resume otherwise.
+def toManifest(ch, String name) {
+    ch.flatten()
+      .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
+      .collectFile(name: name, newLine: true, sort: true)
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // SKETCH PROCESSES (one genome → one cached sketch; storeDir = sketch cache)
 // ════════════════════════════════════════════════════════════════════════════
@@ -207,7 +238,14 @@ process SKANI_COMPARE {
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '64 GB' : sketches.size() > 200 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new genomes are added to that
+    // group later -- it silently keeps serving the stale pre-addition result forever,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // correctly detects a changed sketch/genome list and reruns automatically
+    // (found via a genome added 2026-07-19 that never appeared in the GENUS-level
+    // Aspergillus comparison even after later reruns -- see .living/learnings.md).
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(sketches)
@@ -243,7 +281,14 @@ process MASH_COMPARE {
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new genomes are added to that
+    // group later -- it silently keeps serving the stale pre-addition result forever,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // correctly detects a changed sketch/genome list and reruns automatically
+    // (found via a genome added 2026-07-19 that never appeared in the GENUS-level
+    // Aspergillus comparison even after later reruns -- see .living/learnings.md).
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(sketches)
@@ -279,7 +324,14 @@ process SOURMASH_COMPARE {
     cpus   { sigs.size() > 500 ? 32 : sigs.size() > 200 ? 16 : 8 }
     memory { sigs.size() > 500 ? '128 GB' : sigs.size() > 200 ? '64 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new genomes are added to that
+    // group later -- it silently keeps serving the stale pre-addition result forever,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // correctly detects a changed sketch/genome list and reruns automatically
+    // (found via a genome added 2026-07-19 that never appeared in the GENUS-level
+    // Aspergillus comparison even after later reruns -- see .living/learnings.md).
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(sigs)
@@ -313,7 +365,14 @@ process FASTANI_COMPARE {
     cpus   { group_size > 500 ? 64 : group_size > 200 ? 24 : 8 }
     memory { group_size > 500 ? '128 GB' : group_size > 200 ? '48 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new genomes are added to that
+    // group later -- it silently keeps serving the stale pre-addition result forever,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // correctly detects a changed sketch/genome list and reruns automatically
+    // (found via a genome added 2026-07-19 that never appeared in the GENUS-level
+    // Aspergillus comparison even after later reruns -- see .living/learnings.md).
+    publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name),
@@ -432,8 +491,8 @@ process REPORT_ANI {
         tuple val(group_name), path(ani_tsv), path(names_tsv)
 
     output:
-        path("${group_name}_ANI_report.txt")
-        path("${group_name}_genome_names.tsv")
+        path("${group_name}_ANI_report.txt"), emit: report
+        path("${group_name}_genome_names.tsv"), emit: names
 
     script:
     """
@@ -464,8 +523,8 @@ process COMBINE_ANI_TABLE {
     publishDir "${params.outdir}/${params.ani_method}/${params.compare}", mode: 'copy'
 
     input:
-        path ani_tsvs,   stageAs: 'ani_in/*'
-        path names_tsvs, stageAs: 'names_in/*'
+        path ani_manifest
+        path names_manifest
 
     output:
         path("all_pairs.csv")
@@ -474,8 +533,8 @@ process COMBINE_ANI_TABLE {
     script:
     """
     python3 ${projectDir}/bin/combine_ani_table.py \\
-        --ani-dir   ani_in \\
-        --names-dir names_in \\
+        --ani-manifest   ${ani_manifest} \\
+        --names-manifest ${names_manifest} \\
         --compare-level "${params.compare}" \\
         --csv-output all_pairs.csv \\
         --db-output  ani.db
@@ -494,7 +553,7 @@ process COMBINE_ANI_TABLE {
 workflow {
 
     // ── Validate params ───────────────────────────────────────────────────────
-    def validRanks = ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS']
+    def validRanks = ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS','SPECIES']
     def compareRank = (params.compare as String).toUpperCase()
     if (!(compareRank in validRanks)) {
         error "--compare must be one of: ${validRanks.join(', ')}"
@@ -542,7 +601,10 @@ workflow {
             def genus     = row.GENUS?.trim() ?: ''
             def strain    = row.STRAIN?.trim() ?: ''
             def asmid     = row.ASMID?.trim() ?: ''
-            def groupKey  = row[compareRank]?.trim() ?: ''
+            // Sanitised for use as group_name in file/dir names (e.g. ${group_name}.full.ani.tsv)
+            // -- GENUS/FAMILY/etc. rarely need this, but SPECIES values ("Aspergillus
+            // fumigatus") contain spaces that must not land raw in a shell-globbed filename.
+            def groupKey  = SampleUtils.sanitizeTag(row[compareRank])
             def stem      = nameStyle == 'asmid'
                                 ? row.ASMID?.trim()
                                 : SampleUtils.makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
@@ -703,8 +765,34 @@ workflow {
     REPORT_ANI(ani_tsv_ch.join(names_map, by: 0))
 
     // ── Combine every group's pairs + labels into one queryable table ────────
-    COMBINE_ANI_TABLE(
-        ani_tsv_ch.map { _gn, tsv -> tsv }.collect(),
-        names_map.map  { _gn, tsv -> tsv }.collect()
-    )
+    // Union two sources so no group is ever silently dropped:
+    //  (a) this run's own live channel items (ani_tsv_ch / REPORT_ANI.out.names)
+    //      -- available immediately, race-free, but only covers groups actively
+    //      touched *this* invocation (the original bug: collecting only these
+    //      on a -resume run silently loses every unchanged/cached group).
+    //  (b) a disk glob of everything already published under params.outdir --
+    //      catches every group from prior runs that -resume didn't re-touch
+    //      this time, gated on this run's own completion. But publishDir's copy
+    //      is asynchronous relative to a process's channel emission (a documented
+    //      Nextflow behavior -- publishDir is a side effect, not a sync point),
+    //      so the glob can race ahead of a THIS-run group's own publish and find
+    //      nothing for it.
+    // Combined, (a) guarantees every current-run group is captured regardless of
+    // whether (b)'s glob raced against it; (b) guarantees historical coverage.
+    // combine_ani_table.py dedupes any group appearing via both sources by
+    // manifest mtime (keeps the freshest), so the union never double-counts.
+    // See gatedGlobIn/toManifest above and .living/learnings.md (2026-07-23).
+    // Scalar barriers (not list-valued) per the 2026-06-25 MERGE-gating decision.
+    def ani_sync   = ani_tsv_ch.collect().map { true }.ifEmpty(true)
+    def names_sync = REPORT_ANI.out.names.collect().map { true }.ifEmpty(true)
+
+    def ani_all = gatedGlobIn(ani_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*.ani.tsv")
+        .mix(ani_tsv_ch.map { _gn, tsv -> tsv }.collect())
+    def names_all = gatedGlobIn(names_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*_genome_names.tsv")
+        .mix(REPORT_ANI.out.names.collect())
+
+    def ani_manifest   = toManifest(ani_all,   'ani_tsv.manifest.txt')
+    def names_manifest = toManifest(names_all, 'names_tsv.manifest.txt')
+
+    COMBINE_ANI_TABLE(ani_manifest, names_manifest)
 }

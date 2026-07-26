@@ -131,7 +131,11 @@ process SKANI_DIST_QUERY {
     cpus   { ref_sketches.size() > 2000 ? 32 : ref_sketches.size() > 500 ? 16 : 8 }
     memory { ref_sketches.size() > 2000 ? '64 GB' : ref_sketches.size() > 500 ? '32 GB' : '16 GB' }
 
-    storeDir "${params.outdir}/skani_query/${params.compare}/${group_name}/batches"
+    // publishDir (not storeDir): storeDir only checks output-path existence, so it
+    // would never re-run a group's comparison after new query/reference genomes are
+    // added later -- see compare_ANI.nf's SKANI_COMPARE for the same fix and the
+    // .living/learnings.md entry that found this.
+    publishDir { "${params.outdir}/skani_query/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
         tuple val(group_name), path(query_sketches, stageAs: 'query/*'), path(ref_sketches, stageAs: 'ref/*')
@@ -224,7 +228,7 @@ process COMBINE_QUERY_CALLS {
 
 workflow {
 
-    def validRanks = ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS']
+    def validRanks = ['PHYLUM','SUBPHYLUM','CLASS','SUBCLASS','ORDER','FAMILY','GENUS','SPECIES']
     def compareRank = (params.compare as String).toUpperCase()
     if (!(compareRank in validRanks)) {
         error "--compare must be one of: ${validRanks.join(', ')}"
@@ -270,7 +274,10 @@ workflow {
             def genus    = row.GENUS?.trim() ?: ''
             def strain   = row.STRAIN?.trim() ?: ''
             def asmid    = row.ASMID?.trim() ?: ''
-            def groupKey = row[compareRank]?.trim() ?: ''
+            // Sanitised for use as group_name in file/dir names (e.g. ${group_name}.full.ani.tsv)
+            // -- GENUS/FAMILY/etc. rarely need this, but SPECIES values ("Aspergillus
+            // fumigatus") contain spaces that must not land raw in a shell-globbed filename.
+            def groupKey = SampleUtils.sanitizeTag(row[compareRank])
             def isQuery  = !(row[queryRank]?.trim())
             def stem     = nameStyle == 'asmid'
                               ? row.ASMID?.trim()
