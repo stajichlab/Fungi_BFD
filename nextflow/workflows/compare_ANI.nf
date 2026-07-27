@@ -29,7 +29,7 @@ workflow COMPARE_ANI {
     }
 
     log.info "ANI method: ${method}"
-    log.info "Genome filename style: ${params.genome_name_style} (suffix: ${params.genome_suffix})"
+    log.info "Genome dir: ${params.genome_dir}"
     if (method == 'fastani' && (params.fastani_prefilter as boolean)) {
         log.info "fastANI mash-prefilter cascade ENABLED (prefilter_ani=${params.prefilter_ani}%)"
     }
