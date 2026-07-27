@@ -2,6 +2,7 @@ process REPORT_ANI {
     tag   "${group_name}"
     label 'report'
 
+    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}"
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}" }, mode: 'copy'
 
     input:
