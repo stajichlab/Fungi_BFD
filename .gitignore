@@ -6,19 +6,27 @@ work/
 tests/output/
 tests/work/
 logs/nextflow/
-pep/
-cds/
-gff3/
-gff/
+input/pep/
+input/cds/
+input/gff3/
+input/gff/
+input/trna
 genome/
 genome_annotation/
 rnaseq_data/
 rnaseq_reads/
+rnaseq_normalized/
 logs/
 results/
 tests/output/
 nextflow/tests/output/function/
-
+input_clean_genomes/
+asco_annotate/
+BFD_Comparative/
+do_annotation/
+do_annotation_*
+BLD_*
+function_neurospora/
 # Test fixtures must be committed. The bare pep/, cds/, gff3/ and genome/ rules above
 # match those directory names anywhere in the tree, which otherwise silently swallows
 # the synthetic inputs that `-profile test -stub-run` depends on — the pipeline would
