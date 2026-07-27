@@ -22,7 +22,7 @@ process SKANI_COMPARE {
     """
     # skani 0.3.x: sketch everything into one directory, then skani triangle
     # on that directory. No per-genome .sketch files, no chunk merge needed.
-    printf '%s\\n' ${genome_list} > genome_list.txt
+    printf '%s\\n' "${genome_list}" > genome_list.txt
     skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o sketch_db
 
     # skani triangle with -E (sparse) outputs the same row-by-row format as

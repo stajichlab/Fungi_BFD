@@ -19,8 +19,8 @@ process SKANI_DIST_QUERY {
     """
     # skani 0.3.x: sketch query and reference genomes into separate directories.
     # skani dist -q accepts a sketch directory; -r accepts a list of fasta/sketch targets.
-    printf '%s\\n' ${q_list} > query_list.txt
-    printf '%s\\n' ${r_list} > ref_list.txt
+    printf '%s\\n' "${q_list}" > query_list.txt
+    printf '%s\\n' "${r_list}" > ref_list.txt
     skani sketch -t ${task.cpus} -l query_list.txt -o query_sketch
     skani sketch -t ${task.cpus} -l ref_list.txt   -o ref_sketch
 

@@ -18,13 +18,14 @@ process SKANI_SKETCH {
         tuple val(group_name), path(sketch_dir)
 
     script:
-    def preset = skaniPresetFlag(params.skani_preset)
-    def cflag  = (params.skani_compression as int) > 0 ? "-c ${params.skani_compression}" : ''
+    def preset  = skaniPresetFlag(params.skani_preset)
+    def cflag   = (params.skani_compression as int) > 0 ? "-c ${params.skani_compression}" : ''
+    def g_list  = genomes.collect { it.toString() }.join('\n')
     """
     # skani sketch errors out if its -o dir already exists; clear any partial
     # output left behind by an interrupted/retried run before re-sketching.
     rm -rf "${sketch_dir}"
-    printf '%s\\n' ${genomes} > genome_list.txt
+    printf '%s\\n' "${g_list}" > genome_list.txt
     skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o "${sketch_dir}"
     """
 
