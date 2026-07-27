@@ -1,8 +1,8 @@
 include { skaniPresetFlag } from '../../../common/utils.nf'
 
-// skani 0.3.x produces a consolidated sketch database per chunk (sketches.db +
-// index.db + markers.bin) instead of individual .sketch files. The chunk-level
-// databases are merged with `skani sketch --merge` in SKANI_COMPARE.
+// skani 0.3.x outputs a sketch directory (sketches.db + index.db + markers.bin)
+// per chunk instead of individual .sketch files. SKANI_COMPARE passes the chunk
+// directories directly to skani dist via -rl/-ql.
 process SKANI_SKETCH {
     tag   "${group_name} [${genomes.size()} genomes]"
     label 'skani'
@@ -12,10 +12,10 @@ process SKANI_SKETCH {
     storeDir "${params.sketch_cache}/skani/${params.skani_preset}_af${params.skani_min_af}"
 
     input:
-        tuple val(group_name), path(genomes), val(sketch_db)
+        tuple val(group_name), path(genomes), val(sketch_dir)
 
     output:
-        tuple val(group_name), path(sketch_db)
+        tuple val(group_name), path(sketch_dir)
 
     script:
     def preset = skaniPresetFlag(params.skani_preset)
@@ -23,16 +23,14 @@ process SKANI_SKETCH {
     """
     # skani sketch errors out if its -o dir already exists; clear any partial
     # output left behind by an interrupted/retried run before re-sketching.
-    rm -rf sk_out
+    rm -rf "${sketch_dir}"
     printf '%s\\n' ${genomes} > genome_list.txt
-    skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o sk_out
-    mv sk_out/sketches.db ${sketch_db}
-    mv sk_out/index.db    ${sketch_db}.index
-    mv sk_out/markers.bin ${sketch_db}.markers
+    skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o "${sketch_dir}"
     """
 
     stub:
     """
-    touch ${sketch_db} ${sketch_db}.index ${sketch_db}.markers
+    mkdir -p "${sketch_dir}"
+    touch "${sketch_dir}/sketches.db" "${sketch_dir}/index.db" "${sketch_dir}/markers.bin"
     """
 }

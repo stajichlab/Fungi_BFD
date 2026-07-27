@@ -1,39 +1,37 @@
-// skani 0.3.x: merge per-chunk databases into one group-level database,
-// then run skani dist (all-vs-all within the group).
+include { skaniPresetFlag } from '../../../common/utils.nf'
+
 process SKANI_COMPARE {
-    tag   "${group_name} n=${sketch_dbs.size()} chunks"
+    tag   "${group_name} [${genomes.size()} genomes]"
     label 'skani'
 
-    cpus   { sketch_dbs.size() > 500 ? 32 : sketch_dbs.size() > 200 ? 16 : 8 }
-    memory { sketch_dbs.size() > 500 ? '64 GB' : sketch_dbs.size() > 200 ? '32 GB' : '16 GB' }
+    cpus   { genomes.size() > 500 ? 32 : genomes.size() > 200 ? 16 : 8 }
+    memory { genomes.size() > 500 ? '64 GB' : genomes.size() > 200 ? '32 GB' : '16 GB' }
 
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
-        tuple val(group_name), path(sketch_dbs)
+        tuple val(group_name), path(genomes)
 
     output:
         tuple val(group_name), path("${group_name}.full.ani.tsv")
 
     script:
+    def preset = skaniPresetFlag(params.skani_preset)
+    def cflag  = (params.skani_compression as int) > 0 ? "-c ${params.skani_compression}" : ''
+    def genome_list = genomes.collect { it.toString() }.join('\n')
     """
-    # skani 0.3.x consolidates all sketches into one database via --merge.
-    # If only one chunk exists, no merge needed (cp the single db through).
-    if [ "${sketch_dbs.size()}" -eq 1 ]; then
-        cp ${sketch_dbs[0]} group_db.sketches.db
-        [ -f "${sketch_dbs[0]}.index"   ] && cp "${sketch_dbs[0]}.index"   group_db.sketches.db.index
-        [ -f "${sketch_dbs[0]}.markers" ] && cp "${sketch_dbs[0]}.markers" group_db.sketches.db.markers
-    else
-        # --merge takes multiple -d flags; collect all chunk .sketches.db files.
-        DFLAGS=\$(for d in ${sketch_dbs.join(' ')}; do echo -n "-d \$d "; done)
-        skani sketch --merge \$DFLAGS -o group_db
-    fi
+    # skani 0.3.x: sketch everything into one directory, then skani triangle
+    # on that directory. No per-genome .sketch files, no chunk merge needed.
+    printf '%s\\n' ${genome_list} > genome_list.txt
+    skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o sketch_db
 
-    skani dist -d group_db --sparse \\
+    # skani triangle with -E (sparse) outputs the same row-by-row format as
+    # skani dist: name1 <TAB> name2 <TAB> ANI <TAB> AF_ref <TAB> AF_query
+    skani triangle -l genome_list.txt -E \\
         --min-af ${params.skani_min_af} -t ${task.cpus} \\
         -o skani_raw.tsv
 
-    # skani dist cols: name1  name2  ANI  AF_ref  AF_query
+    # Strip self-comparisons (diagonal) and extra columns
     awk -F'\\t' 'NR>1 && \$1 != \$2 {
         print \$1"\\t"\$2"\\t"\$3
     }' skani_raw.tsv > ${group_name}.full.ani.tsv
