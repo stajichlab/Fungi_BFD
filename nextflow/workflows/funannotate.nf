@@ -16,10 +16,11 @@ include { makeSampleTag }       from '../modules/common/utils.nf'
 include { loadAbinitioReuseMap } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
-include { FUNANNOTATE_GENOME_PREP } from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
-include { FUNANNOTATE_RNASEQ }      from '../subworkflows/local/FUNANNOTATE_RNASEQ.nf'
-include { FUNANNOTATE_PREDICTION }  from '../subworkflows/local/FUNANNOTATE_PREDICTION.nf'
-include { FUNANNOTATE_ANNOTATION }  from '../subworkflows/local/FUNANNOTATE_ANNOTATION.nf'
+include { FUNANNOTATE_GENOME_PREP }       from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
+include { FUNANNOTATE_RNASEQ }            from '../subworkflows/local/FUNANNOTATE_RNASEQ.nf'
+include { ANI_REPRESENTATIVE_SELECT }     from '../subworkflows/local/ANI_REPRESENTATIVE_SELECT/main.nf'
+include { FUNANNOTATE_PREDICTION }        from '../subworkflows/local/FUNANNOTATE_PREDICTION.nf'
+include { FUNANNOTATE_ANNOTATION }        from '../subworkflows/local/FUNANNOTATE_ANNOTATION.nf'
 
 
 workflow FUNANNOTATE {
@@ -31,9 +32,6 @@ workflow FUNANNOTATE {
     // ── Validate params and samples.csv structure (fail fast) ───────────────────
     validateParameters()
     log.info paramsSummaryLog(workflow)
-    // Validate sample-sheet columns/types against assets/schema_input.json. The
-    // returned list is discarded; the existing splitCsv logic below does the real
-    // channel building. A bad/mismatched samples.csv aborts here with a clear error.
     samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
 
     def suppressSet = (params.suppress && file(params.suppress).exists())
@@ -46,8 +44,6 @@ workflow FUNANNOTATE {
         log.info "Suppress list loaded: ${suppressSet.size()} ASMIDs will be skipped"
     }
 
-    // ── Species-level ab-initio parameter reuse ─────────────────────────────────
-    def abinitioReuseMap = loadAbinitioReuseMap()
     def forceIndependentSet = (params.force_independent_species as String)
         .split(',')
         .collect { it.trim() }
@@ -58,8 +54,6 @@ workflow FUNANNOTATE {
     }
 
     // ── Taxonomy filter ───────────────────────────────────────────────────────
-    // Parse --taxon RANK:VALUE (e.g. --taxon PHYLUM:Ascomycota).
-    // taxonFilter is a closure applied after splitCsv on the raw row map.
     def taxonFilter
     if (params.taxon) {
         def parts = (params.taxon as String).split(':', 2)
@@ -82,7 +76,7 @@ workflow FUNANNOTATE {
         log.info "ASMID filter: processing only '${params.asmid}'"
     }
 
-    // ── Prediction pipeline ───────────────────────────────────────────────────
+    // ── Build jobs channel ────────────────────────────────────────────────────
     def jobs = channel.fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
@@ -131,6 +125,17 @@ workflow FUNANNOTATE {
     FUNANNOTATE_GENOME_PREP(jobs)
 
     FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome)
+
+    // ── ANI-driven representative selection ───────────────────────────────────
+    // Compute ANI for species with >=2 strains, pick one representative per
+    // species, write abinitio_reuse_assignments.csv, and backfill shared params.
+    // Skipped entirely when --run_ani_reuse=false (all strains train independently).
+    // FUNANNOTATE_PREDICTION reads the CSV produced here via loadAbinitioReuseMap.
+    if (!params.only_clean.toBoolean() && !params.stop_after_sra_fetch.toBoolean()) {
+        ANI_REPRESENTATIVE_SELECT(FUNANNOTATE_RNASEQ.out.predict_input)
+    }
+
+    def abinitioReuseMap = loadAbinitioReuseMap()
 
     FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
 

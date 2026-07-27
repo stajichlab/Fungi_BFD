@@ -80,9 +80,8 @@ def staleSharedParams(String out, def sharedJson) {
     return false
 }
 
-// Eagerly loads abinitio_reuse_csv into out -> [species, reuse_eligible] (mirrors the
-// suppressSet pattern below: a small side-table read once at parse time, not through
-// the dataflow model). Returns an empty map if the feature is off or the CSV doesn't
+// Eagerly loads abinitio_reuse_csv into out -> [species, reuse_eligible,
+// is_representative]. Returns an empty map if the feature is off or the CSV doesn't
 // exist yet (e.g. species_reuse_clusters.py hasn't been run for this dataset) --
 // every row then falls through to today's independent-training behavior unchanged.
 def loadAbinitioReuseMap() {
@@ -96,17 +95,21 @@ def loadAbinitioReuseMap() {
     def lines = csv.readLines()
     if (lines.size() < 2) return m
     def header = lines[0].split(',', -1)*.trim()
-    def iSpecies  = header.indexOf('species')
-    def iOut      = header.indexOf('out')
-    def iEligible = header.indexOf('reuse_eligible')
+    def iSpecies      = header.indexOf('species')
+    def iOut          = header.indexOf('out')
+    def iEligible     = header.indexOf('reuse_eligible')
+    def iIsRep        = header.indexOf('is_representative')
     lines.drop(1).each { line ->
         def f = line.split(',', -1)
         if (f.size() <= [iSpecies, iOut, iEligible].max()) return
         m[f[iOut].trim()] = [
-            species       : f[iSpecies].trim(),
-            reuse_eligible: f[iEligible].trim().toLowerCase() == 'true',
+            species         : f[iSpecies].trim(),
+            reuse_eligible  : f[iEligible].trim().toLowerCase() == 'true',
+            is_representative: iIsRep >= 0 ? f[iIsRep].trim().toLowerCase() == 'true' : false,
         ]
     }
-    log.info "Loaded ${m.size()} ab-initio reuse assignments from ${csv} (${m.count { it.value.reuse_eligible }} reuse_eligible)"
+    log.info "Loaded ${m.size()} ab-initio reuse assignments from ${csv} " +
+        "(${m.count { it.value.reuse_eligible }} reuse_eligible, " +
+        "${m.count { it.value.is_representative }} representative)"
     return m
 }

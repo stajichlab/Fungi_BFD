@@ -16,11 +16,16 @@ process COMBINE_ANI_TABLE {
 
     script:
     """
-    python3 ${projectDir}/bin/combine_ani_table.py \\
-        --ani-manifest   ${ani_manifest} \\
-        --names-manifest ${names_manifest} \\
-        --compare-level "${params.compare}" \\
-        --csv-output all_pairs.csv \\
+    # duckdb is not in the python:3.12 base image — install it first.
+    # --target installs to a persistent bind mount (work/ANI/python_packages -> /tmp/python_packages)
+    # so pip doesn't try to write to the read-only /rhome home dir inside the container.
+    pip install --quiet --target /tmp/python_packages duckdb
+    PYTHONPATH="/tmp/python_packages:\${PYTHONPATH}" \
+    python3 ${projectDir}/bin/combine_ani_table.py \
+        --ani-manifest   ${ani_manifest} \
+        --names-manifest ${names_manifest} \
+        --compare-level "${params.compare}" \
+        --csv-output all_pairs.csv \
         --db-output  ani.duckdb
     """
 
