@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# Lint the BFD.nf workflow.
+# Lint the migrated nextflow pipelines via main.nf dispatch.
 # Run from the project root: bash nextflow/run_lint.sh
 
 set -euo pipefail
@@ -8,33 +8,35 @@ NXFDIR="nextflow"
 
 module load nextflow 2>/dev/null || true
 
-echo "=== Nextflow syntax check: BFD.nf (-preview, local executor, 0 samples) ==="
+echo "=== Nextflow syntax check: main.nf --pipeline BFD (-preview, test profile) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/BFD.nf \
+nextflow run ${NXFDIR}/main.nf \
     -c ${NXFDIR}/nextflow.config \
-    -profile test \
+    -profile BFD,test \
+    --pipeline BFD \
     -preview \
     2>&1
 
 echo ""
-echo "=== Nextflow syntax check: funannotate.nf (-preview, funannotate,test) ==="
-# funannotate needs its own profile for params; test overrides samples to the fixture.
+echo "=== Nextflow syntax check: main.nf --pipeline funannotate (-preview, funannotate,test) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/funannotate.nf \
+nextflow run ${NXFDIR}/main.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile funannotate,test \
+    --pipeline funannotate \
     -preview \
     2>&1
 
 echo ""
-echo "=== nf-core lint (if available) ==="
-if module load nf-core 2>/dev/null; then
-    nf-core lint ${NXFDIR}/BFD.nf \
-        --fail-ignored --fail-warned \
-        2>&1 || true   # nf-core lint warns about non-nf-core structure; treat as advisory
-else
-    echo "nf-core not available, skipping."
-fi
+echo "=== Nextflow syntax check: main.nf --pipeline compare_ani (-preview, ani,test) ==="
+NXF_OPTS="-Xms256m -Xmx2g" \
+nextflow run ${NXFDIR}/main.nf \
+    -c ${NXFDIR}/nextflow.config \
+    -profile ani,test \
+    --pipeline compare_ani \
+    -params-file ${NXFDIR}/params_ani.yaml \
+    -preview \
+    2>&1
 
 echo ""
 echo "=== Python bin/ script syntax check ==="

@@ -7,31 +7,33 @@
 # tools. Each process runs its stub: block (creates minimal placeholder outputs).
 #
 # Submit from the project root:
-#   sbatch pipeline/nextflow/run_test.sh
+#   sbatch nextflow/run_test.sh
 #
 # Or run interactively:
-#   bash pipeline/nextflow/run_test.sh
+#   bash nextflow/run_test.sh
 
 set -euo pipefail
 
 module load nextflow
 
-NXFDIR="pipeline/nextflow"
+NXFDIR="nextflow"
 mkdir -p logs/nextflow
 
 echo "=== Step 1: Syntax + channel wiring check (preview) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/BFD.nf \
+nextflow run ${NXFDIR}/main.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
+    --pipeline BFD \
     -preview 2>&1 | tee logs/nextflow/functional_preview.log
 
 echo ""
 echo "=== Step 2: Full stub-run (all 9 tool subworkflows) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
-nextflow run ${NXFDIR}/BFD.nf \
+nextflow run ${NXFDIR}/main.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile test \
+    --pipeline BFD \
     -stub-run 2>&1 | tee logs/nextflow/functional_stubrun.log
 
 echo ""
