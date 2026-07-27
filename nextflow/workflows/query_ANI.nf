@@ -16,8 +16,12 @@
 // skani-parameter subpath) as compare_ANI, so a genome sketched by either
 // workflow is reused by the other — SKANI_SKETCH is literally the same module.
 //
+// skani 0.3.x: each sketch chunk outputs a consolidated .sketches.db database
+// instead of individual .sketch files. SKANI_DIST_QUERY merges chunk databases
+// per (group, role) before running skani dist.
+//
 // Usage (from project root):
-//   nextflow run nextflow/main.nf -entry QUERY_ANI \
+//   nextflow run nextflow/main.nf --pipeline query_ani \
 //       -c nextflow/nextflow.config -profile ani_query --compare FAMILY -resume
 //
 // Parameter defaults live in conf/profile_ANI.config; the ani_query profile
@@ -32,22 +36,20 @@ include { SKANI_DIST_QUERY }          from '../modules/ani/compare/SKANI_DIST_QU
 include { REPORT_QUERY_ANI }          from '../modules/ani/report/REPORT_QUERY_ANI/main.nf'
 include { COMBINE_QUERY_CALLS }       from '../modules/ani/report/COMBINE_QUERY_CALLS/main.nf'
 
-// Fan a per-group genome list out into SKANI_SKETCH chunk jobs, keyed by
-// (group, role) so query and reference sketches can be recombined per group
-// after sketching. Declared at file scope: a closure assigned to a local
-// variable inside a workflow body is rejected by the strict language spec.
 def sketchInputs(ch, String role) {
     def chunk = Math.max(1, params.skani_sketch_chunk as int)
     ch.flatMap { gn, genomes ->
-        genomes.collate(chunk).collect { sub ->
-            tuple(tuple(gn, role), sub, sub.collect { g -> "${g.name}.sketch" })
+        def nChunks = (genomes.size() + chunk - 1).intdiv(chunk)
+        (0..<nChunks).collect { i ->
+            def sub    = genomes.drop(i * chunk).take(chunk)
+            def dbName = "${role}_sketches_${i}.db"
+            tuple(tuple(gn, role), sub, dbName)
         }
     }
 }
 
 workflow QUERY_ANI {
 
-    // ── Validate params ───────────────────────────────────────────────────────
     def compareRank = assertRank(params.compare as String,    'compare')
     def queryRank   = assertRank(params.query_rank as String, 'query_rank')
     def ranks       = taxonomicRanks()
@@ -57,7 +59,6 @@ workflow QUERY_ANI {
 
     log.info "query_ANI: grouping by ${compareRank}, querying genomes missing ${queryRank}"
 
-    // ── Samples → groups, split into query / reference ────────────────────────
     ANI_SAMPLES(params.samples, compareRank, queryRank)
 
     def grouped_ch = ANI_SAMPLES.out.samples
@@ -74,7 +75,6 @@ workflow QUERY_ANI {
         log.info "${gn}: ${q.size()} query genome(s) vs ${r.size()} reference genome(s)"
     }
 
-    // ── Per-group genome lists + names TSV (adds a role column) ───────────────
     def prepared_ch = grouped_ch.map { group_name, queries, refs ->
         def labelled = queries.collect { m -> m + [role: 'query'] } +
                        refs.collect    { m -> m + [role: 'reference'] }
@@ -90,25 +90,23 @@ workflow QUERY_ANI {
         names: tuple(group_name, nameFile)
     }
 
-    // ── Sketch queries and references separately (see sketchInputs above) ────
     def sketched_ch = SKANI_SKETCH(
             sketchInputs(prepared_split.query, 'query')
                 .mix(sketchInputs(prepared_split.ref, 'ref'))
         )
         .groupTuple()
-        .map { key, sketch_lists -> tuple(key[0], key[1], sketch_lists.flatten()) }
+        .map { key, db_list -> tuple(key[0], key[1], db_list.flatten()) }
 
     def sketched_split = sketched_ch.branch {
         query: it[1] == 'query'
         ref:   it[1] == 'ref'
     }
 
-    def dist_in = sketched_split.query.map { gn, _role, sk -> tuple(gn, sk) }
-        .join(sketched_split.ref.map { gn, _role, sk -> tuple(gn, sk) }, by: 0)
+    def dist_in = sketched_split.query.map { gn, _role, db -> tuple(gn, db) }
+        .join(sketched_split.ref.map { gn, _role, db -> tuple(gn, db) }, by: 0)
 
     def ani_tsv_ch = SKANI_DIST_QUERY(dist_in)
 
-    // ── Report + combine ──────────────────────────────────────────────────────
     def report_out = REPORT_QUERY_ANI(ani_tsv_ch.join(prepared_split.names, by: 0))
     COMBINE_QUERY_CALLS(report_out[1].collect())
 }

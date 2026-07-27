@@ -1,9 +1,8 @@
 include { skaniPresetFlag } from '../../../common/utils.nf'
 
-// skani sketching is fast, so genomes are batched --skani_sketch_chunk per job
-// (instead of one SLURM job per genome) to cut scheduler churn. Output filenames
-// are declared deterministically (one <genome>.sketch per input) so storeDir
-// still caches each chunk and reuses it across runs / --compare levels.
+// skani 0.3.x produces a consolidated sketch database per chunk (sketches.db +
+// index.db + markers.bin) instead of individual .sketch files. The chunk-level
+// databases are merged with `skani sketch --merge` in SKANI_COMPARE.
 process SKANI_SKETCH {
     tag   "${group_name} [${genomes.size()} genomes]"
     label 'skani'
@@ -13,10 +12,10 @@ process SKANI_SKETCH {
     storeDir "${params.sketch_cache}/skani/${params.skani_preset}_af${params.skani_min_af}"
 
     input:
-        tuple val(group_name), path(genomes), val(sketch_names)
+        tuple val(group_name), path(genomes), val(sketch_db)
 
     output:
-        tuple val(group_name), path(sketch_names)
+        tuple val(group_name), path(sketch_db)
 
     script:
     def preset = skaniPresetFlag(params.skani_preset)
@@ -27,11 +26,13 @@ process SKANI_SKETCH {
     rm -rf sk_out
     printf '%s\\n' ${genomes} > genome_list.txt
     skani sketch ${preset} ${cflag} -t ${task.cpus} -l genome_list.txt -o sk_out
-    mv sk_out/*.sketch .
+    mv sk_out/sketches.db ${sketch_db}
+    mv sk_out/index.db    ${sketch_db}.index
+    mv sk_out/markers.bin ${sketch_db}.markers
     """
 
     stub:
     """
-    for s in ${sketch_names.join(' ')}; do touch \$s; done
+    touch ${sketch_db} ${sketch_db}.index ${sketch_db}.markers
     """
 }

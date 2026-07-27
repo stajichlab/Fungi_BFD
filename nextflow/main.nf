@@ -24,6 +24,9 @@ include { BFD }         from './workflows/BFD.nf'
 include { COMPARE_ANI } from './workflows/compare_ANI.nf'
 include { QUERY_ANI }   from './workflows/query_ANI.nf'
 include { FUNANNOTATE } from './workflows/funannotate.nf'
+include { EARLGREY_MASK } from './workflows/earlgrey_mask.nf'
+include { COMPARATIVE }  from './workflows/comparative_genomics.nf'
+include { PHYling }      from './subworkflows/local/PHYLING_ALIGN.nf'
 
 params.pipeline = 'BFD'
 
@@ -43,7 +46,16 @@ workflow {
     else if (pipeline == 'funannotate') {
         FUNANNOTATE()
     }
+    else if (pipeline == 'earlgrey_mask') {
+        EARLGREY_MASK()
+    }
+    else if (pipeline == 'comparative') {
+        COMPARATIVE()
+    }
+    else if (pipeline == 'phyling') {
+        PHYling()
+    }
     else {
-        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate (got '${params.pipeline}')"
+        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling (got '${params.pipeline}')"
     }
 }

@@ -244,6 +244,17 @@ def writeNamesTsv(String group_name, List metas, String prefix = 'names') {
     f
 }
 
+// Clean genomes are stored gzip-compressed (.fa.gz) to save space (see
+// funannotate.nf GENOME_CLEAN and earlgrey_mask.nf EARLGREY_BUILD_LIB).
+// Given the uncompressed base path, return the existing file, preferring the
+// compressed form, else the plain path (so .exists() reports missing when
+// neither is present).
+def genomeFile(String base) {
+    def gz = file("${base}.gz", glob: false)
+    if (gz.exists() && gz.size() > 0) return gz
+    return file(base, glob: false)
+}
+
 // ── Gated globs and manifests ───────────────────────────────────────────────
 
 // Gather files by filesystem glob (not by live channel .collect()), gated behind

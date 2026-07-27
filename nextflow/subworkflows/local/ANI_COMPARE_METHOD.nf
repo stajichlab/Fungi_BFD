@@ -35,15 +35,20 @@ workflow ANI_COMPARE_METHOD {
 
     if (method == 'skani') {
         // Batch genomes into chunks of skani_sketch_chunk per sketch job.
+        // skani 0.3.x outputs a consolidated sketch database per chunk
+        // (sketches.db + index.db + markers.bin), merged at compare time.
         def chunk = Math.max(1, params.skani_sketch_chunk as int)
         def skani_sketch_in = genome_ch.flatMap { gn, genomes ->
-            genomes.collate(chunk).collect { sub ->
-                tuple(gn, sub, sub.collect { g -> "${g.name}.sketch" })
+            def nChunks = (genomes.size() + chunk - 1).intdiv(chunk)
+            (0..<nChunks).collect { i ->
+                def sub    = genomes.drop(i * chunk).take(chunk)
+                def dbName = "sketches_${i}.db"
+                tuple(gn, sub, dbName)
             }
         }
         ani_tsv_ch = SKANI_SKETCH(skani_sketch_in)
             .groupTuple()
-            .map { gn, sketch_lists -> tuple(gn, sketch_lists.flatten()) }
+            .map { gn, db_list -> tuple(gn, db_list.flatten()) }
             | SKANI_COMPARE
 
     } else if (method == 'mash') {
