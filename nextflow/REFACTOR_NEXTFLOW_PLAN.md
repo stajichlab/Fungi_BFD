@@ -21,7 +21,12 @@ layout, with conventions that survive Nextflow's strict language spec.
 | 1e | Subworkflow decomposition (`BFD_FUNCTIONAL`, `BFD_GENOME_STATS`, `BFD_MERGE`) | ✅ Done, verified |
 | 1f | Cut `run_*.sh` over to `main.nf`, delete legacy `BFD.nf` | ❌ Not started |
 | 1g | `meta` map across all 31 BFD modules | ✅ Done, verified |
-| 2 | funannotate | ❌ Not blocked any more — §2 conventions are frozen and proven on BFD + ANI |
+| 2a | funannotate — module extraction (18 processes → `modules/funannotate/`) | ✅ Done |
+| 2b | funannotate — subworkflow decomposition (`GENOME_PREP`, `RNASEQ`, `PREDICTION`, `ANNOTATION`) | ✅ Done |
+| 2c | funannotate — `run_funannotate.sh` repointed to `main.nf --pipeline funannotate` | ✅ Done |
+| 2d | funannotate — stub-run verification (DAG assembles, all subworkflows wired) | ✅ Done (2026-07-26) |
+| 2e | funannotate — golden-output diff vs legacy `funannotate.nf` | ❌ Not started |
+| 2f | funannotate — delete legacy `funannotate.nf` after §7.3 passes | ❌ Blocked on 2e |
 | 3a | ANI (`compare_ANI` + `query_ANI`) | ✅ Done, verified equivalent |
 | 3b | comparative / earlgrey / phyling | ❌ Not started |
 
@@ -65,6 +70,74 @@ Verified by the §7.3 procedure against a purpose-built fixture
 
 - `compare_ANI`: 4 tasks, identical process set, 5 output files, identical contents.
 - `query_ANI`: 5 tasks, identical process set, 4 output files, identical contents.
+
+### Funannotate migration (Phase 2, 2026-07-26)
+
+`funannotate.nf` (2,440 lines) was decomposed into 18 process modules under
+`modules/funannotate/{setup,genome,rnaseq,predict,function}/`, 4 subworkflows, and a
+138-line workflow file at `workflows/funannotate.nf`.
+
+**Subworkflow decomposition:**
+
+| Subworkflow | File | Takes → Emits | Stages |
+|-------------|------|---------------|--------|
+| `FUNANNOTATE_GENOME_PREP` | `subworkflows/local/FUNANNOTATE_GENOME_PREP.nf` | jobs → predict_genome | SETUP_TAXONDB, GENOME_CLEAN/BATCH, MASKREPEAT_TANTAN_RUN |
+| `FUNANNOTATE_RNASEQ` | `subworkflows/local/FUNANNOTATE_RNASEQ.nf` | predict_genome → predict_input, reads | SRA_QUERY_BATCH, COLLECT_SRA_QUERY, SRA_FETCH/SE, WRITE_EMPTY_READS, RNASEQ_PREPARE, FUNANNOTATE_TRAIN |
+| `FUNANNOTATE_PREDICTION` | `subworkflows/local/FUNANNOTATE_PREDICTION.nf` | predict_input, abinitioReuseMap, forceIndependentSet → metadata | FUNANNOTATE_PREDICT (ab-initio reuse resolution + staleness filter) |
+| `FUNANNOTATE_ANNOTATION` | `subworkflows/local/FUNANNOTATE_ANNOTATION.nf` | metadata, reads, taxonFilter, asmidFilter → (done) | ANTISMASH_RUN, INTERPROSCAN_RUN, SIGNALP_RUN, FUNANNOTATE_UPDATE, FUNANNOTATE_ANNOTATE |
+
+**Data flow:**
+
+```
+jobs
+  │
+  ▼
+FUNANNOTATE_GENOME_PREP  ──► predict_genome
+  │
+  ▼
+FUNANNOTATE_RNASEQ       ──► predict_input, reads
+  │
+  ▼
+FUNANNOTATE_PREDICTION   ──► metadata
+  │
+  ▼
+FUNANNOTATE_ANNOTATION   ──► (done)
+```
+
+**Key decisions during decomposition:**
+
+1. **PREDICTION split from ANNOTATION** — The original monolith interleaved
+   prediction (FUNANNOTATE_PREDICT) with annotation (ANTISMASH, INTERPRO,
+   SIGNALP, UPDATE, ANNOTATE). The predict step was extracted into its own
+   `FUNANNOTATE_PREDICTION` subworkflow because:
+   - The workflow file already expected `FUNANNOTATE_PREDICTION` as a separate
+     stage (lines 21, 135, 137).
+   - Prediction has its own ab-initio reuse resolution logic that is distinct
+     from annotation.
+   - The metadata channel (output of PREDICT) is a clean interface between
+     PREDICTION and ANNOTATION.
+
+2. **`reads` channel emitted from RNASEQ** — The UPDATE step in ANNOTATION
+   needs SRA reads (r1, r2) joined by species_tag. The `reads_ch` was a local
+   variable in the monolith. The fix: RNASEQ emits `reads` as a second output
+   channel, and the workflow passes `FUNANNOTATE_RNASEQ.out.reads` to
+   ANNOTATION.
+
+3. **`suppressSet` built inside ANNOTATION** — The monolith built
+   `suppressSet` from `params.suppress` at the top of the workflow and used it
+   in the postpredict filter. Since ANNOTATION is self-contained, it now
+   builds `suppressSet` internally from `params.suppress`.
+
+**Verification status:**
+
+- ✅ `nextflow lint`: 0 errors, 79 warnings (all pre-existing deprecation warnings)
+- ✅ `-preview`: pipeline assembles, all 4 subworkflows wired correctly
+- ✅ `-stub-run`: full DAG executes (SETUP_TAXONDB, GENOME_CLEAN_BATCH,
+  MASKREPEAT_TANTAN_RUN, SRA_QUERY_BATCH, COLLECT_SRA_QUERY, SRA_FETCH,
+  SRA_FETCH_SE, WRITE_EMPTY_READS, RNASEQ_PREPARE, FUNANNOTATE_TRAIN,
+  FUNANNOTATE_PREDICT)
+- ❌ Golden-output diff vs legacy `funannotate.nf` (item 2e) — not yet run
+- ❌ Legacy `funannotate.nf` deletion (item 2f) — blocked on 2e
 
 ---
 

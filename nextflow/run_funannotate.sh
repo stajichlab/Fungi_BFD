@@ -20,7 +20,8 @@ module load nextflow
 mkdir -p logs/nextflow
 
 NXF_OPTS="-Xms512m -Xmx4g" \
-nextflow run nextflow/funannotate.nf \
+nextflow run nextflow/main.nf \
+    --pipeline funannotate \
     -c nextflow/nextflow.config \
     -profile funannotate \
     -resume \
