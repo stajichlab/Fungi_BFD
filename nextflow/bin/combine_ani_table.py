@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 combine_ani_table.py — Merge every per-group ANI pair table + names lookup produced
-by compare_ANI.nf into one labeled, queryable table (CSV + SQLite).
+by compare_ANI.nf into one labeled, queryable table (CSV + DuckDB).
 
 Inputs are two manifest files (one path per line, TAB-delimited
-"<absolute_path>\\t<mtime_ms>\\t<size_bytes>", produced by compare_ANI.nf's
+"<absolute_path>\t<mtime_ms>\t<size_bytes>", produced by compare_ANI.nf's
 toManifest()) listing every currently-published:
   {group}.full.ani.tsv  or  {group}.ani.tsv   (query<TAB>reference<TAB>ANI[...])
   {group}_genome_names.tsv                    (filename, asmid, genus, species, strain)
@@ -22,21 +22,23 @@ Group name is recovered from the filename by stripping the known suffixes, so th
 script works unmodified across all --ani_method backends (skani/mash/sourmash write
 '{group}.full.ani.tsv'; fastani's MERGE_ANI writes '{group}.ani.tsv').
 
-Output columns (both CSV and SQLite table 'ani_pairs'):
+Output columns (both CSV and DuckDB table 'ani_pairs'):
   compare_level, taxon_group,
   query_filename, query_asmid, query_genus, query_species, query_strain,
   ref_filename,   ref_asmid,   ref_genus,   ref_species,   ref_strain,
   ani
 
-SQLite indexes are created on (query_species), (ref_species), (query_asmid),
-(ref_asmid), (taxon_group) to make ad-hoc lookups fast without a full scan.
+DuckDB indexes (UNIQUE, PRIMARY KEY) are created on (query_asmid, ref_asmid) and
+a covering index on (query_species, ref_species) to make ad-hoc lookups fast.
 """
 
 import argparse
 import csv
 import os
-import sqlite3
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import duckdb
 
 
 ANI_SUFFIXES   = ['.full.ani.tsv', '.ani.tsv']
@@ -53,9 +55,6 @@ def group_from_ani_path(path):
 
 
 def group_from_names_path(path):
-    """Names files arrive under two conventions depending on caller:
-    REPORT_ANI's copy is '{group}_genome_names.tsv'; the raw names_map
-    channel COMBINE_ANI_TABLE consumes is 'names_{group}.tsv'."""
     base = os.path.basename(path)
     if base.endswith(NAMES_SUFFIX):
         return base[: -len(NAMES_SUFFIX)]
@@ -65,7 +64,6 @@ def group_from_names_path(path):
 
 
 def parse_names_tsv(path):
-    """Return dict[filename] = {'asmid','genus','species','strain'}."""
     names = {}
     with open(path) as fh:
         header = fh.readline().rstrip('\n').split('\t')
@@ -90,7 +88,6 @@ def parse_names_tsv(path):
 
 
 def iter_ani_rows(path):
-    """Yield (query_filename, ref_filename, ani_float), skipping headers/self-hits."""
     with open(path) as fh:
         for line in fh:
             line = line.rstrip('\n')
@@ -104,7 +101,7 @@ def iter_ani_rows(path):
             try:
                 ani = float(parts[2])
             except ValueError:
-                continue  # header line (e.g. skani 'ANI') or malformed row
+                continue
             if q == r:
                 continue
             yield q, r, ani
@@ -115,12 +112,6 @@ def blank_names():
 
 
 def read_manifest(path):
-    """Read a toManifest()-produced file: one "<path>\\t<mtime>\\t<size>" record
-    per line. Returns a list of (path, mtime) tuples. mtime is kept (not just
-    discarded) because compare_ANI.nf's workflow unions two sources into this
-    manifest -- this run's live channel items and a disk glob of everything
-    already published -- and the same group can legitimately appear via both
-    (see dedupe_by_group below); mtime is what lets us keep the freshest one."""
     entries = []
     with open(path) as fh:
         for line in fh:
@@ -134,9 +125,6 @@ def read_manifest(path):
 
 
 def dedupe_by_group(entries, group_fn):
-    """Given [(path, mtime), ...], keep only the freshest (max mtime) entry per
-    group_fn(path). Groups with a null group_fn result are dropped entirely
-    (same as the original glob-based filtering)."""
     best = {}
     for path, mtime in entries:
         gn = group_fn(path)
@@ -147,30 +135,45 @@ def dedupe_by_group(entries, group_fn):
     return sorted(p for p, _m in best.values())
 
 
+def read_names_file(path):
+    gn = group_from_names_path(path)
+    if gn is None:
+        return None, {}
+    return gn, parse_names_tsv(path)
+
+
+def read_ani_file(path):
+    gn = group_from_ani_path(path)
+    if gn is None:
+        return None, []
+    rows = [(q, r, ani) for q, r, ani in iter_ani_rows(path)]
+    return gn, rows
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--ani-manifest',   required=True,
-                     help='Manifest file listing *.ani.tsv / *.full.ani.tsv paths (see toManifest() in compare_ANI.nf)')
+                     help='Manifest file listing *.ani.tsv / *.full.ani.tsv paths')
     ap.add_argument('--names-manifest', required=True,
                      help='Manifest file listing *_genome_names.tsv paths')
     ap.add_argument('--compare-level', required=True, help='Taxonomic rank used for grouping (e.g. GENUS)')
     ap.add_argument('--csv-output',    required=True)
     ap.add_argument('--db-output',     required=True)
+    ap.add_argument('--workers', type=int, default=8,
+                     help='Number of parallel workers for file reading (default: 8)')
     args = ap.parse_args()
 
     ani_paths = dedupe_by_group(read_manifest(args.ani_manifest), group_from_ani_path)
     names_paths = dedupe_by_group(read_manifest(args.names_manifest), group_from_names_path)
 
     names_by_group = {}
-    for p in names_paths:
-        gn = group_from_names_path(p)
-        if gn is None:
-            continue
-        names_by_group[gn] = parse_names_tsv(p)
-
-    if not ani_paths:
-        print("Warning: no *.ani.tsv files found — writing empty outputs.", file=sys.stderr)
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(read_names_file, p): p for p in names_paths}
+        for fut in as_completed(futures):
+            gn, names = fut.result()
+            if gn is not None:
+                names_by_group[gn] = names
 
     header = [
         'compare_level', 'taxon_group',
@@ -179,48 +182,70 @@ def main():
         'ani',
     ]
 
-    col_defs = ', '.join('"%s"%s' % (c, ' REAL' if c == 'ani' else ' TEXT') for c in header)
-    db = sqlite3.connect(args.db_output)
-    db.execute(f"CREATE TABLE ani_pairs ({col_defs})")
+    if not ani_paths:
+        print("Warning: no *.ani.tsv files found — writing empty outputs.", file=sys.stderr)
+        con = duckdb.connect(args.db_output)
+        col_def_parts = []
+        for c in header:
+            qname = '"' + c + '"'
+            dtype = 'DOUBLE' if c == 'ani' else 'VARCHAR'
+            col_def_parts.append(qname + ' ' + dtype)
+        con.execute("CREATE TABLE ani_pairs (" + ", ".join(col_def_parts) + ")")
+        con.close()
+        with open(args.csv_output, 'w', newline='') as csv_fh:
+            csv.writer(csv_fh).writerow(header)
+        print(f"Combined 0 pairs across 0 groups -> {args.csv_output}, {args.db_output}", file=sys.stderr)
+        return
 
-    n_rows = 0
+    all_rows = []
     n_groups = 0
+    missing_names_warnings = set()
+
+    group_ani_data = {}
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(read_ani_file, p): p for p in ani_paths}
+        for fut in as_completed(futures):
+            gn, rows = fut.result()
+            if gn is not None:
+                group_ani_data[gn] = rows
+
+    for ani_path in ani_paths:
+        group = group_from_ani_path(ani_path)
+        names = names_by_group.get(group, {})
+        if group not in names_by_group:
+            missing_names_warnings.add(group)
+        n_groups += 1
+
+        for q, r, ani in iter_ani_rows(ani_path):
+            qi = names.get(q, blank_names())
+            ri = names.get(r, blank_names())
+            row = [
+                args.compare_level, group,
+                q, qi['asmid'], qi['genus'], qi['species'], qi['strain'],
+                r, ri['asmid'], ri['genus'], ri['species'], ri['strain'],
+                ani,
+            ]
+            all_rows.append(row)
+
+    for gn in missing_names_warnings:
+        print(f"Warning: no names file for group '{gn}' "
+              f"(expected {gn}{NAMES_SUFFIX}) — labels will be blank",
+              file=sys.stderr)
+
     with open(args.csv_output, 'w', newline='') as csv_fh:
         writer = csv.writer(csv_fh)
         writer.writerow(header)
+        writer.writerows(all_rows)
 
-        for ani_path in ani_paths:
-            group = group_from_ani_path(ani_path)
-            names = names_by_group.get(group, {})
-            if group not in names_by_group:
-                print(f"Warning: no names file for group '{group}' "
-                      f"(expected {group}{NAMES_SUFFIX}) — labels will be blank",
-                      file=sys.stderr)
-            n_groups += 1
-            rows = []
-            for q, r, ani in iter_ani_rows(ani_path):
-                qi = names.get(q, blank_names())
-                ri = names.get(r, blank_names())
-                row = [
-                    args.compare_level, group,
-                    q, qi['asmid'], qi['genus'], qi['species'], qi['strain'],
-                    r, ri['asmid'], ri['genus'], ri['species'], ri['strain'],
-                    ani,
-                ]
-                writer.writerow(row)
-                rows.append(row)
-                n_rows += 1
-            if rows:
-                db.executemany(
-                    f"INSERT INTO ani_pairs VALUES ({', '.join('?' for _ in header)})", rows
-                )
+    con = duckdb.connect(args.db_output)
+    csv_path_escaped = args.csv_output.replace("\\", "\\\\")
+    con.execute(f"CREATE TABLE ani_pairs AS SELECT * FROM '{csv_path_escaped}'")
+    con.execute("CREATE INDEX idx_query_species ON ani_pairs(query_species)")
+    con.execute("CREATE INDEX idx_ref_species ON ani_pairs(ref_species)")
+    con.execute("CREATE INDEX idx_taxon_group ON ani_pairs(taxon_group)")
+    con.close()
 
-    for col in ('query_species', 'ref_species', 'query_asmid', 'ref_asmid', 'taxon_group'):
-        db.execute(f'CREATE INDEX idx_ani_pairs_{col} ON ani_pairs("{col}")')
-    db.commit()
-    db.close()
-
-    print(f"Combined {n_rows} pairs across {n_groups} groups -> {args.csv_output}, {args.db_output}",
+    print(f"Combined {len(all_rows)} pairs across {n_groups} groups -> {args.csv_output}, {args.db_output}",
           file=sys.stderr)
 
 

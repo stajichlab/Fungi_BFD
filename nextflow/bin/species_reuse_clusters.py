@@ -8,7 +8,7 @@ Design: todo/species_level_abinitio_reuse.md
 For each species with >=2 strains, picks one representative strain (highest BUSCO
 genome-mode completeness, Scaffold N50 tiebreak, alphabetical `out` final tiebreak),
 then marks every other strain of that species `reuse_eligible` iff its ANI to the
-representative (from ani.db) is >= --ani-threshold (default 99.0). Missing ANI data
+representative (from ani.duckdb) is >= --ani-threshold (default 99.0). Missing ANI data
 is treated as ineligible (fail-closed), never as eligible.
 
 Writes abinitio_reuse_assignments.csv (species, out, is_representative,
@@ -31,7 +31,7 @@ cgp/extrinsic/model/parameters/profile/ subdirectories per species.
 Usage:
     python3 species_reuse_clusters.py \\
         --samples samples.csv \\
-        --ani-db results/ANI/skani/GENUS/ani.db \\
+        --ani-db results/ANI/skani/GENUS/ani.duckdb \\
         --busco-genome-dir results/genome_stats/BUSCO_genome \\
         --target genome_annotation \\
         --out abinitio_reuse_assignments.csv \\
@@ -45,7 +45,7 @@ import csv
 import json
 import re
 import shutil
-import sqlite3
+import duckdb
 import sys
 from collections import defaultdict
 from datetime import date, datetime
@@ -133,7 +133,7 @@ def load_samples(samples_path: Path) -> dict:
     return rows
 
 
-# ── ani.db ──────────────────────────────────────────────────────────────────────
+# ── ani.duckdb ──────────────────────────────────────────────────────────────────
 
 def load_within_species_ani(ani_db_path: Path) -> dict:
     """Return {(asmid_a, asmid_b): ani} for every same-species pair, both
@@ -141,13 +141,16 @@ def load_within_species_ani(ani_db_path: Path) -> dict:
     Asserts non-blank species columns on load (S3.3 of the plan: a known bug
     could silently leave these blank -- fail loudly rather than misclassify
     every strain as ineligible)."""
-    conn = sqlite3.connect(str(ani_db_path))
-    cur = conn.cursor()
-    cur.execute(
+    con = duckdb.connect(str(ani_db_path))
+    result = con.execute(
         "SELECT COUNT(*), SUM(CASE WHEN query_species IS NULL OR query_species='' THEN 1 ELSE 0 END) "
         "FROM ani_pairs"
-    )
-    total, blank = cur.fetchone()
+    ).fetchone()
+    if result is None:
+        total, blank = 0, 0
+    else:
+        total = result[0]
+        blank = result[1] if result[1] is not None else 0
     if total and blank and blank > 0:
         sys.exit(
             f"ERROR: ani.db has {blank}/{total} rows with a blank query_species -- "
@@ -156,15 +159,15 @@ def load_within_species_ani(ani_db_path: Path) -> dict:
             "unreliable species columns. Re-run compare_ANI.nf/COMBINE_ANI_TABLE first."
         )
     pairs = {}
-    cur.execute(
+    rows = con.execute(
         "SELECT query_asmid, ref_asmid, ani FROM ani_pairs WHERE query_species = ref_species"
-    )
-    for qa, ra, ani in cur.fetchall():
+    ).fetchall()
+    for qa, ra, ani in rows:
         if not qa or not ra:
             continue
         pairs[(qa, ra)] = ani
         pairs.setdefault((ra, qa), ani)
-    conn.close()
+    con.close()
     return pairs
 
 
@@ -417,7 +420,7 @@ def backfill_species_store(species: str, rep_out: str, target: Path, shared_root
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--samples", required=True, help="samples.csv path")
-    ap.add_argument("--ani-db", required=True, help="ani.db SQLite path (compare_ANI.nf output)")
+    ap.add_argument("--ani-db", required=True, help="ani.duckdb DuckDB path (compare_ANI.nf output)")
     ap.add_argument("--busco-genome-dir", required=True,
                      help="BUSCO genome-mode results dir (results/genome_stats/BUSCO_genome)")
     ap.add_argument("--target", required=True,
