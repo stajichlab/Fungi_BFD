@@ -69,9 +69,13 @@ workflow ANI_SAMPLES {
             def meta = [
                 id      : genome.getName(),
                 locustag: locustag,
-                species : row.SPECIES?.trim() ?: '',
-                genus   : row.GENUS?.trim()   ?: '',
-                strain  : row.STRAIN?.trim()  ?: '',
+                phylum  : row.PHYLUM?.trim()    ?: '',
+                'class' : row.CLASS?.trim()     ?: '',
+                order   : row.ORDER?.trim()     ?: '',
+                family  : row.FAMILY?.trim()    ?: '',
+                genus   : row.GENUS?.trim()     ?: '',
+                species : row.SPECIES?.trim()   ?: '',
+                strain  : row.STRAIN?.trim()    ?: '',
                 asmid   : asmid,
                 genome  : genome,
                 // With no query_rank configured every genome is a reference.

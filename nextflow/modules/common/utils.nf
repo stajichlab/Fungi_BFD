@@ -187,6 +187,28 @@ def assertRank(String value, String paramName) {
     rank
 }
 
+// Given a meta map (may contain empty strings for undefined ranks) and a
+// query_rank (e.g. GENUS), walk up the hierarchy from the rank ABOVE
+// query_rank to find the first non-empty rank. Returns the sanitised fallback
+// rank name, or null if no defined rank is found above query_rank.
+//
+// Example: query_rank=GENUS, meta.genus='', meta.family='Lasiosphaeriaceae'
+//          → returns 'Lasiosphaeriaceae'
+// Example: query_rank=GENUS, meta.genus='', meta.family='', meta.order='Sordariales'
+//          → returns 'Sordariales'
+def fallbackRank(Map meta, String queryRank) {
+    def ranks  = taxonomicRanks()
+    def qi     = ranks.indexOf(queryRank)
+    if (qi < 0) return null
+    def above  = ranks[0..<qi]
+    def found  = above.findResult { r ->
+        def key = r.toLowerCase()
+        def val = r == 'CLASS' ? (meta['class'] ?: '') : (meta[key] ?: '')
+        val.trim() ? sanitizeTag(val) : null
+    }
+    found
+}
+
 // Build the samples.csv row filter for --taxon RANK:VALUE. Returns an
 // always-true closure when --taxon is unset, so callers can filter
 // unconditionally instead of branching.
@@ -234,9 +256,9 @@ def genomeStem(row, String nameStyle) {
 // `role` adds query_ANI's sixth column; pass null for compare_ANI's five.
 def writeNamesTsv(String group_name, List metas, String prefix = 'names') {
     def withRole = metas.any { m -> m.containsKey('role') }
-    def header   = "filename\tasmid\tgenus\tspecies\tstrain" + (withRole ? "\trole\n" : "\n")
+    def header   = "filename\tasmid\tphylum\tclass\torder\tfamily\tgenus\tspecies\tstrain" + (withRole ? "\trole" : "") + "\n"
     def rows     = metas.collect { m ->
-        def base = "${m.id}\t${m.asmid}\t${m.genus}\t${m.species}\t${m.strain}"
+        def base = "${m.id}\t${m.asmid}\t${m.phylum}\t${m['class'] ?: ''}\t${m.order}\t${m.family}\t${m.genus}\t${m.species}\t${m.strain}"
         withRole ? "${base}\t${m.role}" : base
     }
     def f = file("${workflow.workDir}/${prefix}_${group_name}.tsv")
@@ -266,7 +288,7 @@ def genomeFile(String base) {
 // everything else. Globbing the published files on disk instead makes the true
 // input "everything ever computed", independent of what one invocation saw.
 // (Found twice independently: BFD's MERGE_* steps, 2026-06-25, and
-// COMBINE_ANI_TABLE's ani.db, 2026-07-23 — see .living/learnings.md.)
+// COMBINE_ANI_TABLE's ani.duckdb, 2026-07-23 — see .living/learnings.md.)
 def gatedGlobIn(sync_ch, String baseDir, String glob) {
     sync_ch
         .flatMap { files("${baseDir}/${glob}") }
