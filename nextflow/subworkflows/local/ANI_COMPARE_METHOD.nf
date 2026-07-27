@@ -34,22 +34,10 @@ workflow ANI_COMPARE_METHOD {
     def ani_tsv_ch
 
     if (method == 'skani') {
-        // Batch genomes into chunks of skani_sketch_chunk per sketch job.
-        // skani 0.3.x outputs a consolidated sketch database per chunk
-        // (sketches.db + index.db + markers.bin), merged at compare time.
-        def chunk = Math.max(1, params.skani_sketch_chunk as int)
-        def skani_sketch_in = genome_ch.flatMap { gn, genomes ->
-            def nChunks = (genomes.size() + chunk - 1).intdiv(chunk)
-            (0..<nChunks).collect { i ->
-                def sub    = genomes.drop(i * chunk).take(chunk)
-                def dbName = "sketches_${i}.db"
-                tuple(gn, sub, dbName)
-            }
-        }
-        ani_tsv_ch = SKANI_SKETCH(skani_sketch_in)
-            .groupTuple()
-            .map { gn, db_list -> tuple(gn, db_list.flatten()) }
-            | SKANI_COMPARE
+        // skani 0.3.x: sketch all genomes in one pass, then skani triangle.
+        // Chunking was for the old per-genome .sketch API; skani triangle handles
+        // large groups efficiently with a single sketch directory.
+        ani_tsv_ch = SKANI_COMPARE(genome_ch)
 
     } else if (method == 'mash') {
         ani_tsv_ch = MASH_SKETCH(genome_flat)

@@ -5,6 +5,10 @@
 // parsing block, differing only in whether an `is_query` flag was computed.
 // The flag is always computed here; compare_ANI simply ignores it.
 //
+// Genome lookup: reads ASMID from samples.csv and finds the matching .fa.gz or
+// .masked.fasta.gz in params.genome_dir (defaults to input_clean_genomes/).
+// skani reads gzipped FASTA directly — no decompression needed.
+//
 // Emits one entry per genome that exists on disk:
 //     tuple( group_key, meta )
 //
@@ -17,7 +21,7 @@
 // per genome means group/ungroup operations don't have to re-zip parallel lists.
 //
 
-include { assertRank; taxonRowFilter; genomeStem } from '../../modules/common/utils.nf'
+include { assertRank; taxonRowFilter } from '../../modules/common/utils.nf'
 include { sanitizeTag } from '../../modules/common/utils.nf'
 
 workflow ANI_SAMPLES {
@@ -27,11 +31,6 @@ workflow ANI_SAMPLES {
     query_rank      // upper-case rank whose absence marks a query genome, or '' to disable
 
     main:
-    def nameStyle = (params.genome_name_style as String).toLowerCase()
-    if (!(nameStyle in ['species', 'asmid'])) {
-        error "--genome_name_style must be 'species' or 'asmid'"
-    }
-
     def rowFilter = taxonRowFilter()
 
     samples_ch = channel
@@ -40,20 +39,30 @@ workflow ANI_SAMPLES {
         .filter(rowFilter)
         .map { row ->
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
+            def asmid    = row.ASMID?.trim() ?: ''
             // Sanitised for use as group_name in file/dir names (e.g.
             // ${group_name}.full.ani.tsv) — GENUS/FAMILY rarely need it, but SPECIES
             // values ("Aspergillus fumigatus") contain spaces that must not land raw
             // in a shell-globbed filename.
             def groupKey = sanitizeTag(row[compare_rank])
-            def stem     = genomeStem(row, nameStyle)
-            def genome   = file("${params.genome_dir}/${stem}${params.genome_suffix}", glob: false)
 
             if (!groupKey) {
                 log.warn "Skipping ${locustag}: empty ${compare_rank} field"
                 return null
             }
-            if (!genome.exists()) {
-                log.warn "Skipping ${locustag}: genome not found at ${genome}"
+            if (!asmid) {
+                log.warn "Skipping ${locustag}: empty ASMID field"
+                return null
+            }
+
+            // Look for <asmid>.fa.gz or <asmid>.masked.fasta.gz in genome_dir.
+            // skani reads .gz directly — no decompression step needed.
+            def gz      = file("${params.genome_dir}/${asmid}.fa.gz",           glob: false)
+            def masked  = file("${params.genome_dir}/${asmid}.masked.fasta.gz", glob: false)
+            def genome  = gz.exists() ? gz : (masked.exists() ? masked : null)
+
+            if (!genome) {
+                log.warn "Skipping ${locustag} (${asmid}): no .fa.gz or .masked.fasta.gz in ${params.genome_dir}"
                 return null
             }
 
@@ -63,7 +72,7 @@ workflow ANI_SAMPLES {
                 species : row.SPECIES?.trim() ?: '',
                 genus   : row.GENUS?.trim()   ?: '',
                 strain  : row.STRAIN?.trim()  ?: '',
-                asmid   : row.ASMID?.trim()   ?: '',
+                asmid   : asmid,
                 genome  : genome,
                 // With no query_rank configured every genome is a reference.
                 is_query: query_rank ? !(row[query_rank]?.trim()) : false,
