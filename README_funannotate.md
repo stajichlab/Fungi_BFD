@@ -1,37 +1,45 @@
-# Funannotate Pipeline (`funannotate.nf`)
+# Funannotate Pipeline (`--pipeline funannotate`)
 
 Nextflow DSL2 pipeline for fungal genome prediction and annotation on SLURM HPC.
 Covers the full funannotate workflow: genome cleaning → repeat masking → RNA-seq
 discovery → download → train → predict → (optional) annotate.
 
-Source synced from `../../../1KFG/common_annotate/pipeline/nextflow/funannotate.nf`.
+## Modular structure
 
----
+The pipeline is decomposed into process modules and subworkflows:
 
-## Quick start
+```
+modules/funannotate/
+  setup/       SETUP_TAXONDB
+  genome/      GENOME_CLEAN, GENOME_CLEAN_BATCH, MASKREPEAT_TANTAN_RUN
+  rnaseq/      SRA_QUERY_BATCH, COLLECT_SRA_QUERY, SRA_FETCH, SRA_FETCH_SE,
+               WRITE_EMPTY_READS, RNASEQ_PREPARE, FUNANNOTATE_TRAIN
+  predict/     FUNANNOTATE_PREDICT, FUNANNOTATE_UPDATE
+  function/    ANTISMASH_RUN, INTERPROSCAN_RUN, SIGNALP_RUN,
+               FUNANNOTATE_ANNOTATE
+
+subworkflows/local/
+  FUNANNOTATE_GENOME_PREP.nf    genome cleaning + repeat masking
+  FUNANNOTATE_RNASEQ.nf         SRA query → fetch → trinity → train
+  FUNANNOTATE_PREDICTION.nf     funannotate predict (ab-initio reuse + staleness)
+  FUNANNOTATE_ANNOTATION.nf     antiSMASH + InterProScan + SignalP + update + annotate
+
+workflows/funannotate.nf        orchestrates the 4 subworkflows
+```
+
+Launch via the single entry point `nextflow/main.nf`:
 
 ```bash
-# Default run: clean + mask + SRA query + fetch + train + predict (no annotate)
+nextflow run nextflow/main.nf \
+    -c nextflow/nextflow.config \
+    -profile funannotate --pipeline funannotate \
+    -resume
+```
+
+Or via the SLURM wrapper (recommended for production):
+
+```bash
 sbatch nextflow/run_funannotate.sh
-
-# Survey RNA-seq availability only (produces samples.rnaseq_sra.csv, no downloads)
-sbatch nextflow/run_funannotate.sh --stop_after_sra_query true
-
-# Stop after SRA download/normalisation (skip train/predict)
-sbatch nextflow/run_funannotate.sh --stop_after_sra_fetch true
-
-# Predict + annotate
-sbatch nextflow/run_funannotate.sh --run_annotate true
-
-# Genome cleaning only
-sbatch nextflow/run_funannotate.sh --only_clean true
-
-# Restrict to a taxonomic group
-sbatch nextflow/run_funannotate.sh --taxon PHYLUM:Ascomycota
-sbatch nextflow/run_funannotate.sh --taxon CLASS:Sordariomycetes --n_test 5
-
-# Resume a stopped run
-sbatch nextflow/run_funannotate.sh -resume
 ```
 
 ---

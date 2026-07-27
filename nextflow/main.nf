@@ -56,6 +56,13 @@ workflow {
         PHYling()
     }
     else {
-        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling (got '${params.pipeline}')"
+        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling (got '${params.pipeline}')\n" +
+              "  BFD           — functional annotation + genome stats\n" +
+              "  funannotate    — gene prediction + annotation (modular: modules/funannotate/)\n" +
+              "  compare_ani    — all-vs-all ANI clustering\n" +
+              "  query_ani      — ANI query against existing sketches\n" +
+              "  earlgrey_mask  — EarlGrey repeat masking\n" +
+              "  comparative    — comparative genomics clustering\n" +
+              "  phyling        — PHYling phylogenomics"
     }
 }

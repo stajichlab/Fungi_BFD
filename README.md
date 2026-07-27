@@ -77,17 +77,79 @@ Every pipeline derives its sample list from this file. Key columns:
 
 ## Nextflow pipelines
 
-Four workflows live under `nextflow/`, all sharing one config with per-pipeline profiles.
+All pipelines are launched from the single entry point `nextflow/main.nf`:
 
-| Pipeline | Profile | Launcher | Detail |
+```bash
+nextflow run nextflow/main.nf \
+    -c nextflow/nextflow.config \
+    -profile <profile> \
+    --pipeline <pipeline> \
+    -resume
+```
+
+| `--pipeline` | `-profile` | Launcher script | Description |
 |---|---|---|---|
-| `funannotate.nf` | `funannotate` | `run_funannotate.sh` | [README_funannotate.md](README_funannotate.md) |
-| `BFD.nf` | `BFD` | `run_functional.sh` | [README_BFD.md](README_BFD.md) |
-| `genome_seqstats.nf` | `BFD` | `run_seqstats.sh` | per-species sequence statistics |
-| `interproscan6.nf` | `interproscan6` | — | InterProScan 6 XML for annotate_misc/ |
+| `funannotate` | `funannotate` | `run_funannotate.sh` | Gene prediction + functional annotation |
+| `BFD` | `BFD` | `run_functional.sh` | Functional annotation + genome statistics |
+| `compare_ani` | `ani` | `run_ANI.sh` | All-vs-all ANI clustering |
+| `query_ani` | `ani_query` | `run_ANI.sh` | ANI query against existing sketches |
+| `earlgrey_mask` | `earlgrey` | `run_earlgrey.sh` | EarlGrey repeat masking |
+| `comparative` | `comparative` | `run_comparative.sh` | Comparative genomics clustering |
+| `phyling` | `phyling` | `run_phyling.sh` | PHYling phylogenomics |
 
 All workflows accept `--taxon RANK:VALUE` (e.g. `--taxon PHYLUM:Ascomycota`) and
 `--n_test N` to restrict to the first N samples.
+
+### Funannotate (`--pipeline funannotate`)
+
+Genome cleaning → repeat masking → RNA-seq discovery/download → funannotate train → funannotate predict → (optional) annotate.
+
+```bash
+# Full run
+sbatch nextflow/run_funannotate.sh
+
+# Restrict to a clade
+sbatch nextflow/run_funannotate.sh --taxon PHYLUM:Ascomycota
+
+# Pilot: first 2 samples only
+sbatch nextflow/run_funannotate.sh --n_test 2
+```
+
+See [README_funannotate.md](README_funannotate.md) for details.
+
+### BFD functional annotation (`--pipeline BFD`)
+
+Runs 9 functional annotation tools across all species, then merges results into `tables/`.
+
+```bash
+# Full run (run after funannotate completes)
+sbatch nextflow/run_functional.sh
+
+# Restrict to a clade
+sbatch nextflow/run_functional.sh --taxon PHYLUM:Ascomycota
+```
+
+See [README_BFD.md](README_BFD.md) for details.
+
+### ANI comparison (`--pipeline compare_ani`)
+
+All-vs-all average nucleotide identity within taxonomic groups.
+
+```bash
+# All genera, default thresholds
+nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+    -profile ani --pipeline compare_ani -resume
+
+# Only Ascomycota, at family level
+nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+    -profile ani --pipeline compare_ani \
+    --taxon PHYLUM:Ascomycota --compare FAMILY -resume
+
+# Via the SLURM wrapper (recommended for production)
+sbatch nextflow/run_ANI.sh
+```
+
+See [README_ANI.md](README_ANI.md) for details.
 
 ---
 
@@ -104,7 +166,7 @@ bash nextflow/run_test.sh
 sbatch nextflow/run_funannotate.sh --n_test 2   # pilot
 sbatch nextflow/run_funannotate.sh               # full run
 
-# 4. Functional annotation + input setup (BFD.nf)
+# 4. Functional annotation + input setup (BFD)
 sbatch nextflow/run_functional.sh --n_test 2    # pilot
 sbatch nextflow/run_functional.sh               # full run
 
@@ -112,7 +174,10 @@ sbatch nextflow/run_functional.sh               # full run
 sbatch nextflow/run_seqstats.sh --n_test 2      # pilot
 sbatch nextflow/run_seqstats.sh                  # full run
 
-# 6. Load results into DuckDB
+# 6. ANI clustering (all-vs-all within taxonomic groups)
+sbatch nextflow/run_ANI.sh                        # full run
+
+# 7. Load results into DuckDB
 sbatch pipeline/db/02_build_functional.sh
 ```
 
