@@ -1,5 +1,5 @@
 // Merge every group's pair table + names lookup into one labeled, queryable
-// table (CSV + SQLite) so pairwise identities can be looked up across the
+// table (CSV + DuckDB) so pairwise identities can be looked up across the
 // whole run without re-parsing per-group files.
 process COMBINE_ANI_TABLE {
     label 'report'
@@ -12,7 +12,7 @@ process COMBINE_ANI_TABLE {
 
     output:
         path("all_pairs.csv")
-        path("ani.db")
+        path("ani.duckdb")
 
     script:
     """
@@ -21,11 +21,11 @@ process COMBINE_ANI_TABLE {
         --names-manifest ${names_manifest} \\
         --compare-level "${params.compare}" \\
         --csv-output all_pairs.csv \\
-        --db-output  ani.db
+        --db-output  ani.duckdb
     """
 
     stub:
     """
-    touch all_pairs.csv ani.db
+    touch all_pairs.csv ani.duckdb
     """
 }
