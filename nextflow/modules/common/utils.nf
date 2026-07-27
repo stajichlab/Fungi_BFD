@@ -231,6 +231,16 @@ def taxonRowFilter() {
 // skani preset → CLI flag (medium is the tool default → no flag).
 // Shared by every skani process; the sketch and the compare step MUST pass the
 // same preset or the cached sketches are unusable.
+def skaniCpusFor(int n) {
+    n > 500 ? 32 : n > 200 ? 16 : 8
+}
+
+def skaniMemoryFor(int n, int attempt = 1) {
+    def baseGB  = n > 500 ? 48 : n > 200 ? 32 : 16
+    def floorGB = attempt >= 3 ? 100 : attempt == 2 ? 24 : 6
+    Math.max(baseGB, floorGB).toString() + ' GB'
+}
+
 def skaniPresetFlag(String p) {
     def flags = [fast: '--fast', medium: '', slow: '--slow']
     def key   = (p ?: 'medium').toLowerCase()
