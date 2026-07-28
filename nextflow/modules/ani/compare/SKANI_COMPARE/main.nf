@@ -1,16 +1,16 @@
-include { skaniPresetFlag } from '../../../common/utils.nf'
+include { skaniPresetFlag; skaniCpusFor; skaniMemoryFor } from '../../../common/utils.nf'
 
 process SKANI_COMPARE {
-    tag   "${group_name} [${genomes.size()} genomes]"
+    tag   "${group_name} [${n_genomes} genomes]"
     label 'skani'
 
-    cpus   { genomes.size() > 500 ? 32 : genomes.size() > 200 ? 16 : 8 }
-    memory { genomes.size() > 500 ? '64 GB' : genomes.size() > 200 ? '32 GB' : '16 GB' }
+    cpus   { skaniCpusFor(n_genomes) }
+    memory { skaniMemoryFor(n_genomes, task.attempt) }
 
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
-        tuple val(group_name), path(genomes)
+        tuple val(group_name), val(n_genomes), path(genomes)
 
     output:
         tuple val(group_name), path("${group_name}.full.ani.tsv")

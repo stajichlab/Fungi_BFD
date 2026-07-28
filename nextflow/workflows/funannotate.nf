@@ -18,7 +18,6 @@ include { loadAbinitioReuseMap } from '../modules/funannotate/utils.nf'
 // ── Subworkflows ────────────────────────────────────────────────────────────
 include { FUNANNOTATE_GENOME_PREP }       from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
 include { FUNANNOTATE_RNASEQ }            from '../subworkflows/local/FUNANNOTATE_RNASEQ.nf'
-include { ANI_REPRESENTATIVE_SELECT }     from '../subworkflows/local/ANI_REPRESENTATIVE_SELECT/main.nf'
 include { FUNANNOTATE_PREDICTION }        from '../subworkflows/local/FUNANNOTATE_PREDICTION.nf'
 include { FUNANNOTATE_ANNOTATION }        from '../subworkflows/local/FUNANNOTATE_ANNOTATION.nf'
 
@@ -126,16 +125,14 @@ workflow FUNANNOTATE {
 
     FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome)
 
-    // ── ANI-driven representative selection ───────────────────────────────────
-    // Compute ANI for species with >=2 strains, pick one representative per
-    // species, write abinitio_reuse_assignments.csv, and backfill shared params.
-    // Skipped entirely when --run_ani_reuse=false (all strains train independently).
-    // FUNANNOTATE_PREDICTION reads the CSV produced here via loadAbinitioReuseMap.
-    if (!params.only_clean.toBoolean() && !params.stop_after_sra_fetch.toBoolean()) {
-        ANI_REPRESENTATIVE_SELECT(FUNANNOTATE_RNASEQ.out.predict_input)
-    }
-
     def abinitioReuseMap = loadAbinitioReuseMap()
+
+    if (params.run_ani_reuse.toBoolean() && abinitioReuseMap.isEmpty()) {
+        error "run_ani_reuse=true but no ab-initio reuse assignments found at " +
+              "${params.abinitio_reuse_csv}. Run compare_ANI (--pipeline compare_ani, " +
+              "--compare SPECIES --run_ani_reuse true) first, or set --run_ani_reuse false " +
+              "to train all strains independently."
+    }
 
     FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
 

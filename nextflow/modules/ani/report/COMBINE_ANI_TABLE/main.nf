@@ -19,7 +19,7 @@ process COMBINE_ANI_TABLE {
     # duckdb is not in the python:3.12 base image — install it first.
     # --target installs to a persistent bind mount (work/ANI/python_packages -> /tmp/python_packages)
     # so pip doesn't try to write to the read-only /rhome home dir inside the container.
-    pip install --quiet --target /tmp/python_packages duckdb
+    pip install --quiet --target /tmp/python_packages --ignore-installed duckdb
     PYTHONPATH="/tmp/python_packages:\${PYTHONPATH}" \
     python3 ${projectDir}/bin/combine_ani_table.py \
         --ani-manifest   ${ani_manifest} \

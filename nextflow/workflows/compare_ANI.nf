@@ -119,37 +119,31 @@ workflow COMPARE_ANI {
             }
             .collect()
 
-        // Wait for all groups to finish, then glob their TSVs into a manifest.
-        def merge_done = ani_tsv_ch.collect().map { true }.ifEmpty(false)
-        def tsv_manifest = merge_done
-            .map { dummy -> 
-                def dirPath = "${params.outdir}/${params.ani_method}/${params.compare}"
-                def dir = new File(dirPath)
-                def allFiles = []
-                // Search root directory
-                allFiles.addAll(dir.listFiles()?.findAll { f -> 
-                    f.isFile() && f.name.endsWith('.ani.tsv')
-                } ?: [])
-                // Search subdirectories (1 level deep)
-                def subdirs = dir.listFiles()?.findAll { it.isDirectory() } ?: []
-                subdirs.each { subdir ->
-                    allFiles.addAll(subdir.listFiles()?.findAll { f -> 
-                        f.isFile() && f.name.endsWith('.ani.tsv')
-                    } ?: [])
-                    // Also search 2 levels deep (e.g., batches/)
-                    subdir.listFiles()?.findAll { it.isDirectory() }?.each { subsubdir ->
-                        allFiles.addAll(subsubdir.listFiles()?.findAll { f -> 
-                            f.isFile() && f.name.endsWith('.ani.tsv')
-                        } ?: [])
-                    }
-                }
-                def paths = allFiles.collect { it.absolutePath }.join('\n') + '\n'
-                log.info "Found ${allFiles.size()} ANI files in ${dirPath}: ${allFiles.collect { it.name }}"
-                paths
-            }
-            .collectFile(name: 'tsv_manifest.txt')
+        // Collect ASMIDs from all samples so CONCAT_ANI_TSVS can write the
+        // companion asmid manifest (used for staleness checking on re-runs).
+        def all_asmids = ANI_SAMPLES.out.samples
+            .map { ignored, meta -> meta.asmid }
+            .collect()
+            .toSet()
+        WRITE_ASMID_SET_COMPARE(all_asmids)
 
-        CONCAT_ANI_TSVS(tsv_manifest)
+        // Build a manifest of every group's ANI TSV directly from the channel.
+        // Two suffixes are possible:  skani/mash/sourmash emit
+        //   <group>.full.ani.tsv   (SKANI_COMPARE writes this to batches/ subdir)
+        //   <group>.ani.tsv        (fastani's MERGE_ANI writes this after batching)
+        // Using the live channel avoids both the Channel.fromPath() deadlock inside
+        // operator closures and a race against publishDir copying.
+        def globbed = ani_tsv_ch
+            .map { _group, tsv -> tsv }
+            .collect()
+            .map { tsv_list ->
+                def allFiles = tsv_list.flatten().findAll { it.size() > 0 }.unique()
+                log.info "Found ${allFiles.size()} ANI TSVs for concat"
+                allFiles
+            }
+            .collectFile(name: 'tsv_manifest.txt', newLine: true)
+
+        CONCAT_ANI_TSVS(globbed, WRITE_ASMID_SET_COMPARE.out.asmids)
 
         // Write predict_input to a single file using the process
         WRITE_ANI_PREDICT_INPUT(predict_input_tuples)
@@ -158,7 +152,11 @@ workflow COMPARE_ANI {
             CONCAT_ANI_TSVS.out.out.ifEmpty(file('/dev/null')),
             WRITE_ANI_PREDICT_INPUT.out.tsv,
             file(params.samples),
-            file(params.busco_genome_dir as String)
+            // Derive BUSCO dir from genome_stats_outdir rather than requiring an
+            // explicit busco_genome_dir param.  This is consistent with how
+            // --pipeline busco_genome names its output and prevents silent
+            // misalignment when the two pipelines use different outdir names.
+            file(params.genome_stats_outdir as String + "/BUSCO_genome")
         )
     }
 }
@@ -198,4 +196,27 @@ PYEOF
     """
 }
 
+// Write the run's asmid set to a one-per-line file so CONCAT_ANI_TSVS can
+// read it as a val channel and write the companion asmid manifest alongside
+// the merged TSV (used for staleness checking when re-running with new strains).
+process WRITE_ASMID_SET_COMPARE {
+    tag   "WRITE_ASMID_SET_COMPARE"
+    label 'report'
 
+    input:
+        val asmid_set  // Set of ASMIDs in this run
+
+    output:
+        path("asmid_set.txt"), emit: asmids
+
+    script:
+    def asmid_list = asmid_set.collect { "\"${it}\"" }.join(' ')
+    """
+    printf '%s\\n' ${asmid_list} | tr ' ' '\\n' | sort -u > asmid_set.txt
+    """
+
+    stub:
+    """
+    touch asmid_set.txt
+    """
+}

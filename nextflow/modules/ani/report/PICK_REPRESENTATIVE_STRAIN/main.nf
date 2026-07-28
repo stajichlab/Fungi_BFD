@@ -31,8 +31,8 @@ process PICK_REPRESENTATIVE_STRAIN {
     tag   "PICK_REPRESENTATIVE_STRAIN"
     label 'report'
 
-    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: '*.csv'
-    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: '*.tsv'
+    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: 'abinitio_reuse_assignments*.csv'
+    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: 'repr_assignments.tsv'
 
     input:
         path ani_tsv
@@ -61,7 +61,7 @@ process PICK_REPRESENTATIVE_STRAIN {
         ${shared_root ? "--shared-root ${shared_root}" : ''} \
         ${target ? "--target ${target}" : ''} \
         ${aug_cfg ? "--augustus-config ${aug_cfg}" : ''}
-    mv _reuse_assignments/abinitio_reuse_assignments.csv .
+    mv _reuse_assignments/abinitio_reuse_assignments*.csv .
     mv _reuse_assignments/repr_assignments.tsv .
     """
 

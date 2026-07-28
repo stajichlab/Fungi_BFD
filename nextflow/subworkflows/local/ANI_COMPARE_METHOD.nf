@@ -10,7 +10,6 @@
 //
 
 include { MASH_SKETCH      } from '../../modules/ani/sketch/MASH_SKETCH/main.nf'
-include { SKANI_SKETCH     } from '../../modules/ani/sketch/SKANI_SKETCH/main.nf'
 include { SOURMASH_SKETCH  } from '../../modules/ani/sketch/SOURMASH_SKETCH/main.nf'
 include { SKANI_COMPARE    } from '../../modules/ani/compare/SKANI_COMPARE/main.nf'
 include { MASH_COMPARE     } from '../../modules/ani/compare/MASH_COMPARE/main.nf'
@@ -37,7 +36,10 @@ workflow ANI_COMPARE_METHOD {
         // skani 0.3.x: sketch all genomes in one pass, then skani triangle.
         // Chunking was for the old per-genome .sketch API; skani triangle handles
         // large groups efficiently with a single sketch directory.
-        ani_tsv_ch = SKANI_COMPARE(genome_ch)
+        // Pass n_genomes as an explicit val so the process resource directive can
+        // use it reliably (channel inputs aren't accessible in closures at submit time).
+        def skani_input = genome_ch.map { gn, genomes -> tuple(gn, genomes.size(), genomes) }
+        ani_tsv_ch = SKANI_COMPARE(skani_input)
 
     } else if (method == 'mash') {
         ani_tsv_ch = MASH_SKETCH(genome_flat)

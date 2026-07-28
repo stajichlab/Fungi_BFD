@@ -143,6 +143,25 @@ def load_ani_pairs(ani_tsv_path: Path) -> dict:
     return pairs
 
 
+def _sparse_ani_warning(species: str, asmids: list, ani_pairs: dict,
+                         rep_asmid: str) -> None:
+    """Warn if ANI TSV appears sparse — some intra-species pairs are missing."""
+    n = len(asmids)
+    expected = n * (n - 1)  # (q,r) + (r,q) stored for every comparison
+    asmid_set = set(asmids)
+    found = sum(
+        1 for (q, r) in ani_pairs
+        if q in asmid_set and r in asmid_set and q != r
+    )
+    missing = expected - found
+    if missing > 0:
+        print(f"[WARN] {species}: ANI TSV has only {found}/{expected} intra-species "
+              f"pairs ({missing} missing). This typically means a sparse ANI method "
+              f"(skani/mash/sourmash) missed some comparisons. Strain {rep_asmid} "
+              f"was selected as representative on BUSCO+N50 alone.",
+              file=sys.stderr)
+
+
 def pick_representative(asmids: list, busco_by_out: dict, samples: dict,
                          ani_pairs: dict) -> str:
     asmid_set = set(asmids)
@@ -174,6 +193,7 @@ def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
             continue
         rep_asmid = pick_representative(asmids, busco_by_out, samples, ani_pairs)
         rep_out = samples.get(rep_asmid, {}).get("out", "")
+        _sparse_ani_warning(species, asmids, ani_pairs, rep_asmid)
 
         for asmid in sorted(asmids, key=lambda a: samples.get(a, {}).get("out", "")):
             out = samples.get(asmid, {}).get("out", "")
@@ -275,6 +295,25 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
         return True
 
     store_dir.mkdir(parents=True, exist_ok=True)
+    params_json_path = store_dir / "parameters.json"
+
+    # Guard: if another project's pipeline already wrote a parameters.json from
+    # the same (or a different) representative, don't stomp it.  This prevents
+    # concurrent funannotate runs from races where project A removes project B's
+    # store just before writing its own — a partial write window that could leave
+    # project B's non-representatives with broken shared-params paths.
+    if params_json_path.exists():
+        existing = {}
+        try:
+            existing = json.loads(params_json_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupted — overwrite safely
+        if existing and existing.get("codingquarry") != [{}]:
+            print(f"[INFO] {store_dir} already has a parameters.json written by "
+                  f"another run (representative={existing.get('representative_out', '?')}) "
+                  f"— skipping backfill to avoid stomping it.", file=sys.stderr)
+            return False
+
     params_json = {
         "augustus": [{}], "genemark": [{}], "snap": [{}],
         "codingquarry": [{}], "glimmerhmm": [{}], "table": 1,

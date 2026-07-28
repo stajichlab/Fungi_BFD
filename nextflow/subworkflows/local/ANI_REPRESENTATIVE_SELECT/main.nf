@@ -32,23 +32,32 @@ workflow ANI_REPRESENTATIVE_SELECT {
 
     main:
     def method     = (params.ani_method as String).toLowerCase()
-    def compare    = params.compare as String
-    def ani_out    = "${params.outdir}/${params.ani_method}/${params.compare}"
+    // Representative selection is always species-level; default to SPECIES so
+    // callers don't have to pass --compare just for this step.
+    def compare    = (params.compare ?: 'SPECIES') as String
+    def ani_out    = "${params.outdir}/${params.ani_method}/${compare}"
     def merged_tsv = file("${ani_out}/all_pairs_merged.tsv")
+    def asmid_manifest_file = file("${ani_out}/all_pairs_merged.asmid_manifest.txt")
 
     def skip_ani   = !params.run_ani_reuse.toBoolean()
-    def has_merged = merged_tsv.exists() && merged_tsv.size() > 0
+
+    // Staleness check:  require BOTH the merged TSV and its companion asmid
+    // manifest to exist, and the manifest must contain every asmid in this run.
+    // If a new strain was added to samples.csv the manifest will be stale and
+    // ANI will be recomputed — fixing the params-only check bug.
+    def run_asmid_set = predict_input.map { it[1] }.collect().map { it.toSet() }
+    def has_merged    = merged_tsv.exists() && merged_tsv.size() > 0 &&
+                        asmid_manifest_file.exists() && asmid_manifest_file.size() > 0 &&
+                        isAsmidManifestCurrent(asmid_manifest_file, run_asmid_set.val)
 
     if (skip_ani) {
         log.info "ani_reuse: --run_ani_reuse=false — all strains will train independently"
     } else {
-        log.info "ani_reuse: ${has_merged ? "merged TSV found — using existing ANI data" : "computing ANI for representative selection"}"
+        log.info "ani_reuse: ${has_merged ? "merged TSV + asmid manifest current — using existing ANI data" : "computing ANI for representative selection"}"
     }
 
     // ── 1. ANI compute ─────────────────────────────────────────────────────────
     if (!skip_ani && !has_merged) {
-        def run_asmid_set = predict_input.map { it[1] }.collect().map { it.toSet() }
-
         def samples_ch = ANI_SAMPLES(params.samples, 'SPECIES', '')
             .samples
             .groupTuple()
@@ -60,21 +69,24 @@ workflow ANI_REPRESENTATIVE_SELECT {
 
         ANI_COMPARE_METHOD(samples_ch, method)
 
-        // Wait for all groups to finish, then glob their MERGE_ANI storeDir outputs.
-        def merge_done = ANI_COMPARE_METHOD.out.ani_tsv
-            .collect()
-            .map { true }
-            .ifEmpty(false)
+        // Write the asmid set to a file so CONCAT_ANI_TSVS can read it as a
+        // channel input and write the companion manifest next to the merged TSV.
+        WRITE_ASMID_SET(run_asmid_set)
 
-        def tsv_glob = channel.fromPath("${ani_out}/*/*.ani.tsv")
-            .filter { it.name.endsWith('.ani.tsv') && it.size() > 0 }
+        // Build a manifest of every group's ANI TSV directly from the channel.
+        // Using the live channel avoids both the Channel.fromPath() deadlock inside
+        // operator closures and a race against publishDir copying.
+        def tsv_manifest = ANI_COMPARE_METHOD.out.ani_tsv
+            .map { _group, tsv -> tsv }
+            .collect()
+            .map { tsv_list ->
+                def allFiles = tsv_list.flatten().findAll { it.size() > 0 }.unique()
+                log.info "Found ${allFiles.size()} ANI TSVs for concat"
+                allFiles
+            }
             .collectFile(name: 'tsv_manifest.txt', newLine: true)
 
-        def merged_input = merge_done
-            .combine(tsv_glob)
-            .map { _done, manifest -> manifest }
-
-        CONCAT_ANI_TSVS(merged_input)
+        CONCAT_ANI_TSVS(tsv_manifest, WRITE_ASMID_SET.out.asmids)
     }
 
     def ani_tsv = (skip_ani || has_merged)
@@ -90,11 +102,45 @@ workflow ANI_REPRESENTATIVE_SELECT {
         ani_tsv.ifEmpty(file('/dev/null')),
         WRITE_PREDICT_INPUT.out.tsv,
         file(params.samples),
-        file(params.busco_genome_dir as String)
+        // Derive BUSCO dir from genome_stats_outdir rather than requiring an
+        // explicit busco_genome_dir param.  Consistent with --pipeline
+        // busco_genome's output naming; no silent misalignment possible.
+        file(params.genome_stats_outdir as String + "/BUSCO_genome")
     )
 
     emit:
     assignments_csv = PICK_REPRESENTATIVE_STRAIN.out.outCSV
+}
+
+// Return true when every asmid in `current_set` appears in `manifest_file`.
+// Missing entries mean a new strain was added → cached ANI is stale.
+def isAsmidManifestCurrent(File manifestFile, Set currentSet) {
+    def stored = manifestFile.readLines()*.trim().findAll { it } as Set
+    currentSet.every { stored.contains(it) }
+}
+
+// Write the run's asmid set to a one-per-line file so CONCAT_ANI_TSVS can
+// read it as a val channel and write the companion asmid manifest.
+process WRITE_ASMID_SET {
+    tag   "WRITE_ASMID_SET"
+    label 'report'
+
+    input:
+        val asmid_set  // Set of ASMIDs for this run
+
+    output:
+        path("run_asmid_set.txt"), emit: asmids
+
+    script:
+    def asmid_list = asmid_set.collect { it }.join('\n')
+    """
+    printf '%s\\n' '${asmid_list}' | grep -v '^\${\$}' | sort -u > run_asmid_set.txt
+    """
+
+    stub:
+    """
+    touch run_asmid_set.txt
+    """
 }
 
 // Write predict_input channel to a TSV file for PICK_REPRESENTATIVE_STRAIN.
