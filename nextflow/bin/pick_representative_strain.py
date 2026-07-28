@@ -200,13 +200,29 @@ def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
     return assignments
 
 
-def write_assignments(assignments: list, out_path: Path):
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=[
-            "species", "out", "is_representative", "representative_out",
-            "ani_to_representative", "reuse_eligible",
-        ])
+def write_assignments(assignments: list, out_dir: Path):
+    """Write per-species abinitio_reuse_assignments.{species}.csv files and
+    a combined abinitio_reuse_assignments.csv for loadAbinitioReuseMap."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    by_species = defaultdict(list)
+    for row in assignments:
+        by_species[row["species"]].append(row)
+    
+    fieldnames = ["species", "out", "is_representative", "representative_out",
+                  "ani_to_representative", "reuse_eligible"]
+    
+    for species, rows in by_species.items():
+        species_tag = re.sub(r"\s+", "_", species)
+        out_path = out_dir / f"abinitio_reuse_assignments.{species_tag}.csv"
+        with open(out_path, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=fieldnames)
+            w.writeheader()
+            for row in rows:
+                w.writerow(row)
+    
+    combined_path = out_dir / "abinitio_reuse_assignments.csv"
+    with open(combined_path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fieldnames)
         w.writeheader()
         for row in assignments:
             w.writerow(row)
@@ -381,8 +397,8 @@ def main():
     assignments = compute_assignments(predict_input, samples, ani_pairs,
                                        busco_by_out, args.ani_threshold)
 
-    out_path = Path(args.out_dir) / "abinitio_reuse_assignments.csv"
-    write_assignments(assignments, out_path)
+    out_dir = Path(args.out_dir)
+    write_assignments(assignments, out_dir)
 
     n_species = len({a["species"] for a in assignments})
     n_eligible = sum(1 for a in assignments if a["reuse_eligible"])
@@ -391,7 +407,7 @@ def main():
                    if not a["is_representative"] and a["ani_to_representative"] == "")
     print(f"[INFO] Wrote {len(assignments)} rows ({n_species} species, "
           f"{n_rep} representative, {n_eligible} reuse_eligible, "
-          f"{n_no_ani} fail-closed/missing-ANI) to {out_path}", file=sys.stderr)
+          f"{n_no_ani} fail-closed/missing-ANI) to {out_dir}/", file=sys.stderr)
 
     # Write repr_assignments.tsv for pipeline channel joins.
     repr_path = Path(args.out_dir) / "repr_assignments.tsv"
