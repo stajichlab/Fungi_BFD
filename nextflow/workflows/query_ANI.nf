@@ -54,7 +54,8 @@ workflow QUERY_ANI {
     log.info "query_ANI: grouping by ${compareRank}, querying genomes missing ${queryRank}" +
         (useFallback ? " [fallback mode: grouping by next defined rank]" : "")
 
-    ANI_SAMPLES(params.samples, compareRank, queryRank)
+    // query_ANI has no --asmid restriction use case today; pass a no-op filter.
+    ANI_SAMPLES(params.samples, compareRank, queryRank, { _row -> true })
 
     def grouped_ch = ANI_SAMPLES.out.samples
         .groupTuple()

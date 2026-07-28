@@ -226,6 +226,22 @@ def taxonRowFilter() {
     return { row -> row[taxRank]?.trim() == taxValue }
 }
 
+// Build the samples.csv row filter for --asmid. Returns an always-true
+// closure when --asmid is unset, so callers can filter unconditionally
+// instead of branching. Mirrors taxonRowFilter() above; previously only
+// funannotate.nf and earlgrey_mask.nf applied this filter, so an
+// --asmid-restricted funannotate run still computed ANI/BUSCO
+// representative-picking (compare_ANI.nf, BFD.nf genome_stats) against the
+// full unfiltered sample set.
+def asmidRowFilter() {
+    if (!params.asmid) {
+        return { _row -> true }
+    }
+    def asmidValue = (params.asmid as String).trim()
+    log.info "ASMID filter: processing only '${asmidValue}'"
+    return { row -> row.ASMID?.trim() == asmidValue }
+}
+
 // ── ANI ─────────────────────────────────────────────────────────────────────
 
 // skani preset → CLI flag (medium is the tool default → no flag).

@@ -56,7 +56,8 @@ workflow COMPARE_ANI {
 
     // ── Samples → groups ──────────────────────────────────────────────────────
     // query_rank is '' here: compare_ANI treats every genome as a reference.
-    ANI_SAMPLES(params.samples, compareRank, '')
+    // TODO(#4): wire --asmid filtering through here instead of { row -> true }.
+    ANI_SAMPLES(params.samples, compareRank, '', { _row -> true })
 
     // n_test limits *groups* (applied after groupTuple so --n_test 3 = 3 groups).
     def grouped_ch = ANI_SAMPLES.out.samples
