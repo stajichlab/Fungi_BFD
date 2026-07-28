@@ -33,6 +33,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
+_ASMID_EXT_RE = re.compile(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$')
+
 
 def clean_strain(raw_strain: str) -> str:
     s = (raw_strain or "").strip()
@@ -133,8 +135,8 @@ def load_ani_pairs(ani_tsv_path: Path) -> dict:
             except (ValueError, IndexError):
                 continue
             # Strip common sequence file extensions to get the asmid
-            q_asmid = re.sub(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$', '', q_file)
-            r_asmid = re.sub(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$', '', r_file)
+            q_asmid = _ASMID_EXT_RE.sub('', q_file)
+            r_asmid = _ASMID_EXT_RE.sub('', r_file)
             if q_asmid and r_asmid:
                 pairs[(q_asmid, r_asmid)] = ani
                 pairs.setdefault((r_asmid, q_asmid), ani)
