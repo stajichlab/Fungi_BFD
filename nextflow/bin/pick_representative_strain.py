@@ -421,11 +421,28 @@ def main():
     ap.add_argument("--target", default="")
     ap.add_argument("--augustus-config", default="")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--allow-missing-busco", action="store_true",
+                    help="Proceed even if --busco-dir is missing or has no parseable "
+                         "summaries (representative picking then falls back to "
+                         "alphabetical order for every species). Default: fail fast, "
+                         "since an empty/missing dir almost always means genome_stats "
+                         "(--pipeline BFD --run_busco_genome) hasn't been run yet.")
     args = ap.parse_args()
 
     predict_input = load_predict_input(Path(args.predict_input))
     samples = load_samples(Path(args.samples))
-    busco_by_out = load_busco_by_out(Path(args.busco_dir))
+    busco_dir = Path(args.busco_dir)
+    busco_by_out = load_busco_by_out(busco_dir)
+    if not busco_by_out and not args.allow_missing_busco:
+        sys.exit(
+            f"[ERROR] No BUSCO summaries found in {busco_dir} "
+            f"(exists: {busco_dir.is_dir()}). Representative selection picks by BUSCO "
+            "completeness + N50 parsed from these files, so it must run after "
+            "genome_stats (--pipeline BFD --run_busco_genome true) has published its "
+            "output here — otherwise every species silently falls back to picking "
+            "the alphabetically-last strain. Run genome_stats first, or pass "
+            "--allow-missing-busco to proceed with alphabetical-only selection anyway."
+        )
     ani_pairs = load_ani_pairs(Path(args.ani_tsv))
 
     print(f"[INFO] predict_input: {len(predict_input)} strains", file=sys.stderr)
