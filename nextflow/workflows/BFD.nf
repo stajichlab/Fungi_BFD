@@ -22,7 +22,7 @@ include { INPUT_SETUP       } from '../subworkflows/local/INPUT_SETUP.nf'
 include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
-include { taxonRowFilter    } from '../modules/common/utils.nf'
+include { taxonRowFilter; asmidRowFilter } from '../modules/common/utils.nf'
 include { cleanStrain; makeSampleTag; resolveGenomeFile } from '../modules/common/utils.nf'
 
 workflow BFD {
@@ -39,6 +39,7 @@ workflow BFD {
     samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
 
     def taxonFilter = taxonRowFilter()
+    def asmidFilter = asmidRowFilter()
 
     // ── Base sample channel ──────────────────────────────────────────────────
     // Emits one meta map per row.
@@ -47,6 +48,7 @@ workflow BFD {
         .fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
+        .filter(asmidFilter)
         .map { row ->
             // meta.id is the filesystem-safe SPECIES_STRAIN tag and the primary key
             // every module names its outputs after (plan section 2.4).
@@ -113,6 +115,7 @@ workflow BFD {
         .fromPath(params.samples)
         .splitCsv(header: true)
         .filter(taxonFilter)
+        .filter(asmidFilter)
         .map { row ->
             def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(basename, row.ASMID?.trim() ?: '')
