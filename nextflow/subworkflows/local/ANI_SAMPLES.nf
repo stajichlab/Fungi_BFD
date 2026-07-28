@@ -21,7 +21,7 @@
 // per genome means group/ungroup operations don't have to re-zip parallel lists.
 //
 
-include { assertRank; taxonRowFilter } from '../../modules/common/utils.nf'
+include { assertRank; taxonRowFilter; asmidRowFilter } from '../../modules/common/utils.nf'
 include { sanitizeTag } from '../../modules/common/utils.nf'
 
 workflow ANI_SAMPLES {
@@ -29,6 +29,7 @@ workflow ANI_SAMPLES {
     samples_csv     // path to samples.csv
     compare_rank    // validated, upper-case rank to group by
     query_rank      // upper-case rank whose absence marks a query genome, or '' to disable
+    asmid_filter    // row filter closure (see asmidRowFilter()); pass { row -> true } for none
 
     main:
     def rowFilter = taxonRowFilter()
@@ -37,6 +38,7 @@ workflow ANI_SAMPLES {
         .fromPath(samples_csv)
         .splitCsv(header: true)
         .filter(rowFilter)
+        .filter(asmid_filter)
         .map { row ->
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def asmid    = row.ASMID?.trim() ?: ''

@@ -19,7 +19,7 @@ process PHYLING_ALIGN {
         base="\$(basename "\$base" .fa)"
         base="\${base%.proteins}"
         base="\${base%.cds-transcripts}"
-        ext="\$(echo "\$f" | grep -oE '\\.fa(\\.gz)?$')"
+        ext="\$(echo "\$f" | grep -oE '\\.fa(\\.gz)?\$')"
         ln -sfn "\$(readlink -f "\$f")" "staged/\${base}\${ext}"
     done
 

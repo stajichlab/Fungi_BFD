@@ -123,8 +123,10 @@ workflow FUNANNOTATE {
     // ── Stages ────────────────────────────────────────────────────────────────
     FUNANNOTATE_GENOME_PREP(jobs)
 
-    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome)
-
+    // Loaded before FUNANNOTATE_RNASEQ so its species-level "which assembly
+    // anchors the shared Trinity-GG build" pick can use the same ANI/BUSCO
+    // representative as FUNANNOTATE_PREDICTION's ab-initio reuse decision,
+    // instead of an unrelated, arbitrary pick (see .github issue #3).
     def abinitioReuseMap = loadAbinitioReuseMap()
 
     if (params.run_ani_reuse.toBoolean() && abinitioReuseMap.isEmpty()) {
@@ -133,6 +135,8 @@ workflow FUNANNOTATE {
               "--compare SPECIES --run_ani_reuse true) first, or set --run_ani_reuse false " +
               "to train all strains independently."
     }
+
+    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap)
 
     FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
 

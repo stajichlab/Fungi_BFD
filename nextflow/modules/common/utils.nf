@@ -226,6 +226,22 @@ def taxonRowFilter() {
     return { row -> row[taxRank]?.trim() == taxValue }
 }
 
+// Build the samples.csv row filter for --asmid. Returns an always-true
+// closure when --asmid is unset, so callers can filter unconditionally
+// instead of branching. Mirrors taxonRowFilter() above; previously only
+// funannotate.nf and earlgrey_mask.nf applied this filter, so an
+// --asmid-restricted funannotate run still computed ANI/BUSCO
+// representative-picking (compare_ANI.nf, BFD.nf genome_stats) against the
+// full unfiltered sample set.
+def asmidRowFilter() {
+    if (!params.asmid) {
+        return { _row -> true }
+    }
+    def asmidValue = (params.asmid as String).trim()
+    log.info "ASMID filter: processing only '${asmidValue}'"
+    return { row -> row.ASMID?.trim() == asmidValue }
+}
+
 // ── ANI ─────────────────────────────────────────────────────────────────────
 
 // skani preset → CLI flag (medium is the tool default → no flag).
@@ -285,6 +301,26 @@ def genomeFile(String base) {
     def gz = file("${base}.gz", glob: false)
     if (gz.exists() && gz.size() > 0) return gz
     return file(base, glob: false)
+}
+
+// Resolve a genome FASTA for BFD's genome-stats channels, which need to work
+// both post-annotation (genome_dir holds SETUP_SYMLINKS' <meta.id>.scaffolds.fa)
+// and pre-annotation (genome_dir = input_clean_genomes/, holding raw/clean
+// assemblies named by ASMID — see ANI_SAMPLES.nf, which uses this same
+// <asmid>.fa.gz / <asmid>.masked.fasta.gz convention). Tries the annotated-name
+// form first so an already-annotated genome keeps using its canonical output;
+// falls back to the ASMID form so genome_stats can run directly off assemblies
+// with no annotation yet. Returns null (not a non-existent file) when nothing
+// on disk matches either convention.
+def resolveGenomeFile(String genomeDir, String metaId, String asmid) {
+    def byId = file("${genomeDir}/${metaId}.scaffolds.fa", glob: false)
+    if (byId.exists()) return byId
+    if (!asmid) return null
+    def gz = file("${genomeDir}/${asmid}.fa.gz", glob: false)
+    if (gz.exists()) return gz
+    def masked = file("${genomeDir}/${asmid}.masked.fasta.gz", glob: false)
+    if (masked.exists()) return masked
+    return null
 }
 
 // ── Gated globs and manifests ───────────────────────────────────────────────

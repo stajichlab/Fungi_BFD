@@ -30,7 +30,7 @@
 // Parameter defaults live in conf/profile_ANI.config.
 //
 
-include { assertRank; writeNamesTsv; gatedGlobIn; toManifest } from '../modules/common/utils.nf'
+include { assertRank; writeNamesTsv; gatedGlobIn; toManifest; asmidRowFilter } from '../modules/common/utils.nf'
 include { ANI_SAMPLES }               from '../subworkflows/local/ANI_SAMPLES.nf'
 include { ANI_COMPARE_METHOD }        from '../subworkflows/local/ANI_COMPARE_METHOD.nf'
 include { REPORT_ANI }                from '../modules/ani/report/REPORT_ANI/main.nf'
@@ -56,7 +56,10 @@ workflow COMPARE_ANI {
 
     // ── Samples → groups ──────────────────────────────────────────────────────
     // query_rank is '' here: compare_ANI treats every genome as a reference.
-    ANI_SAMPLES(params.samples, compareRank, '')
+    // --asmid restricts the run the same way funannotate.nf/earlgrey_mask.nf do,
+    // so representative-picking off this run's ANI data can't be influenced by
+    // a strain that --asmid excluded (see .github issue #3).
+    ANI_SAMPLES(params.samples, compareRank, '', asmidRowFilter())
 
     // n_test limits *groups* (applied after groupTuple so --n_test 3 = 3 groups).
     def grouped_ch = ANI_SAMPLES.out.samples

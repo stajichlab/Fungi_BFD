@@ -58,7 +58,9 @@ workflow ANI_REPRESENTATIVE_SELECT {
 
     // ── 1. ANI compute ─────────────────────────────────────────────────────────
     if (!skip_ani && !has_merged) {
-        def samples_ch = ANI_SAMPLES(params.samples, 'SPECIES', '')
+        // Filtering to this run's asmids happens below via run_asmid_set, so no
+        // extra --asmid filter is needed at the ANI_SAMPLES level here.
+        def samples_ch = ANI_SAMPLES(params.samples, 'SPECIES', '', { _row -> true })
             .samples
             .groupTuple()
             .map { sp, metas ->
