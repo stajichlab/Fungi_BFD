@@ -301,10 +301,8 @@ def genomeFile(String base) {
 // COMBINE_ANI_TABLE's ani.duckdb, 2026-07-23 — see .living/learnings.md.)
 def gatedGlobIn(sync_ch, String baseDir, String glob) {
     sync_ch
+        .filter { it }
         .flatMap { files("${baseDir}/${glob}") }
-        .filter  { it.size() > 0 }
-        .collect()
-        .filter  { !it.isEmpty() }
 }
 
 // Collapse a channel of input files into one sorted manifest, TAB-delimited:
@@ -320,8 +318,7 @@ def gatedGlobIn(sync_ch, String baseDir, String glob) {
 // task's input hash changes and -resume re-runs it; if nothing changed the
 // manifest is byte-identical and the task is a cache hit.
 def toManifest(ch, String name) {
-    ch.flatten()
-      .map { f -> "${f.toString()}\t${f.lastModified()}\t${f.size()}" }
+    ch.map { f -> "${f}\t${file(f).lastModified()}\t${file(f).size()}" }
       .collectFile(name: name, newLine: true, sort: true)
 }
 

@@ -31,7 +31,8 @@ process PICK_REPRESENTATIVE_STRAIN {
     tag   "PICK_REPRESENTATIVE_STRAIN"
     label 'report'
 
-    publishDir "${params.target}/_reuse_assignments", mode: 'copy'
+    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: '*.csv'
+    publishDir "${params.target}/_reuse_assignments", mode: 'copy', pattern: '*.tsv'
 
     input:
         path ani_tsv
@@ -48,18 +49,20 @@ process PICK_REPRESENTATIVE_STRAIN {
     def shared_root = params.gene_prediction_shared_abinitio ?: ''
     def target      = params.target ?: ''
     def aug_cfg     = params.augustus_config ?: ''
-    def out_dir     = "${params.target}/_reuse_assignments"
     """
-    pick_representative_strain.py \
+    mkdir -p _reuse_assignments
+    python "${projectDir}/bin/pick_representative_strain.py" \
         --ani-tsv "${ani_tsv}" \
         --predict-input "${predict_input_tsv}" \
         --samples "${samples_csv}" \
         --busco-dir "${busco_dir}" \
-        --out-dir "${out_dir}" \
+        --out-dir "_reuse_assignments" \
         --ani-threshold "${threshold}" \
         ${shared_root ? "--shared-root ${shared_root}" : ''} \
         ${target ? "--target ${target}" : ''} \
         ${aug_cfg ? "--augustus-config ${aug_cfg}" : ''}
+    mv _reuse_assignments/abinitio_reuse_assignments.csv .
+    mv _reuse_assignments/repr_assignments.tsv .
     """
 
     stub:

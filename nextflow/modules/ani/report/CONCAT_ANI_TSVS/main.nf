@@ -14,11 +14,9 @@ process CONCAT_ANI_TSVS {
 
     script:
     """
-    # Copy header from first file, then all data rows from every file.
-    head -1 "\$(sed 1q "${manifest}")" > all_pairs_merged.tsv
-    while IFS= read -r f; do
-        [ -s "\$f" ] && awk 'NR>1' "\$f" >> all_pairs_merged.tsv
-    done < "${manifest}"
+    # Write header, then all data rows from every file.
+    printf 'query\\tref\\tANI\\n' > all_pairs_merged.tsv
+    xargs -a "${manifest}" -I{} sh -c '[ -s "{}" ] && cat "{}"' >> all_pairs_merged.tsv
     """
 
     stub:

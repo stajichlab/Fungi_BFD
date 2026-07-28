@@ -132,8 +132,9 @@ def load_ani_pairs(ani_tsv_path: Path) -> dict:
                 ani = float(row[2])
             except (ValueError, IndexError):
                 continue
-            q_asmid = q_file.split('.')[0]
-            r_asmid = r_file.split('.')[0]
+            # Strip common extensions to get the asmid
+            q_asmid = q_file.removesuffix('.gz').removesuffix('.fasta').removesuffix('.fna').removesuffix('.fa')
+            r_asmid = r_file.removesuffix('.gz').removesuffix('.fasta').removesuffix('.fna').removesuffix('.fa')
             if q_asmid and r_asmid:
                 pairs[(q_asmid, r_asmid)] = ani
                 pairs.setdefault((r_asmid, q_asmid), ani)
@@ -334,18 +335,14 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
 
 def write_repr_assignments(assignments: list, out_path: Path):
     """Write a simple TSV for pipeline channel joins:
-    out, asmid, species, is_representative, representative_out,
-    ani_to_representative, reuse_eligible
-    (asmid recovered from samples.csv lookup)."""
-    samples = {}
-    with open(Path(__file__).parent.parent.parent / "samples.csv" if False else "") as _:
-        pass
+    out, species, is_representative, representative_out,
+    ani_to_representative, reuse_eligible"""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as fh:
-        fh.write("out\tasmid\tspecies\tis_representative\t"
+        fh.write("out\tspecies\tis_representative\t"
                  "representative_out\tani_to_representative\treuse_eligible\n")
         for a in assignments:
-            fh.write(f"{a['out']}\t{a.get('asmid','')}\t{a['species']}\t"
+            fh.write(f"{a['out']}\t{a['species']}\t"
                      f"{a['is_representative']}\t{a['representative_out']}\t"
                      f"{a['ani_to_representative']}\t{a['reuse_eligible']}\n")
 
@@ -379,14 +376,8 @@ def main():
     print(f"[INFO] BUSCO summaries: {len(busco_by_out)}", file=sys.stderr)
     print(f"[INFO] ANI pairs: {len(ani_pairs)//2} unique pairs", file=sys.stderr)
 
-    # Inject asmid into assignments using samples.csv lookup by out.
-    samples_by_out = {v["out"]: k for k, v in samples.items()}
     assignments = compute_assignments(predict_input, samples, ani_pairs,
                                        busco_by_out, args.ani_threshold)
-
-    # Add asmid to each assignment row for the repr_assignments.tsv output.
-    for a in assignments:
-        a["asmid"] = samples_by_out.get(a["out"], "")
 
     out_path = Path(args.out_dir) / "abinitio_reuse_assignments.csv"
     write_assignments(assignments, out_path)
