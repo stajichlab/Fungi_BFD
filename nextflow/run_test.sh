@@ -95,4 +95,35 @@ nextflow run ${NXFDIR}/main.nf \
     -stub-run 2>&1 | tee logs/nextflow/funannotate_stubrun.log
 
 echo ""
+echo "=== Step 8: --asmid filtering (compare_ani) ==="
+# Locks in the compare_ANI.nf/BFD.nf --asmid fix (issue #3): test_samples.csv
+# has two single-strain species (GCF_TEST001, GCF_TEST002); restricting to one
+# ASMID must leave exactly that one row in predict_input_for_ani.tsv, proving
+# ANI/BUSCO representative-picking no longer runs against the full unfiltered
+# sample set when --asmid is set.
+NXF_OPTS="-Xms256m -Xmx2g" \
+nextflow run ${NXFDIR}/main.nf \
+    -c ${NXFDIR}/nextflow.config \
+    -profile ani,test,test_ani \
+    --pipeline compare_ani --compare SPECIES --run_ani_reuse true \
+    --asmid GCF_TEST001 \
+    -stub-run 2>&1 | tee logs/nextflow/asmid_stubrun.log
+
+ASMID_TSV="${NXFDIR}/tests/output/ani_genome_annotation/_reuse_assignments/predict_input_for_ani.tsv"
+n_rows=$(tail -n +2 "${ASMID_TSV}" | grep -c . || true)
+if [ "${n_rows}" -ne 1 ]; then
+    echo "FAIL: expected 1 row in ${ASMID_TSV} with --asmid GCF_TEST001, got ${n_rows}" >&2
+    exit 1
+fi
+if ! grep -q '^GCF_TEST001' "${ASMID_TSV}"; then
+    echo "FAIL: ${ASMID_TSV} does not contain the requested ASMID GCF_TEST001" >&2
+    exit 1
+fi
+if grep -q 'GCF_TEST002' "${ASMID_TSV}"; then
+    echo "FAIL: ${ASMID_TSV} contains GCF_TEST002 -- --asmid filtering did not restrict the sample set" >&2
+    exit 1
+fi
+echo "OK: --asmid GCF_TEST001 correctly restricted to 1 row"
+
+echo ""
 echo "All tests passed."
