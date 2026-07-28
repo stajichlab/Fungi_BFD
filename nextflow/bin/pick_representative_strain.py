@@ -132,9 +132,9 @@ def load_ani_pairs(ani_tsv_path: Path) -> dict:
                 ani = float(row[2])
             except (ValueError, IndexError):
                 continue
-            # Strip common extensions to get the asmid
-            q_asmid = q_file.removesuffix('.gz').removesuffix('.fasta').removesuffix('.fna').removesuffix('.fa')
-            r_asmid = r_file.removesuffix('.gz').removesuffix('.fasta').removesuffix('.fna').removesuffix('.fa')
+            # Strip common sequence file extensions to get the asmid
+            q_asmid = re.sub(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$', '', q_file)
+            r_asmid = re.sub(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$', '', r_file)
             if q_asmid and r_asmid:
                 pairs[(q_asmid, r_asmid)] = ani
                 pairs.setdefault((r_asmid, q_asmid), ani)
