@@ -11,33 +11,21 @@ process CONCAT_ANI_TSVS {
     publishDir "${params.outdir}/${params.ani_method}/${params.compare}", mode: 'copy', overwrite: true
 
     input:
-        path manifest  // file listing .ani.tsv paths, one per line
-        val asmids     // list of ASMIDs that were used to produce the input TSVs
+        path manifest    // file listing .ani.tsv paths, one per line
+        path asmid_file  // one ASMID per line, already deduped/sorted by the caller
 
     output:
         path("all_pairs_merged.tsv"),           emit: out
         path("all_pairs_merged.asmid_manifest.txt"), emit: asmid_manifest
 
     script:
-    // Dedupe/sort in Groovy (asmids is already available at template time) so the
-    // shell side never has to round-trip asmid strings through word-splitting or
-    // regex, and never needs a literal `$` inside this GString script block.
-    def uniqAsmids = (asmids ?: [])
-        .findAll { it }
-        .collect { it.toString().trim() }
-        .findAll { it }
-        .unique()
-        .sort()
-    def asmidManifestCmd = uniqAsmids
-        ? "cat > all_pairs_merged.asmid_manifest.txt << 'ASMID_EOF'\n${uniqAsmids.join('\n')}\nASMID_EOF"
-        : "touch all_pairs_merged.asmid_manifest.txt"
     """
     # Write header, then all data rows from every file.
     printf 'query\\tref\\tANI\\n' > all_pairs_merged.tsv
     xargs -a "${manifest}" -I{} sh -c '[ -s "{}" ] && cat "{}"' >> all_pairs_merged.tsv
 
     # Write the asmid manifest so callers can detect when the dataset grew.
-    ${asmidManifestCmd}
+    cp "${asmid_file}" all_pairs_merged.asmid_manifest.txt
     """
 
     stub:

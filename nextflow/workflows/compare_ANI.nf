@@ -136,15 +136,24 @@ workflow COMPARE_ANI {
         //   <group>.ani.tsv        (fastani's MERGE_ANI writes this after batching)
         // Using the live channel avoids both the Channel.fromPath() deadlock inside
         // operator closures and a race against publishDir copying.
-        def globbed = ani_tsv_ch
+        //
+        // IMPORTANT: feed collectFile() a channel of *string* path emissions, one
+        // per group — do NOT .collect() them into a single List first. collectFile()
+        // treats a real Path/File item as a file to fold into the collector (keyed
+        // off that file's own name), not as a line of text; wrapping 9 of them in one
+        // Groovy List and handing collectFile a single such item silently produced
+        // one of the original per-species ANI tsvs as the "manifest" instead of a
+        // 9-line list of paths (see .living/learnings.md — CONCAT_ANI_TSVS reuse-0 bug).
+        def ani_tsv_paths = ani_tsv_ch
             .map { _group, tsv -> tsv }
-            .collect()
-            .map { tsv_list ->
-                def allFiles = tsv_list.flatten().findAll { it.size() > 0 }.unique()
-                log.info "Found ${allFiles.size()} ANI TSVs for concat"
-                allFiles
-            }
-            .collectFile(name: 'tsv_manifest.txt', newLine: true)
+            .filter { it.size() > 0 }
+
+        ani_tsv_paths.collect().subscribe { log.info "Found ${it.size()} ANI TSVs for concat" }
+
+        def globbed = ani_tsv_paths
+            .map { it.toString() }
+            .unique()
+            .collectFile(name: 'tsv_manifest.txt', newLine: true, sort: true)
 
         CONCAT_ANI_TSVS(globbed, WRITE_ASMID_SET_COMPARE.out.asmids)
 

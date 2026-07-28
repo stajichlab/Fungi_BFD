@@ -78,15 +78,20 @@ workflow ANI_REPRESENTATIVE_SELECT {
         // Build a manifest of every group's ANI TSV directly from the channel.
         // Using the live channel avoids both the Channel.fromPath() deadlock inside
         // operator closures and a race against publishDir copying.
-        def tsv_manifest = ANI_COMPARE_METHOD.out.ani_tsv
+        //
+        // IMPORTANT: feed collectFile() a channel of *string* path emissions, one
+        // per group — do NOT .collect() them into a single List first. See the
+        // matching comment in workflows/compare_ANI.nf (same bug, same fix).
+        def ani_tsv_paths = ANI_COMPARE_METHOD.out.ani_tsv
             .map { _group, tsv -> tsv }
-            .collect()
-            .map { tsv_list ->
-                def allFiles = tsv_list.flatten().findAll { it.size() > 0 }.unique()
-                log.info "Found ${allFiles.size()} ANI TSVs for concat"
-                allFiles
-            }
-            .collectFile(name: 'tsv_manifest.txt', newLine: true)
+            .filter { it.size() > 0 }
+
+        ani_tsv_paths.collect().subscribe { log.info "Found ${it.size()} ANI TSVs for concat" }
+
+        def tsv_manifest = ani_tsv_paths
+            .map { it.toString() }
+            .unique()
+            .collectFile(name: 'tsv_manifest.txt', newLine: true, sort: true)
 
         CONCAT_ANI_TSVS(tsv_manifest, WRITE_ASMID_SET.out.asmids)
     }
