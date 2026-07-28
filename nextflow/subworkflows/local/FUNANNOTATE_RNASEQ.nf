@@ -8,6 +8,15 @@
 // species runs FUNANNOTATE_TRAIN --trinity against the archived assembly.
 // With it off, samples pass straight through untrained.
 //
+// "Representative assembly" here is the same strain FUNANNOTATE_PREDICTION
+// uses for ab-initio training reuse (abinitioReuseMap, loaded once in
+// funannotate.nf and passed to both subworkflows) -- picked by ANI+BUSCO
+// completeness/N50 in PICK_REPRESENTATIVE_STRAIN, not an arbitrary species-
+// group ordering. When abinitioReuseMap has no assignment for a species
+// (--run_ani_reuse false, or share_abinitio_params off, or the CSV doesn't
+// exist yet), repr_ch falls back to the first assembly in the group, exactly
+// as before this was wired up.
+//
 
 include { SRA_QUERY_BATCH   } from '../../modules/funannotate/rnaseq/SRA_QUERY_BATCH/main.nf'
 include { COLLECT_SRA_QUERY } from '../../modules/funannotate/rnaseq/COLLECT_SRA_QUERY/main.nf'
@@ -22,6 +31,7 @@ include { gbkResult; staleRnaseq } from '../../modules/funannotate/utils.nf'
 workflow FUNANNOTATE_RNASEQ {
     take:
     predict_genome_ch   // tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
+    abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
 
     main:
     // When SRA is enabled: SRA_FETCH fetches reads once per species; RNASEQ_PREPARE runs
@@ -160,18 +170,25 @@ workflow FUNANNOTATE_RNASEQ {
         //                             busco, hlen, ttable, genome_fa, r1, r2, se)
 
         // RNASEQ_PREPARE: run funannotate train --stop_after_trinity once per species on
-        // the representative (first) assembly, then cache the Trinity-GG FASTA in rnaseq_data/
+        // the representative assembly, then cache the Trinity-GG FASTA in rnaseq_data/
         // so all other strains share it. Normalized reads stay in rnaseq_reads/ (SRA_FETCH storeDir).
         // pasa.gff3 is NOT produced here (--stop_after_trinity stops before PASA);
         // it is produced by FUNANNOTATE_TRAIN for every strain including the representative.
         // Species whose representative r1 and se are both zero-length skip RNASEQ_PREPARE
         // entirely; an empty trinity FASTA is written locally without submitting a SLURM job.
+        //
+        // "Representative" here is abinitioReuseMap's is_representative pick (ANI+BUSCO),
+        // the same strain FUNANNOTATE_PREDICTION uses for ab-initio reuse -- not an
+        // arbitrary first-in-group assembly. Falls back to index 0 when the map has no
+        // assignment for this species (see module header comment).
         def repr_ch = assembly_with_reads
             .groupTuple(by: 0)
             .map { species_tag, outs, asmids, species_list, strains, locustags,
                    buscos, hlens, ttables, genomes, r1s, r2s, ses ->
-                tuple(species_tag, outs[0], asmids[0], species_list[0], strains[0],
-                      locustags[0], buscos[0], hlens[0], ttables[0], genomes[0], r1s[0], r2s[0], ses[0])
+                def repIdx = outs.findIndexOf { out -> abinitioReuseMap[out]?.is_representative }
+                def i = repIdx >= 0 ? repIdx : 0
+                tuple(species_tag, outs[i], asmids[i], species_list[i], strains[i],
+                      locustags[i], buscos[i], hlens[i], ttables[i], genomes[i], r1s[i], r2s[i], ses[i])
             }
 
         def repr_branched = repr_ch.branch {
