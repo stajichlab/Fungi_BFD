@@ -287,6 +287,26 @@ def genomeFile(String base) {
     return file(base, glob: false)
 }
 
+// Resolve a genome FASTA for BFD's genome-stats channels, which need to work
+// both post-annotation (genome_dir holds SETUP_SYMLINKS' <meta.id>.scaffolds.fa)
+// and pre-annotation (genome_dir = input_clean_genomes/, holding raw/clean
+// assemblies named by ASMID — see ANI_SAMPLES.nf, which uses this same
+// <asmid>.fa.gz / <asmid>.masked.fasta.gz convention). Tries the annotated-name
+// form first so an already-annotated genome keeps using its canonical output;
+// falls back to the ASMID form so genome_stats can run directly off assemblies
+// with no annotation yet. Returns null (not a non-existent file) when nothing
+// on disk matches either convention.
+def resolveGenomeFile(String genomeDir, String metaId, String asmid) {
+    def byId = file("${genomeDir}/${metaId}.scaffolds.fa", glob: false)
+    if (byId.exists()) return byId
+    if (!asmid) return null
+    def gz = file("${genomeDir}/${asmid}.fa.gz", glob: false)
+    if (gz.exists()) return gz
+    def masked = file("${genomeDir}/${asmid}.masked.fasta.gz", glob: false)
+    if (masked.exists()) return masked
+    return null
+}
+
 // ── Gated globs and manifests ───────────────────────────────────────────────
 
 // Gather files by filesystem glob (not by live channel .collect()), gated behind

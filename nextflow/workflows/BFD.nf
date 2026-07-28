@@ -23,7 +23,7 @@ include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
 include { taxonRowFilter    } from '../modules/common/utils.nf'
-include { cleanStrain; makeSampleTag } from '../modules/common/utils.nf'
+include { cleanStrain; makeSampleTag; resolveGenomeFile } from '../modules/common/utils.nf'
 
 workflow BFD {
 
@@ -105,7 +105,10 @@ workflow BFD {
 
     // Assembly-stats input: AAFTF assess reads the genome FASTA and the merged
     // table joins to species on ASMID, so we attach ASMID (absent from ready_ch)
-    // by joining a basename→ASMID lookup built from samples.csv.
+    // by joining a basename→ASMID lookup built from samples.csv. Every genome
+    // channel below needs ASMID too: resolveGenomeFile() falls back to
+    // <asmid>.fa.gz / <asmid>.masked.fasta.gz when genome_dir holds raw/clean
+    // assemblies (e.g. input_clean_genomes/) rather than SETUP_SYMLINKS' output.
     def asmid_by_basename_ch = Channel
         .fromPath(params.samples)
         .splitCsv(header: true)
@@ -116,21 +119,26 @@ workflow BFD {
         }
         .filter { basename, asmid -> asmid }
 
-    def asm_stats_ch = ready_ch
+    def ready_with_asmid_ch = ready_ch
+        .map { meta -> tuple(meta.id, meta) }
+        .join(asmid_by_basename_ch)            // inner join: drops rows with no ASMID
+        .map { _id, meta, asmid -> meta + [asmid: asmid] }
+
+    def asm_stats_ch = ready_with_asmid_ch
         .map { meta ->
-            def f = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
-            f.exists() ? tuple(meta.id, meta, f) : null
+            def f = resolveGenomeFile(params.genome_dir, meta.id, meta.asmid)
+            if (!f) log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+            f ? tuple(meta, f) : null
         }
         .filter { it != null }
-        .join(asmid_by_basename_ch)            // key = meta.id → (id, meta, genome, asmid)
-        .map { _id, meta, genome, asmid -> tuple(meta + [asmid: asmid], genome) }
 
     // BUSCO lineage: params.busco_lineage (default fungi_odb12) globally. The
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
-    def busco_genome_ch = ready_ch.map { meta ->
-        def f = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
-        f.exists() ? tuple(meta + [lineage: params.busco_lineage], f) : null
+    def busco_genome_ch = ready_with_asmid_ch.map { meta ->
+        def f = resolveGenomeFile(params.genome_dir, meta.id, meta.asmid)
+        if (!f) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+        f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
     def busco_pep_ch = ready_ch.map { meta ->
