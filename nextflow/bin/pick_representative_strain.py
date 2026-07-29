@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import csv
+import fcntl
 import json
 import os
 import re
@@ -219,32 +220,73 @@ def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
     return assignments
 
 
+def _atomic_write_csv(path: Path, fieldnames: list, rows: list):
+    """Write rows to path via a same-directory temp file + os.replace(), so any
+    concurrent reader (loadAbinitioReuseMap(), a running funannotate pipeline)
+    always sees either the fully-old or fully-new file, never a torn one --
+    os.replace() is a single atomic rename on POSIX for a plain file (unlike a
+    directory replace, no old-file-must-move-aside dance needed here)."""
+    tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}")
+    with open(tmp_path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=fieldnames)
+        w.writeheader()
+        for row in rows:
+            w.writerow(row)
+    os.replace(tmp_path, path)
+
+
 def write_assignments(assignments: list, out_dir: Path):
     """Write per-species abinitio_reuse_assignments.{species}.csv files and
-    a combined abinitio_reuse_assignments.csv for loadAbinitioReuseMap."""
+    merge this run's rows into the combined abinitio_reuse_assignments.csv
+    that loadAbinitioReuseMap() reads.
+
+    The combined file is a merge, not an overwrite: rows for species this run
+    didn't touch (out of scope for the current --taxon/--compare/samples
+    selection) are preserved from whatever's already on disk, and only rows
+    for species this run *did* recompute are replaced. Without this, running
+    compare_ani in separate scoped batches (e.g. one phylum at a time) would
+    have each run silently delete every other phylum's rows from the combined
+    file, since it never read the existing content before overwriting it.
+
+    A flock() around the read-merge-write critical section serializes
+    concurrent writers (e.g. two compare_ani runs for different phyla
+    finishing around the same time): os.replace() alone guarantees no reader
+    ever sees a torn file, but it does NOT prevent a lost update if two
+    writers both read the same stale baseline before either one's merge
+    lands -- the lock closes that gap. The lock file itself is never deleted
+    (removing it would let a writer that already opened it race a new writer
+    that creates a fresh inode of the same name, defeating the lock).
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     by_species = defaultdict(list)
     for row in assignments:
         by_species[row["species"]].append(row)
-    
+
     fieldnames = ["species", "out", "is_representative", "representative_out",
                   "ani_to_representative", "reuse_eligible"]
-    
+
     for species, rows in by_species.items():
         species_tag = re.sub(r"\s+", "_", species)
         out_path = out_dir / f"abinitio_reuse_assignments.{species_tag}.csv"
-        with open(out_path, "w", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=fieldnames)
-            w.writeheader()
-            for row in rows:
-                w.writerow(row)
-    
+        _atomic_write_csv(out_path, fieldnames, rows)
+
     combined_path = out_dir / "abinitio_reuse_assignments.csv"
-    with open(combined_path, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=fieldnames)
-        w.writeheader()
-        for row in assignments:
-            w.writerow(row)
+    lock_path = out_dir / ".abinitio_reuse_assignments.csv.lock"
+
+    with open(lock_path, "a") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            species_this_run = set(by_species.keys())
+            existing_rows = []
+            if combined_path.exists():
+                with open(combined_path, newline="") as fh:
+                    existing_rows = list(csv.DictReader(fh))
+            kept = [r for r in existing_rows if r.get("species") not in species_this_run]
+            merged = kept + assignments
+            merged.sort(key=lambda r: (r.get("species", ""), r.get("out", "")))
+            _atomic_write_csv(combined_path, fieldnames, merged)
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
 def write_repr_assignments(assignments: list, out_path: Path):
