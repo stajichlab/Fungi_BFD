@@ -33,6 +33,17 @@ workflow FUNANNOTATE {
     log.info paramsSummaryLog(workflow)
     samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
 
+    // target/training_target get interpolated directly into task bash scripts
+    // (FUNANNOTATE_PREDICT, FUNANNOTATE_TRAIN, BACKFILL_ABINITIO_PARAMS, ...),
+    // where a relative path resolves against that task's own isolated work
+    // directory, not launchDir -- silently writing real prediction output
+    // somewhere that `cleanup = true` deletes after the run. A -params-file
+    // (unlike this file's own defaults, which interpolate ${launchDir}) can
+    // only set a literal string, so normalize to absolute here regardless of
+    // what any params file provided.
+    params.target          = file(params.target as String).toAbsolutePath().toString()
+    params.training_target = file(params.training_target as String).toAbsolutePath().toString()
+
     def suppressSet = (params.suppress && file(params.suppress).exists())
         ? file(params.suppress).readLines()
               .collect { it.trim().split(',')[0].trim() }

@@ -41,6 +41,16 @@ include { PICK_REPRESENTATIVE_STRAIN } from '../modules/ani/report/PICK_REPRESEN
 workflow COMPARE_ANI {
 
     // ── Validate params ───────────────────────────────────────────────────────
+    // params.target (when set -- it's optional here, only used by the
+    // --run_ani_reuse backfill path below) gets interpolated directly into
+    // PICK_REPRESENTATIVE_STRAIN's task bash script and passed on to
+    // backfill_abinitio_params.py, both of which resolve a relative path
+    // against that task's own isolated work directory, not launchDir. See the
+    // matching normalization + comment in workflows/funannotate.nf.
+    if (params.target) {
+        params.target = file(params.target as String).toAbsolutePath().toString()
+    }
+
     def compareRank = assertRank(params.compare as String, 'compare')
 
     def method = (params.ani_method as String).toLowerCase()

@@ -26,12 +26,11 @@ import csv
 import json
 import os
 import re
-import shutil
 import sys
 from collections import defaultdict
-from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+
+from backfill_abinitio_params import BackfillOutcome, backfill_species_store
 
 _ASMID_EXT_RE = re.compile(r'(\.fasta|\.fna|\.fa|\.faa|\.fas)(\.gz)?$')
 
@@ -248,148 +247,6 @@ def write_assignments(assignments: list, out_dir: Path):
             w.writerow(row)
 
 
-def find_rep_predict_dir(target: Path, out: str) -> Optional[Path]:
-    d = target / out
-    ab = d / "predict_misc" / "ab_initio_parameters"
-    if ab.is_dir() and (d / "predict_results" / f"{out}.gbk").exists():
-        return d
-    if ab.is_dir() and (d / "predict_results" / f"{out}.gbk.gz").exists():
-        return d
-    return None
-
-
-def backfill_species_store(species: str, rep_out: str, target: Path,
-                            shared_root: Path, threshold: float,
-                            aug_cfg: Optional[Path] = None,
-                            dry_run: bool = False) -> bool:
-    species_tag = re.sub(r"\s+", "_", species)
-    augustus_name = species_tag.lower()
-    rep_dir = find_rep_predict_dir(target, rep_out)
-    if rep_dir is None:
-        return False
-
-    ab_initio = rep_dir / "predict_misc" / "ab_initio_parameters"
-    lower_out = rep_out.lower()
-    store_dir = shared_root / species_tag
-
-    components = {}
-    aug_src = ab_initio / "augustus" / "species" / lower_out
-    genemark_src = ab_initio / f"{lower_out}.genemark.mod"
-    snap_src = ab_initio / f"{lower_out}.snap.hmm"
-
-    if aug_src.is_dir():
-        components["augustus"] = aug_src
-    if genemark_src.is_file():
-        components["genemark"] = genemark_src
-    if snap_src.is_file():
-        components["snap"] = snap_src
-
-    if not components:
-        print(f"[WARN] {species}: representative {rep_out} has no ab-initio "
-              f"components to share (checked {ab_initio})", file=sys.stderr)
-        return False
-
-    if dry_run:
-        print(f"[DRY-RUN] Would backfill {store_dir} from {rep_out}: "
-              f"{sorted(components)}")
-        return True
-
-    store_dir.mkdir(parents=True, exist_ok=True)
-    params_json_path = store_dir / "parameters.json"
-
-    # Guard: if another project's pipeline already wrote a parameters.json from
-    # the same (or a different) representative, don't stomp it.  This prevents
-    # concurrent funannotate runs from races where project A removes project B's
-    # store just before writing its own — a partial write window that could leave
-    # project B's non-representatives with broken shared-params paths.
-    if params_json_path.exists():
-        existing = {}
-        try:
-            existing = json.loads(params_json_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass  # corrupted — overwrite safely
-        if existing and existing.get("codingquarry") != [{}]:
-            print(f"[INFO] {store_dir} already has a parameters.json written by "
-                  f"another run (representative={existing.get('representative_out', '?')}) "
-                  f"— skipping backfill to avoid stomping it.", file=sys.stderr)
-            return False
-
-    params_json = {
-        "augustus": [{}], "genemark": [{}], "snap": [{}],
-        "codingquarry": [{}], "glimmerhmm": [{}], "table": 1,
-    }
-
-    if "augustus" in components:
-        dest = store_dir / augustus_name
-        if dest.exists():
-            shutil.rmtree(dest)
-        dest.mkdir(parents=True)
-        for f in components["augustus"].iterdir():
-            suffix = f.name[len(lower_out):] if f.name.startswith(lower_out) \
-                else f"_{f.name}"
-            dest_f = dest / f"{augustus_name}{suffix}"
-            if f.suffix == ".cfg":
-                dest_f.write_text(f.read_text(errors="replace")
-                                   .replace(lower_out, augustus_name))
-            else:
-                shutil.copyfile(f, dest_f)
-        params_json["augustus"] = [{
-            "source": "ab-initio-reuse", "representative": rep_out,
-            "path": str(dest.resolve()),
-        }]
-        if aug_cfg is not None:
-            link = aug_cfg / "species" / augustus_name
-            link.parent.mkdir(parents=True, exist_ok=True)
-            if link.is_symlink() or link.exists():
-                if link.is_symlink() or link.is_file():
-                    link.unlink()
-                else:
-                    shutil.rmtree(link)
-            link.symlink_to(dest.resolve())
-            print(f"[INFO] Symlinked {link} -> {dest.resolve()}")
-
-    if "genemark" in components:
-        dest = store_dir / f"{species_tag}.genemark.mod"
-        shutil.copyfile(components["genemark"], dest)
-        params_json["genemark"] = [{
-            "source": "ab-initio-reuse", "representative": rep_out,
-            "path": str(dest.resolve()),
-        }]
-
-    if "snap" in components:
-        dest = store_dir / f"{species_tag}.snap.hmm"
-        shutil.copyfile(components["snap"], dest)
-        params_json["snap"] = [{
-            "source": "ab-initio-reuse", "representative": rep_out,
-            "path": str(dest.resolve()),
-        }]
-
-    glimmerhmm_stub = store_dir / "glimmerhmm_stub"
-    glimmerhmm_stub.mkdir(exist_ok=True)
-    params_json["glimmerhmm"] = [{
-        "source": "suppressed-empty-stub",
-        "path": str(glimmerhmm_stub.resolve()),
-    }]
-
-    (store_dir / "parameters.json").write_text(
-        json.dumps(params_json, indent=2))
-    provenance = {
-        "representative_out": rep_out,
-        "species": species,
-        "augustus_species_name": augustus_name,
-        "components": sorted(components),
-        "ani_reuse_threshold": threshold,
-        "date_captured": date.today().isoformat(),
-        "generated_at": datetime.now().isoformat(),
-        "source_predict_dir": str(rep_dir),
-    }
-    (store_dir / "provenance.json").write_text(
-        json.dumps(provenance, indent=2))
-    print(f"[INFO] Backfilled {store_dir} from representative {rep_out} "
-          f"(components: {sorted(components)}, augustus_name={augustus_name})")
-    return True
-
-
 def write_repr_assignments(assignments: list, out_path: Path):
     """Write a simple TSV for pipeline channel joins:
     out, species, is_representative, representative_out,
@@ -480,12 +337,13 @@ def main():
                 for a in assignments if a["is_representative"]}
         n_backfilled = 0
         for species, rep_out in sorted(reps.items()):
-            if backfill_species_store(species, rep_out, target, shared_root,
-                                       args.ani_threshold,
-                                       aug_cfg=aug_cfg, dry_run=args.dry_run):
+            result = backfill_species_store(species, rep_out, target, shared_root,
+                                             args.ani_threshold,
+                                             aug_cfg=aug_cfg, dry_run=args.dry_run)
+            if result.outcome in (BackfillOutcome.BACKFILLED, BackfillOutcome.UP_TO_DATE):
                 n_backfilled += 1
-        print(f"[INFO] Backfilled {n_backfilled}/{len(reps)} species stores",
-              file=sys.stderr)
+        print(f"[INFO] Backfilled {n_backfilled}/{len(reps)} species stores "
+              "(includes already-up-to-date)", file=sys.stderr)
 
 
 if __name__ == "__main__":
