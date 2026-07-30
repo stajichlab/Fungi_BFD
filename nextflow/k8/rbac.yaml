@@ -1,0 +1,45 @@
+# k8/rbac.yaml — identity nf-k8s uses to submit/watch/clean up task pods.
+#
+# This is separate from your own kubectl identity (OIDC login): a pod's
+# ServiceAccount is a distinct credential, and the namespace's 'default' SA
+# has no permissions at all. Verified live: without this, pod submission
+# fails with "cannot create resource pods" / "cannot get resource pods/status".
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nextflow-runner
+  namespace: ucr-stajichlab
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nextflow-runner
+  namespace: ucr-stajichlab
+rules:
+  # One pod per task; nf-k8s creates/watches/deletes it and tails its logs.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # pods/log and pods/status are separate subresources from pods itself —
+  # each needs its own explicit rule.
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+  # nf-k8s uses ConfigMaps to inject each task's command script into its pod.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nextflow-runner
+  namespace: ucr-stajichlab
+subjects:
+  - kind: ServiceAccount
+    name: nextflow-runner
+    namespace: ucr-stajichlab
+roleRef:
+  kind: Role
+  name: nextflow-runner
+  apiGroup: rbac.authorization.k8s.io
