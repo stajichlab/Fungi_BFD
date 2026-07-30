@@ -71,6 +71,46 @@ Safe to re-run if `all_pairs.csv` looks incomplete right after a big batch —
 S3 listing can lag a publish by a few seconds. Results land at
 `s3://stajichlab/BFD/results/ANI/<method>/<compare-rank>/`.
 
+## Pulling results and logs to your laptop
+
+**Results are already on S3** — nothing to copy off the cluster for these,
+just read them directly:
+```bash
+s3cmd ls s3://stajichlab/BFD/results/ANI/skani/GENUS/
+# or
+aws --endpoint-url https://s3-west.nrp-nautilus.io s3 sync \
+  s3://stajichlab/BFD/results/ANI/skani/GENUS/Neurospora/ ./neurospora_results/
+```
+
+**Logs live on the PVC (`/workspace`)** — survive pod restarts, but need
+`kubectl exec`/`kubectl cp` to reach your laptop:
+```bash
+# tail without copying
+kubectl exec -n ucr-stajichlab bfd-nextflow-head -- \
+  tail -100 /workspace/logs/cli-runs/neurospora.log
+
+# pull the trace/report/timeline HTML+txt
+kubectl cp ucr-stajichlab/bfd-nextflow-head:/workspace/logs/nextflow/ \
+  ./nf-logs/ -c nextflow
+
+# one failed task's .command.err — find it via `nextflow log` in the pod
+# rather than hunting the work-dir hash by hand
+kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c \
+  'cd /root/runs/neurospora && nextflow log last -f hash,process,exit,workdir'
+```
+
+**`.nextflow.log` (Nextflow's own engine log) lives only in the head pod's
+container filesystem** — `/root/runs/<name>/.nextflow.log` — and is lost for
+good if the pod dies (6h cap below) before you grab it:
+```bash
+kubectl cp ucr-stajichlab/bfd-nextflow-head:/root/runs/neurospora/.nextflow.log \
+  ./neurospora.nextflow.log
+```
+
+Bottom line: results always land on S3 regardless of what happens to the head
+pod, which is why `ani-gather.sh` is safe to re-run anytime — it's only the
+logs that require a deliberate copy off the cluster.
+
 ## Known gotchas (see README for the "why")
 
 1. `${projectDir}/bin/*.py` only resolves from a checkout *on the PVC* —
