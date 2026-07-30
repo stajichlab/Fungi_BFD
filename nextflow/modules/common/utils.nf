@@ -244,17 +244,40 @@ def asmidRowFilter() {
 
 // ── ANI ─────────────────────────────────────────────────────────────────────
 
+// Clamp cpus/memory(GB) to the k8s admission-webhook ceiling, when one is
+// configured (0 = uncapped, the default everywhere except
+// k8/profile_compare_ani_k8s.config). Verified live (2026-07-30): Nautilus's
+// ucr-stajichlab namespace rejects any bare (uncontrolled) pod -- what nf-k8s
+// submits for every task -- above 16 cores / 32 GB RAM ("admission webhook
+// pod.nrp-nautilus.io denied the request"). Hit this for real on
+// Saccharomyces (1547 genomes): skaniCpusFor/skaniMemoryFor wanted 32
+// cores/100GB, the pod was rejected outright (HTTP 400, no exit code to even
+// retry on), and the whole run aborted. HPC has no such restriction -- Slurm
+// happily gives skani/fastani/etc. their full 32-64 core / 100-128GB
+// requests on the epyc/highmem queues -- so this only clamps when
+// k8s_max_cpus/k8s_max_mem_gb are actually set (i.e. under -profile
+// compare_ani_k8s), never on Slurm.
+def capCpus(int n) {
+    def cap = (params.k8s_max_cpus ?: 0) as int
+    cap > 0 ? Math.min(n, cap) : n
+}
+
+def capMemGB(int gb) {
+    def cap = (params.k8s_max_mem_gb ?: 0) as int
+    cap > 0 ? Math.min(gb, cap) : gb
+}
+
 // skani preset → CLI flag (medium is the tool default → no flag).
 // Shared by every skani process; the sketch and the compare step MUST pass the
 // same preset or the cached sketches are unusable.
 def skaniCpusFor(int n) {
-    n > 500 ? 32 : n > 200 ? 16 : 8
+    capCpus(n > 500 ? 32 : n > 200 ? 16 : 8)
 }
 
 def skaniMemoryFor(int n, int attempt = 1) {
     def baseGB  = n > 500 ? 48 : n > 200 ? 32 : 16
     def floorGB = attempt >= 3 ? 100 : attempt == 2 ? 24 : 6
-    Math.max(baseGB, floorGB).toString() + ' GB'
+    capMemGB(Math.max(baseGB, floorGB)).toString() + ' GB'
 }
 
 // Wall-clock ceiling for the ANI compare processes (skani/fastani/mash/sourmash),

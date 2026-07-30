@@ -1,11 +1,11 @@
-include { aniTimeFor } from '../../../common/utils.nf'
+include { aniTimeFor; capCpus; capMemGB } from '../../../common/utils.nf'
 
 process SKANI_DIST_QUERY {
     tag   "${group_name} q=${query_genomes.size()} r=${ref_genomes.size()}"
     label 'skani'
 
-    cpus   { (ref_genomes.size() + query_genomes.size()) > 2000 ? 32 : 8 }
-    memory { (ref_genomes.size() + query_genomes.size()) > 2000 ? '64 GB' : '16 GB' }
+    cpus   { capCpus((ref_genomes.size() + query_genomes.size()) > 2000 ? 32 : 8) }
+    memory { capMemGB((ref_genomes.size() + query_genomes.size()) > 2000 ? 64 : 16).toString() + ' GB' }
     time   { aniTimeFor(ref_genomes.size() + query_genomes.size(), task.attempt) }
 
     publishDir { "${params.outdir}/skani_query/${params.compare}/${group_name}/batches" }, mode: 'copy'

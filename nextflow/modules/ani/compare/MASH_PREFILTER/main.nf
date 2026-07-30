@@ -1,12 +1,12 @@
 // ── mash prefilter: paste sketches, all-vs-all dist (cheap) ───────────────────
-include { aniTimeFor } from '../../../common/utils.nf'
+include { aniTimeFor; capCpus; capMemGB } from '../../../common/utils.nf'
 
 process MASH_PREFILTER {
     tag   "${group_name} n=${sketches.size()}"
     label 'mash'
 
-    cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
-    memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
+    cpus   { capCpus(sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8) }
+    memory { capMemGB(sketches.size() > 500 ? 32 : 16).toString() + ' GB' }
     time   { aniTimeFor(sketches.size(), task.attempt) }
 
     input:
