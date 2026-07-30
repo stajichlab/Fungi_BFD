@@ -427,6 +427,53 @@ def toManifest(ch, String name) {
       .collectFile(name: name, newLine: true, sort: true)
 }
 
+// ── genome_stats/function hash-bucket fan-out ───────────────────────────────
+//
+// genome_stats/function outputs are stored one file per genome (or one file
+// per genome per data column), which reaches tens of thousands of files in a
+// single flat directory (see todo/genome_stats_storage_reorg.md, T-014) --
+// slow to list/back up on this cluster's NFS-backed storage. hashBucket()
+// fans a stable key (ASMID or LOCUSTAG, never the derived Genus_species_strain
+// tag -- see the plan for why) out into a hex subdirectory so no single
+// directory holds more than a few hundred files.
+//
+// The Python equivalent is nextflow/bin/genome_stats_paths.py::hash_bucket().
+// Both must produce identical output for identical (key, width) -- a mismatch
+// here is a silent path miss, not a crash. Verified in sync via
+// nextflow/tests/test_hash_bucket_parity.py, which runs this function through
+// a throwaway Nextflow script and compares against the Python implementation
+// for the same key set.
+def hashBucket(String key, int width) {
+    def digest = java.security.MessageDigest.getInstance('SHA-1').digest(key.getBytes('UTF-8'))
+    def hex = digest.collect { b -> String.format('%02x', (b as int) & 0xff) }.join('')
+    hex.substring(0, width)
+}
+
+// Per-type bucket width (todo/genome_stats_storage_reorg.md §A): most
+// genome_stats types get 256 buckets (2 hex chars); gene_stats and
+// intergenic_stats get 4096 buckets (3 hex chars) because they carry ~7x more
+// files per genome than the rest. Unknown types (e.g. any function/* subfolder
+// not yet migrated) default to width 2. Must stay in sync with
+// nextflow/bin/genome_stats_paths.py::BUCKET_WIDTH.
+def bucketWidthFor(String type) {
+    def widths = [
+        asm_stats       : 2,
+        asm_reports     : 2,
+        BUSCO_genome    : 2,
+        BUSCO_protein   : 2,
+        aa_freq         : 2,
+        codon_freq      : 2,
+        gene_stats      : 3,
+        intergenic_stats: 3,
+    ]
+    widths.containsKey(type) ? widths[type] : 2
+}
+
+// Convenience wrapper: look up the right width for `type` and hash `key`.
+def hashBucketForType(String type, String key) {
+    hashBucket(key, bucketWidthFor(type))
+}
+
 // ── storeDir staleness ──────────────────────────────────────────────────────
 
 // Delete storeDir output files that are older than inputFile so Nextflow re-runs
