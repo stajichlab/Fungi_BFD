@@ -12,7 +12,6 @@ input/cds/
 input/gff3/
 input/gff/
 input/trna
-genome/
 genome_annotation/
 rnaseq_data/
 rnaseq_reads/
