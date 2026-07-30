@@ -1,4 +1,4 @@
-include { skaniPresetFlag; skaniCpusFor; skaniMemoryFor } from '../../../common/utils.nf'
+include { skaniPresetFlag; skaniCpusFor; skaniMemoryFor; aniTimeFor } from '../../../common/utils.nf'
 
 process SKANI_COMPARE {
     tag   "${group_name} [${n_genomes} genomes]"
@@ -6,6 +6,7 @@ process SKANI_COMPARE {
 
     cpus   { skaniCpusFor(n_genomes) }
     memory { skaniMemoryFor(n_genomes, task.attempt) }
+    time   { aniTimeFor(n_genomes, task.attempt) }
 
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 

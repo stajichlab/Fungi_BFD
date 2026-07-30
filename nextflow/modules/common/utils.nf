@@ -257,6 +257,34 @@ def skaniMemoryFor(int n, int attempt = 1) {
     Math.max(baseGB, floorGB).toString() + ' GB'
 }
 
+// Wall-clock ceiling for the ANI compare processes (skani/fastani/mash/sourmash),
+// scaled by group size and bumped on retry — same shape as skaniMemoryFor.
+// Mainly matters on k8s: `time` maps to the pod's activeDeadlineSeconds there,
+// and (unlike the HPC profile, which sets a static per-label `time` via config
+// that overrides this) nothing else caps it. Floors at 1h even for the
+// smallest group on the first attempt.
+//
+// Capped at 6h: verified live (2026-07-30) that the ucr-stajichlab namespace's
+// opportunistic priority class gets activeDeadlineSeconds=21600 (6h) injected
+// on EVERY pod, task pods and the long-lived head pod alike, regardless of
+// what's requested — this is a cluster-side policy, not something a namespace
+// user can raise. Requesting more than 6h here would just be a no-op (or
+// worse, ambiguous whether the cluster clamps or rejects it), so don't.
+// The real consequence is on the *head* pod (k8/head-pod.yaml), which has no
+// `time`/`activeDeadlineSeconds` of its own and still gets killed at 6h --
+// any run (or batch of runs via ani-suite.sh) spanning longer than that loses
+// its in-flight nextflow head process(es) and, since the launch dir isn't on
+// the PVC (see k8/README_compare_ani.md), its -resume cache too. Recreate the
+// head pod (`kubectl apply -f k8/head-pod.yaml`) and re-launch with -resume;
+// already-published per-group *.ani.tsv on S3 are safe, but expect already-
+// finished groups to be recomputed since the resume cache is gone.
+def aniTimeFor(int n, int attempt = 1) {
+    def baseH  = n > 500 ? 6 : n > 200 ? 3 : 1
+    def floorH = attempt >= 2 ? 6 : 1
+    Math.min(6, Math.max(baseH, floorH))
+        .toString() + ' h'
+}
+
 def skaniPresetFlag(String p) {
     def flags = [fast: '--fast', medium: '', slow: '--slow']
     def key   = (p ?: 'medium').toLowerCase()
