@@ -98,13 +98,27 @@ pod deadline, S3-vs-PVC-vs-pod-local path handling).
 - Sample identity threaded through `BFD.nf` as a `meta` map rather than ad hoc
   strings.
 
-## Fix applied while preparing this PR
+## Fixes applied while preparing this PR
 
-`nextflow/subworkflows/local/FUNANNOTATE_GENOME_PREP.nf` includes three
-modules — `GENOME_CLEAN`, `GENOME_CLEAN_BATCH`, `MASKREPEAT_TANTAN_RUN` — whose
-`main.nf` files existed on disk but had never been `git add`ed, so `main.nf`
-failed to parse from a fresh checkout of this branch. Added them to this PR;
-`nextflow main.nf --help` now parses and runs cleanly.
+- `nextflow/subworkflows/local/FUNANNOTATE_GENOME_PREP.nf` includes three
+  modules — `GENOME_CLEAN`, `GENOME_CLEAN_BATCH`, `MASKREPEAT_TANTAN_RUN` —
+  whose `main.nf` files existed on disk but had never been `git add`ed, so
+  `main.nf` failed to parse from a fresh checkout of this branch. Added them
+  to this PR; `nextflow main.nf --help` now parses and runs cleanly.
+- `BFD_MERGE.nf`'s run-mode `MERGE_INTERGENIC`/`MERGE_GENE_STATS`/
+  `MERGE_ASM_STATS` calls passed `.collect()`-ed channels into `toManifest()`,
+  which expects one file per emission; `.collect()` emits a single list
+  instead, so `toManifest()` crashed trying to `file()` the whole list
+  (`No signature of method: nextflow.util.ArrayBag.getFileSystem()`). Fixed
+  by dropping `.collect()`, matching the working `MERGE_AA_FREQ`/
+  `MERGE_CODON_FREQ` calls beside them.
+
+## Test status
+
+- `nextflow/run_test.sh` stub-run (BFD test profile) — **passing** as of this
+  PR, including the `toManifest()` fix above.
+- Real HPCC smoke test of a full `BFD.nf`/`funannotate.nf` run — still
+  pending before merge.
 
 ## Full commit list
 
