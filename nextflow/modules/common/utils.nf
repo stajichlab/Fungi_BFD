@@ -331,6 +331,23 @@ def genomeFile(String base) {
     return file(base, glob: false)
 }
 
+// Build a filename -> Path index for a directory with ONE listing, for
+// callers that would otherwise run a .exists() check per item in a
+// samples.csv-scale loop (each one a real network round trip on an S3-backed
+// dir — see ANI_SAMPLES.nf's genomeIndex, same fix, verified live 2026-07-30
+// against a phylum-scale run: 20-30+ min of serial S3 latency collapsed into
+// one listing). BFD.nf's genome/pep/cds/gff dirs are local paths today, so
+// this is currently just removing redundant stat() calls -- but genome_dir
+// already shares input_clean_genomes' S3 convention with the ANI k8s
+// profile, so this is latent, not hypothetical.
+def dirIndex(String dir) {
+    def dirPath = file(dir)
+    if (!dirPath.exists()) {
+        error "directory does not exist: ${dir}"
+    }
+    dirPath.listFiles().collectEntries { p -> [(p.getName()): p] }
+}
+
 // Resolve a genome FASTA for BFD's genome-stats channels, which need to work
 // both post-annotation (genome_dir holds SETUP_SYMLINKS' <meta.id>.scaffolds.fa)
 // and pre-annotation (genome_dir = input_clean_genomes/, holding raw/clean
@@ -340,15 +357,16 @@ def genomeFile(String base) {
 // falls back to the ASMID form so genome_stats can run directly off assemblies
 // with no annotation yet. Returns null (not a non-existent file) when nothing
 // on disk matches either convention.
-def resolveGenomeFile(String genomeDir, String metaId, String asmid) {
-    def byId = file("${genomeDir}/${metaId}.scaffolds.fa", glob: false)
-    if (byId.exists()) return byId
+//
+// Takes the pre-built dirIndex(genomeDir) rather than genomeDir itself —
+// callers that need this per-genome (BFD.nf's asm_stats_ch/busco_genome_ch)
+// build the index once and pass it in, instead of paying for a listing (or
+// worse, three .exists() calls) on every single genome.
+def resolveGenomeFile(Map genomeIndex, String metaId, String asmid) {
+    def byId = genomeIndex["${metaId}.scaffolds.fa"]
+    if (byId) return byId
     if (!asmid) return null
-    def gz = file("${genomeDir}/${asmid}.fa.gz", glob: false)
-    if (gz.exists()) return gz
-    def masked = file("${genomeDir}/${asmid}.masked.fasta.gz", glob: false)
-    if (masked.exists()) return masked
-    return null
+    return genomeIndex["${asmid}.fa.gz"] ?: genomeIndex["${asmid}.masked.fasta.gz"]
 }
 
 // ── Gated globs and manifests ───────────────────────────────────────────────

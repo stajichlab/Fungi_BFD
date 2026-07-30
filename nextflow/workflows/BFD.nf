@@ -23,7 +23,7 @@ include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
 include { taxonRowFilter; asmidRowFilter } from '../modules/common/utils.nf'
-include { cleanStrain; makeSampleTag; resolveGenomeFile } from '../modules/common/utils.nf'
+include { cleanStrain; makeSampleTag; resolveGenomeFile; dirIndex } from '../modules/common/utils.nf'
 
 workflow BFD {
 
@@ -73,10 +73,26 @@ workflow BFD {
     // ── Per-tool input channels ──────────────────────────────────────────────
     // Each drops genomes whose input file is absent, so a missing file skips that
     // genome for that analysis instead of failing the run.
+    //
+    // Every channel below resolves its file(s) against one of these indexes
+    // instead of a per-genome .exists() call. Same fix as ANI_SAMPLES.nf's
+    // genomeIndex (see dirIndex() in modules/common/utils.nf): pep_dir alone
+    // was being checked per-genome by three separate channels here
+    // (proteins_ch, aa_freq_ch, busco_pep_ch) for the literal same file, and
+    // genome_dir was resolved twice identically (asm_stats_ch,
+    // busco_genome_ch) via resolveGenomeFile(). Cheap on today's local
+    // pep/cds/gff/genome dirs, but genome_dir already shares input_clean_genomes'
+    // S3 convention with the ANI k8s profile, so this is latent, not
+    // hypothetical -- and the redundant lookups were pure waste either way.
+    def pepIndex    = dirIndex(params.pep_dir)
+    def cdsIndex    = dirIndex(params.cds_dir)
+    def gffIndex    = dirIndex(params.gff_dir)
+    def genomeIndex = dirIndex(params.genome_dir)
+
     def proteins_ch = ready_ch
         .map { meta ->
-            def prot = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
-            if (!prot.exists()) {
+            def prot = pepIndex["${meta.id}.proteins.fa"]
+            if (!prot) {
                 log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
                 return null
             }
@@ -85,24 +101,24 @@ workflow BFD {
         .filter { it != null }
 
     def aa_freq_ch = ready_ch.map { meta ->
-        def f = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
-        f.exists() ? tuple(meta, f) : null
+        def f = pepIndex["${meta.id}.proteins.fa"]
+        f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def codon_freq_ch = ready_ch.map { meta ->
-        def f = file("${params.cds_dir}/${meta.id}.cds-transcripts.fa", glob: false)
-        f.exists() ? tuple(meta, f) : null
+        def f = cdsIndex["${meta.id}.cds-transcripts.fa"]
+        f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def intergenic_ch = ready_ch.map { meta ->
-        def f = file("${params.gff_dir}/${meta.id}.gff3", glob: false)
-        f.exists() ? tuple(meta, f) : null
+        def f = gffIndex["${meta.id}.gff3"]
+        f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def gene_stats_ch = ready_ch.map { meta ->
-        def gff = file("${params.gff_dir}/${meta.id}.gff3", glob: false)
-        def dna = file("${params.genome_dir}/${meta.id}.scaffolds.fa", glob: false)
-        (gff.exists() && dna.exists()) ? tuple(meta, gff, dna) : null
+        def gff = gffIndex["${meta.id}.gff3"]
+        def dna = genomeIndex["${meta.id}.scaffolds.fa"]
+        (gff && dna) ? tuple(meta, gff, dna) : null
     }.filter { it != null }
 
     // Assembly-stats input: AAFTF assess reads the genome FASTA and the merged
@@ -129,7 +145,7 @@ workflow BFD {
 
     def asm_stats_ch = ready_with_asmid_ch
         .map { meta ->
-            def f = resolveGenomeFile(params.genome_dir, meta.id, meta.asmid)
+            def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
             if (!f) log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
             f ? tuple(meta, f) : null
         }
@@ -139,14 +155,14 @@ workflow BFD {
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
     def busco_genome_ch = ready_with_asmid_ch.map { meta ->
-        def f = resolveGenomeFile(params.genome_dir, meta.id, meta.asmid)
+        def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
         if (!f) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
     def busco_pep_ch = ready_ch.map { meta ->
-        def f = file("${params.pep_dir}/${meta.id}.proteins.fa", glob: false)
-        f.exists() ? tuple(meta + [lineage: params.busco_lineage], f) : null
+        def f = pepIndex["${meta.id}.proteins.fa"]
+        f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
     // ── Run ──────────────────────────────────────────────────────────────────
