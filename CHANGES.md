@@ -45,6 +45,13 @@ Uses nf-schema for parameter and `samples.csv` validation (`nextflow/assets/sche
   in-memory. Verified live on a phylum-scale run (Basidiomycota, 3173 genomes):
   eliminates 20-30+ minutes of serial S3 round-trip latency before the first
   compare task can start.
+- **dc086bc** — Same fix applied to `BFD.nf`: its 8 per-genome input channels
+  (pep/cds/gff/genome, including `resolveGenomeFile()`'s asm-stats/BUSCO-genome
+  callers) now resolve against a cached `dirIndex(genomeDir)` map instead of
+  doing up to three `.exists()` calls per genome. Not S3-latency-bound today
+  (`profile_BFD.config` points these dirs at local paths), but `genome_dir`
+  already shares `input_clean_genomes`'s S3 convention with the ANI k8s
+  profile, so the redundant-stat cost is latent, not hypothetical.
 
 ### 3. Ab-initio parameter reuse across strains
 
