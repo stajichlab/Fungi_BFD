@@ -1,0 +1,18 @@
+# k8/pvc.yaml — shared work volume for the compare_ANI k8s pilot.
+#
+# Mounted at k8s.storageMountPath ('/workspace') into the head pod and every
+# task pod nf-k8s submits, so Nextflow's workDir and the repo checkout (see
+# stage_repo.sh) are visible identically everywhere. RWX is required: the
+# head pod and task pods write/read concurrently.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bfd-work-pvc
+  namespace: ucr-stajichlab
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: rook-cephfs
+  resources:
+    requests:
+      storage: 200Gi
