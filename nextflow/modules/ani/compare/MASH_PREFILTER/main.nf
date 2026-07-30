@@ -1,10 +1,13 @@
 // ── mash prefilter: paste sketches, all-vs-all dist (cheap) ───────────────────
+include { aniTimeFor } from '../../../common/utils.nf'
+
 process MASH_PREFILTER {
     tag   "${group_name} n=${sketches.size()}"
     label 'mash'
 
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
+    time   { aniTimeFor(sketches.size(), task.attempt) }
 
     input:
         tuple val(group_name), path(sketches)

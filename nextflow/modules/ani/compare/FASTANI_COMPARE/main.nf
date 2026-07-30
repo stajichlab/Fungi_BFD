@@ -2,12 +2,15 @@
 // Used both for full-group single jobs and per-component prefiltered jobs.
 // query/ref staged into separate subdirs so identical files don't collide.
 // group_size drives CPU/memory scaling.
+include { aniTimeFor } from '../../../common/utils.nf'
+
 process FASTANI_COMPARE {
     tag   "${group_name} [${batch_tag}] n=${group_size}"
     label 'fastani'
 
     cpus   { group_size > 500 ? 64 : group_size > 200 ? 24 : 8 }
     memory { group_size > 500 ? '128 GB' : group_size > 200 ? '48 GB' : '16 GB' }
+    time   { aniTimeFor(group_size, task.attempt) }
 
     // publishDir (not storeDir): storeDir only checks output-path existence, so it
     // would never re-run a group's comparison after new genomes are added to that

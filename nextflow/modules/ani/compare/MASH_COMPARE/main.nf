@@ -1,10 +1,13 @@
 // ── mash dist over cached sketches ───────────────────────────────────────────
+include { aniTimeFor } from '../../../common/utils.nf'
+
 process MASH_COMPARE {
     tag   "${group_name} n=${sketches.size()}"
     label 'mash'
 
     cpus   { sketches.size() > 500 ? 32 : sketches.size() > 200 ? 16 : 8 }
     memory { sketches.size() > 500 ? '32 GB' : '16 GB' }
+    time   { aniTimeFor(sketches.size(), task.attempt) }
 
     // publishDir (not storeDir): storeDir only checks output-path existence, so it
     // would never re-run a group's comparison after new genomes are added to that

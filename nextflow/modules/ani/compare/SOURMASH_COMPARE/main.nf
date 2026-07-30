@@ -1,10 +1,13 @@
 // ── sourmash compare (ANI matrix) over cached signatures ─────────────────────
+include { aniTimeFor } from '../../../common/utils.nf'
+
 process SOURMASH_COMPARE {
     tag   "${group_name} n=${sigs.size()}"
     label 'sourmash'
 
     cpus   { sigs.size() > 500 ? 32 : sigs.size() > 200 ? 16 : 8 }
     memory { sigs.size() > 500 ? '128 GB' : sigs.size() > 200 ? '64 GB' : '16 GB' }
+    time   { aniTimeFor(sigs.size(), task.attempt) }
 
     // publishDir (not storeDir): storeDir only checks output-path existence, so it
     // would never re-run a group's comparison after new genomes are added to that

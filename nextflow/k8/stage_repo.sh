@@ -58,9 +58,14 @@ kubectl exec -n "$NAMESPACE" bfd-nextflow-head -- sh -c "
 "
 
 echo "==> Done. Launch a run with e.g.:"
+# NOTE: the launch dir must NOT be on the PVC (/workspace/...) — rook-cephfs
+# doesn't support the file locking Nextflow's resume-cache DB needs, and
+# `nextflow run` fails outright if .nextflow/ ends up there. Use a directory
+# local to the head pod's own container filesystem instead (/root/runs/...),
+# same as k8/README_compare_ani.md and the ani-*.sh wrappers do.
 cat <<'EOF'
 kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c '
-  mkdir -p /workspace/runs/ANI && cd /workspace/runs/ANI
+  mkdir -p /root/runs/ANI && cd /root/runs/ANI
   cp /workspace/repo/samples.csv .
   nextflow run /workspace/repo/nextflow/main.nf \
     -c /workspace/repo/nextflow/nextflow.config \
@@ -70,3 +75,7 @@ kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c '
     -resume
 '
 EOF
+echo "NOTE: main.nf currently fails to parse on this branch regardless of"
+echo "--pipeline (see k8/README_compare_ani.md's 'What this doesn't solve"
+echo "for you'). Use k8/bin/ani-run.sh + k8/bin/ani-gather.sh instead until"
+echo "that's fixed."

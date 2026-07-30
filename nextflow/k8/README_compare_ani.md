@@ -68,6 +68,25 @@ state is lost if the head pod is deleted/recreated, even though `workDir` conten
 the PVC survive — a fresh pod would recompute from scratch rather than pick up where a
 prior pod left off.
 
+**3. The head pod dies on its own after 6 hours, no matter what.** Verified live
+(2026-07-30): `bfd-nextflow-head` was found `Status: Failed`, `Reason:
+DeadlineExceeded`, exactly 6h after it started. `kubectl get pod ... -o
+jsonpath='{.spec.activeDeadlineSeconds}'` shows `21600` on both the head pod and
+every task pod, though nothing in `head-pod.yaml` or the profile sets it — this is
+injected cluster-side (tied to the `ucr-stajichlab` namespace's opportunistic
+priority class), not something a namespace user can raise. Task pods rarely notice
+(ANI comparisons finish in seconds-to-minutes), but the *head* pod is meant to be
+long-lived across a whole batch (`ani-suite.sh` runs every taxon's `nextflow run`
+as a background process inside this one pod) — so any batch spanning more than 6h
+wall-clock loses every in-flight run when the pod dies, taking their `-resume`
+cache with it (gotcha #2 above). `modules/common/utils.nf`'s `aniTimeFor()` caps
+task-level `time` at 6h to match. Practical mitigation: keep individual batches
+(taxon list × expected runtime) under ~6h where you can; for longer ones, check
+`k8/bin/ani-status.sh` periodically and be ready to `kubectl apply -f
+k8/head-pod.yaml` + re-launch with `-resume` if the head pod is gone — already-
+published per-group `*.ani.tsv` on S3 are safe, but expect finished groups to be
+recomputed since the resume cache doesn't survive.
+
 ## Setup (one-time)
 
 ```bash
