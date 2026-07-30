@@ -34,6 +34,22 @@ workflow ANI_SAMPLES {
     main:
     def rowFilter = taxonRowFilter()
 
+    // One directory listing instead of up to two file-existence checks per
+    // genome. Verified live (2026-07-30): each check is a real network round
+    // trip to the S3 gateway (~200-500ms measured against
+    // s3-west.nrp-nautilus.io) -- invisible at genus scale, but at
+    // phylum scale (thousands of genomes, sequential, inside a single
+    // dataflow .map()) that's 20-30+ minutes of pure latency before the
+    // first compare task can even start, with every genome paying for a
+    // wasted .fa.gz check first (real genomes here are .masked.fasta.gz;
+    // see below) on top of that. Listing genome_dir once and doing in-memory
+    // lookups turns that into a single (SDK-paginated) request.
+    def genomeDirPath = file(params.genome_dir)
+    if (!genomeDirPath.exists()) {
+        error "--genome_dir does not exist: ${params.genome_dir}"
+    }
+    def genomeIndex = genomeDirPath.listFiles().collectEntries { p -> [(p.getName()): p] }
+
     samples_ch = channel
         .fromPath(samples_csv)
         .splitCsv(header: true)
@@ -57,11 +73,10 @@ workflow ANI_SAMPLES {
                 return null
             }
 
-            // Look for <asmid>.fa.gz or <asmid>.masked.fasta.gz in genome_dir.
+            // <asmid>.fa.gz or <asmid>.masked.fasta.gz, looked up from the
+            // one-time listing above rather than a per-genome exists() call.
             // skani reads .gz directly — no decompression step needed.
-            def gz      = file("${params.genome_dir}/${asmid}.fa.gz",           glob: false)
-            def masked  = file("${params.genome_dir}/${asmid}.masked.fasta.gz", glob: false)
-            def genome  = gz.exists() ? gz : (masked.exists() ? masked : null)
+            def genome = genomeIndex["${asmid}.fa.gz"] ?: genomeIndex["${asmid}.masked.fasta.gz"]
 
             if (!genome) {
                 log.warn "Skipping ${locustag} (${asmid}): no .fa.gz or .masked.fasta.gz in ${params.genome_dir}"
