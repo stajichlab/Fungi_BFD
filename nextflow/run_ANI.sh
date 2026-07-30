@@ -18,9 +18,10 @@ module load singularity
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 
-nextflow run nextflow/compare_ANI.nf \
+nextflow run nextflow/main.nf \
     -c nextflow/nextflow.config \
     -profile ani \
+    --pipeline compare_ani \
     -params-file nextflow/params_ani.yaml \
     -resume \
     "$@"

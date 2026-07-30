@@ -3,7 +3,7 @@
 #SBATCH --job-name=nxf_functional
 #SBATCH --output=logs/functional_launch.%j.log
 
-# Launch the Nextflow functional annotation pipeline.
+# Launch the Nextflow functional annotation pipeline (BFD).
 # Submit from the PROJECT ROOT directory (where samples.csv lives):
 #   sbatch nextflow/run_functional.sh
 #
@@ -23,9 +23,10 @@ module load nextflow
 mkdir -p logs/nextflow
 
 NXF_OPTS="-Xms512m -Xmx4g" \
-nextflow run nextflow/BFD.nf \
+nextflow run nextflow/main.nf \
     -c nextflow/nextflow.config \
     -profile BFD \
+    --pipeline BFD \
     --run_setup true \
     --run_pfam false \
     --run_cazy true \

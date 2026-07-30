@@ -1,0 +1,14 @@
+##gff-version 3
+##sequence-region scaffold_1 1 900
+scaffold_1	test	gene	101	280	.	+	.	ID=FF5840CF_00001;locus_tag=FF5840CF_00001
+scaffold_1	test	mRNA	101	280	.	+	.	ID=FF5840CF_00001-T1;Parent=FF5840CF_00001
+scaffold_1	test	exon	101	160	.	+	.	ID=FF5840CF_00001-T1.exon1;Parent=FF5840CF_00001-T1
+scaffold_1	test	CDS	101	160	.	+	0	ID=FF5840CF_00001-T1.cds;Parent=FF5840CF_00001-T1
+scaffold_1	test	exon	221	280	.	+	.	ID=FF5840CF_00001-T1.exon2;Parent=FF5840CF_00001-T1
+scaffold_1	test	CDS	221	280	.	+	0	ID=FF5840CF_00001-T1.cds;Parent=FF5840CF_00001-T1
+scaffold_1	test	gene	501	680	.	+	.	ID=FF5840CF_00002;locus_tag=FF5840CF_00002
+scaffold_1	test	mRNA	501	680	.	+	.	ID=FF5840CF_00002-T1;Parent=FF5840CF_00002
+scaffold_1	test	exon	501	560	.	+	.	ID=FF5840CF_00002-T1.exon1;Parent=FF5840CF_00002-T1
+scaffold_1	test	CDS	501	560	.	+	0	ID=FF5840CF_00002-T1.cds;Parent=FF5840CF_00002-T1
+scaffold_1	test	exon	621	680	.	+	.	ID=FF5840CF_00002-T1.exon2;Parent=FF5840CF_00002-T1
+scaffold_1	test	CDS	621	680	.	+	0	ID=FF5840CF_00002-T1.cds;Parent=FF5840CF_00002-T1

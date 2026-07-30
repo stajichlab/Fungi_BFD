@@ -1,18 +1,25 @@
-# BFD Functional Annotation Pipeline (`BFD.nf`)
+# BFD Functional Annotation Pipeline (`--pipeline BFD`)
 
 Nextflow DSL2 pipeline that runs nine functional annotation tools across all species in
 `samples.csv`, then consolidates each tool's per-species results into a single merged
 CSV.gz in `tables/` ready for loading into DuckDB.
 
-Run after `funannotate.nf` has produced `genome_annotation/` prediction results.
+Run after `funannotate` has produced `genome_annotation/` prediction results.
 
----
-
-## Quick start
+Launch via the single entry point `nextflow/main.nf`:
 
 ```bash
-# Full run: input setup + all annotation tools + merge
+nextflow run nextflow/main.nf \
+    -c nextflow/nextflow.config \
+    -profile BFD --pipeline BFD \
+    -resume
+```
+
+Or via the SLURM wrapper (recommended for production):
+
+```bash
 sbatch nextflow/run_functional.sh
+```
 
 # Add new species to an existing dataset (run new ones, merge ALL into tables/)
 sbatch nextflow/run_functional.sh --taxon PHYLUM:Basidiomycota

@@ -1,0 +1,64 @@
+# k8/head-pod.yaml — where `nextflow run` actually executes.
+#
+# `kuberun` (which let you drive a k8s-executor run from an outside machine)
+# is deprecated/unmaintained upstream. Without Fusion (a paid Seqera add-on,
+# not used here), the k8s executor's workDir must be a POSIX volume shared by
+# the head process and every task pod — that only mounts inside the cluster.
+# So the head process itself has to run in a pod here, long-lived, and you
+# `kubectl exec` into it to launch/monitor pipeline runs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bfd-nextflow-head
+  namespace: ucr-stajichlab
+  labels:
+    app: bfd-nextflow-head
+spec:
+  restartPolicy: Never
+  serviceAccountName: nextflow-runner
+  containers:
+    - name: nextflow
+      image: nextflow/nextflow:25.10.7
+      command: ["sleep", "infinity"]
+      lifecycle:
+        # The base image ships neither git (needed to pull/update this repo)
+        # nor tar (needed for `kubectl cp`). Installed at container start so
+        # they survive pod restarts without a custom image build.
+        postStart:
+          exec:
+            command: ["dnf", "install", "-y", "git", "tar"]
+      env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: nrp-s3-creds
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nrp-s3-creds
+              key: AWS_SECRET_ACCESS_KEY
+        # Deliberately NOT on the PVC: Nextflow's resume-cache DB (LevelDB)
+        # needs real file locking, which the rook-cephfs mount doesn't
+        # support — `nextflow run` fails outright ("Can't open cache DB...
+        # needs a shared file system that supports file locks") if the
+        # launch directory (where .nextflow/ lives) is on the PVC. Launch
+        # runs from a local directory (e.g. /root/runs/<name>); only workDir
+        # and published outputs need to be on the PVC/S3. Trade-off: -resume
+        # state is lost if this pod is deleted/recreated, even though workDir
+        # contents on the PVC survive — a fresh run would recompute from
+        # scratch rather than pick up where a prior pod left off.
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+      volumeMounts:
+        - name: work
+          mountPath: /workspace
+  volumes:
+    - name: work
+      persistentVolumeClaim:
+        claimName: bfd-work-pvc
