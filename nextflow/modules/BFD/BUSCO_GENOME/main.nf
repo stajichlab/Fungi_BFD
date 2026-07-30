@@ -27,6 +27,7 @@ process BUSCO_GENOME {
         exit 1
     fi
     cp "\$SUMMARY" "${meta.id}.BUSCO_summary.${meta.lineage}.txt"
+    rm -rf "\$RUNDIR"
     """
 
     stub:
