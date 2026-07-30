@@ -84,12 +84,12 @@ workflow BFD_MERGE {
             MERGE_CODON_FREQ(toManifest(codon_cached.mix(codon_csv.flatten()), 'codon_freq.manifest.txt'))
 
         if (params.run_intergenic.toBoolean())
-            MERGE_INTERGENIC(toManifest(intergenic_csv.collect(), 'intergenic.manifest.txt'))
+            MERGE_INTERGENIC(toManifest(intergenic_csv, 'intergenic.manifest.txt'))
 
         if (params.run_gene_stats.toBoolean())
-            MERGE_GENE_STATS(toManifest(gene_stats.collect(), 'gene_stats.manifest.txt'))
+            MERGE_GENE_STATS(toManifest(gene_stats, 'gene_stats.manifest.txt'))
 
         if (params.run_asm_stats.toBoolean())
-            MERGE_ASM_STATS(toManifest(asm_stats.collect(), 'asm_stats.manifest.txt'))
+            MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'))
     }
 }
