@@ -99,6 +99,61 @@ kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c '
 `/root/runs/ANI/` (or onto the PVC) first if it's not already part of the repo
 checkout.
 
+Note: as of this writing, `main.nf` fails to parse on this branch for *any*
+`--pipeline` — see "What this doesn't solve for you" below — so this exact
+invocation currently errors before reaching compare_ani. The alternate route
+below sidesteps it (and is also what you want if you're distributing the
+compute-heavy part separately from reporting anyway).
+
+## Alternate route: split compute from reporting
+
+`../run_ani_compute.nf` and `../run_ani_gather.nf` (repo `nextflow/` root, not
+`k8/` — see their header comments for why) reuse the same `ANI_SAMPLES` /
+`ANI_COMPARE_METHOD` / `REPORT_ANI` / `COMBINE_ANI_TABLE` building blocks as
+`workflows/compare_ANI.nf`, split into two independent phases:
+
+- **`run_ani_compute.nf`** — `ANI_SAMPLES` → `ANI_COMPARE_METHOD` only. Just
+  the sketch+compare, publishing each group's `*.ani.tsv`. This is the part
+  worth distributing/running on k8s: no `storeDir`, no `aws-cli`-in-container
+  requirement, none of the S3-outdir complications below apply to it.
+- **`run_ani_gather.nf`** — `REPORT_ANI` + `COMBINE_ANI_TABLE` against
+  whatever `run_ani_compute.nf` has published so far. Cheap (CSV parsing +
+  small text files) and deliberately not k8s-specific — run it from anywhere
+  with S3 access and the same `samples.csv`, including a plain local
+  executor. Safe to run before every group is finished; it just picks up
+  what exists. Occasionally needs a second pass right after a fresh publish —
+  S3 listing can lag a `PutObject` by a few seconds, and the gating glob
+  (`gatedGlobIn` in `modules/common/utils.nf`) can race ahead of it.
+- **Why split at all**: `COMBINE_ANI_TABLE` reads inputs via a manifest of
+  plain-text paths and opens them with Python's `open()` — this works on
+  Slurm (`outdir` is a real POSIX path) but not against `outdir=s3://...`,
+  since `open()` can't read an S3 URI (and the string Nextflow hands it isn't
+  even a well-formed one — see `k8/profile_compare_ani_k8s.config`'s
+  `aniS3Prefix`/`aniLocalMirror` comment for the fix, which mirrors the
+  referenced S3 prefix down to a local path `open()` can find). `REPORT_ANI`
+  separately needs `aws-cli` baked into its container's `beforeScript`
+  because it combines `storeDir`+`publishDir` on the same S3 path. Both are
+  worked around at the config level (this profile), not in pipeline code —
+  but neither workaround is needed at all for the compute-only phase, which
+  is the expensive part you'd actually want to distribute.
+
+CLI wrappers in `k8/bin/` drive this from your laptop without hand-typing
+`kubectl exec`:
+
+```bash
+k8/bin/ani-run.sh --taxon GENUS:Yarrowia --compare SPECIES         # compute, detached
+k8/bin/ani-status.sh                                               # or: ani-status.sh yarrowia
+k8/bin/ani-gather.sh --taxon GENUS:Yarrowia --compare SPECIES       # report + combine
+k8/bin/ani-suite.sh --compare SPECIES --taxa GENUS:X,GENUS:Y        # launch a batch of taxa
+```
+
+Each `ani-run.sh` call backgrounds its own `nextflow` head process on the
+cluster (`nohup ... &` inside the head pod) and returns immediately, so
+`ani-suite.sh` launches a whole taxon list concurrently — each with its own
+`queueSize=30` pod cap. Logs land at `/workspace/logs/cli-runs/<name>.log`
+(durable, on the PVC) even though the actual launch directory is local to the
+head pod (see the CephFS file-locking note above) and lost if it restarts.
+
 ## Tuning
 
 - **`queueSize`** (30 by default here) caps concurrent pods — check
