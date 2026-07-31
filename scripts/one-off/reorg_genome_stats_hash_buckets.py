@@ -108,6 +108,12 @@ Usage
     python3 scripts/one-off/reorg_genome_stats_hash_buckets.py \
         --samples samples.csv --root results --apply --only asm_stats
 
+    # write a per-basename detail report for every ambiguous/GCA-GCF-auto-resolved
+    # basename (category, contributing samples.csv rows) -- see load_samples()'s
+    # docstring; omit --ambiguity-report to keep a dry-run side-effect-free
+    python3 scripts/one-off/reorg_genome_stats_hash_buckets.py \
+        --samples samples.csv --root results --ambiguity-report results/_ambiguous_basenames_report.csv
+
 Run via sbatch, not on the login node, for the full-scale production run:
     sbatch -p short --mem 8gb -c 1 -N 1 -n 1 --out logs/reorg_genome_stats.%j.log \
         --wrap "python3 scripts/one-off/reorg_genome_stats_hash_buckets.py \
@@ -118,6 +124,7 @@ import argparse
 import csv
 import hashlib
 import os
+import random
 import re
 import sys
 from collections import defaultdict
@@ -221,7 +228,36 @@ def resolve_gca_gcf_duplicate(pairs):
     return next((asmid, locustag) for prefix, _core, asmid, locustag in parsed if prefix == "GCF")
 
 
-def load_samples(samples_path: Path):
+# Ambiguous-basename categories, for reporting -- these have very different
+# real-world risk profiles and should never be lumped into one raw count:
+#
+#   BARE_FALLBACK: the ambiguous key is a plain "Genus_species" (no strain).
+#     Every row registers its OWN no-strain fallback form regardless of whether
+#     its STRAIN is populated (see collect_asm_stats.py's A. niger-style
+#     cascade this mirrors) -- so ANY species with >=2 genomes produces this,
+#     even when every genome is properly stranded and would never actually
+#     need the bare form to resolve a real file. Only matters if a bare-named
+#     file genuinely exists on disk; harmless noise otherwise.
+#   FULL_COLLISION: the ambiguous key already includes a strain (or a
+#     strain-like fragment) and still collides -- two different genomes
+#     produced the textually identical full basename. This is the category
+#     that actually risks silent misattribution and deserves attention.
+#
+# This split is a heuristic (is the string ALSO producible as some row's own
+# bare no-strain form?), not a perfectly precise classifier: a genuine
+# species+strain collision can still land in BARE_FALLBACK if its exact text
+# happens to coincide with a different, unrelated row's SPECIES_IN-derived
+# no-strain form (observed: a SPECIES_IN value like "Fusarium graminearum
+# PH-1" makes that exact string a legitimate bare form from THAT row's
+# perspective, even though it's colliding here as a full species+strain
+# form from a different row). The category label never changes quarantine
+# behavior -- every ambiguous basename is quarantined either way -- so this
+# is purely a triage aid; the per-basename report (see report_path below)
+# always carries every contributing row for manual ground-truth review.
+BARE_FALLBACK, FULL_COLLISION = "bare-fallback", "full-collision"
+
+
+def load_samples(samples_path: Path, report_path: Path = None):
     """Return (asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames).
 
     A basename is ambiguous when it reduces from more than one distinct
@@ -233,9 +269,16 @@ def load_samples(samples_path: Path):
     guessed at via "whichever samples.csv row came first" (see module
     docstring's "Basename ambiguity" section for why -- this is a confirmed,
     not hypothetical, production data issue).
+
+    If report_path is given, a per-basename detail CSV is written there
+    (basename, category, asmid, locustag, species, species_in, strain) for
+    every ambiguous or GCA/GCF-auto-resolved basename -- so "how many are
+    real" never requires an ad-hoc script to answer.
     """
     asmid_set = set()
-    candidates = defaultdict(set)  # basename -> {(asmid, locustag), ...}
+    all_species_forms = set()  # every raw SPECIES/SPECIES_IN string seen, for BARE_FALLBACK detection
+    candidates = defaultdict(set)          # basename -> {(asmid, locustag), ...}
+    candidate_rows = defaultdict(dict)     # basename -> {(asmid, locustag): (species, species_in, strain)}
     with open(samples_path, newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
@@ -256,18 +299,28 @@ def load_samples(samples_path: Path):
             for sp in (species, species_in):
                 if not sp:
                     continue
+                all_species_forms.add(sp)
                 # basename with strain, and the no-strain fallback form
                 # (documented A. niger-style edge case, collect_asm_stats.py)
                 for basename in (make_sample_tag(sp, strain), make_sample_tag(sp, "")):
                     candidates[basename].add((asmid, locustag))
+                    candidate_rows[basename][(asmid, locustag)] = (species, species_in, strain)
+
+    bare_forms = {make_sample_tag(sp, "") for sp in all_species_forms}
 
     basename_to_asmid = {}
     basename_to_locustag = {}
     ambiguous_basenames = set()
     gca_gcf_resolved = 0
+    report_rows = []  # for the optional detail CSV
     for basename, pairs in candidates.items():
         if len(pairs) > 1:
+            category = BARE_FALLBACK if basename in bare_forms else FULL_COLLISION
             resolved = resolve_gca_gcf_duplicate(pairs)
+            status = "auto-resolved-gca-gcf" if resolved else "quarantined"
+            for asmid, locustag in pairs:
+                sp, sp_in, st = candidate_rows[basename][(asmid, locustag)]
+                report_rows.append([basename, category, status, asmid, locustag, sp, sp_in, st])
             if resolved is None:
                 ambiguous_basenames.add(basename)
                 continue
@@ -280,15 +333,33 @@ def load_samples(samples_path: Path):
         if locustag:
             basename_to_locustag[basename] = locustag
 
+    bare_ambiguous = {b for b in ambiguous_basenames if b in bare_forms}
+    full_ambiguous = ambiguous_basenames - bare_ambiguous
+
     if gca_gcf_resolved:
         print(f"NOTE: {gca_gcf_resolved} basenames had a GCA_/GCF_ same-accession pair "
               f"(RefSeq mirror) -- deferred to the GCF_ (RefSeq) row automatically.",
               file=sys.stderr)
     if ambiguous_basenames:
-        print(f"NOTE: {len(ambiguous_basenames)} basenames are genuinely ambiguous (map to "
-              f">1 distinct genome in samples.csv, not a GCA/GCF mirror pair) -- any matching "
-              f"files will be quarantined to _AMBIGUOUS_BASENAME/, not guessed at. First few: "
-              f"{sorted(ambiguous_basenames)[:10]}", file=sys.stderr)
+        print(f"NOTE: {len(ambiguous_basenames)} basenames quarantined as ambiguous, of which:",
+              file=sys.stderr)
+        print(f"  {len(bare_ambiguous)} are bare 'Genus_species' no-strain-fallback keys -- "
+              f"harmless in most cases (any species with >=2 genomes produces one of these "
+              f"regardless of whether every genome is properly stranded; only matters if a "
+              f"bare-named file actually exists on disk).", file=sys.stderr)
+        print(f"  {len(full_ambiguous)} are FULL basename collisions (two different genomes "
+              f"produced the textually identical species+strain form) -- these are the ones "
+              f"that risk real misattribution. First few: {sorted(full_ambiguous)[:10]}",
+              file=sys.stderr)
+
+    if report_path and report_rows:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(report_path, "w", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["basename", "category", "status", "asmid", "locustag",
+                              "species", "species_in", "strain"])
+            writer.writerows(sorted(report_rows))
+        print(f"Ambiguous/auto-resolved basename detail report: {report_path}", file=sys.stderr)
 
     return asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames
 
@@ -298,14 +369,33 @@ def load_samples(samples_path: Path):
 _PREFIX_DELIMITERS = (".", "_")
 
 
-def longest_prefix_match(filename: str, candidates_sorted_desc):
-    """Return the longest candidate that is a prefix of filename (followed by one of
-    _PREFIX_DELIMITERS, or an exact match), or None."""
-    for cand in candidates_sorted_desc:
-        if filename == cand:
-            return cand
-        if any(filename.startswith(cand + d) for d in _PREFIX_DELIMITERS):
-            return cand
+def _prefix_lengths(filename: str):
+    """Candidate prefix lengths for filename, longest first: the full length
+    (an exact match, no suffix) then every _PREFIX_DELIMITERS position, descending."""
+    lengths = [len(filename)]
+    lengths.extend(i for i, ch in enumerate(filename) if ch in _PREFIX_DELIMITERS)
+    lengths.sort(reverse=True)
+    return lengths
+
+
+def longest_prefix_match(filename: str, candidate_set):
+    """Return the longest member of candidate_set that is a prefix of filename
+    (followed by one of _PREFIX_DELIMITERS, or an exact match), or None.
+
+    O(len(filename)) set-membership checks rather than O(len(candidate_set))
+    string comparisons -- candidate_set can be tens of thousands of ASMIDs or
+    basenames, so the naive "try every candidate as a literal prefix" scan is
+    the dominant cost at production scale (confirmed: a full run over ~150k
+    files stalled for close to an hour on a slow compute node before this
+    fix, with build_plan() apparently still in the middle of this scan).
+    Enumerating filename's own delimiter positions (typically a handful) and
+    checking set membership at each is the same match from the other
+    direction, and doesn't scale with candidate-set size at all.
+    """
+    for length in _prefix_lengths(filename):
+        candidate = filename[:length]
+        if candidate in candidate_set:
+            return candidate
     return None
 
 
@@ -317,9 +407,7 @@ RESOLVED, AMBIGUOUS, UNMATCHED = "resolved", "ambiguous", "unmatched"
 
 
 def resolve_key(filename: str, source_kind: str, target_kind: str,
-                 asmid_list_desc, basename_asmid_desc, basename_locustag_desc,
-                 basename_to_asmid, basename_to_locustag, ambiguous_basenames,
-                 ambiguous_desc):
+                 asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames):
     """Return (status, key, matched_prefix).
 
     source_kind decides how the filename is parsed (asmid-prefixed vs.
@@ -328,21 +416,25 @@ def resolve_key(filename: str, source_kind: str, target_kind: str,
     status is RESOLVED (key/matched_prefix set), AMBIGUOUS (matched_prefix set,
     key is None -- basename maps to >1 distinct genome, see load_samples()), or
     UNMATCHED (no candidate matched at all).
+
+    asmid_set/basename_to_asmid/basename_to_locustag/ambiguous_basenames double
+    as the candidate pools for longest_prefix_match() (dict keys / set members
+    support membership testing directly -- see its docstring for why that's
+    what matters, not a sorted list of candidates).
     """
     if source_kind == "asmid":
-        matched = longest_prefix_match(filename, asmid_list_desc)
+        matched = longest_prefix_match(filename, asmid_set)
         return (RESOLVED, matched, matched) if matched else (UNMATCHED, None, None)
 
-    basename_map_desc = basename_asmid_desc if target_kind == "asmid" else basename_locustag_desc
     basename_lookup = basename_to_asmid if target_kind == "asmid" else basename_to_locustag
 
-    # Ambiguous basenames are excluded from basename_map_desc (they're not in
+    # Ambiguous basenames are excluded from basename_lookup (they're not in
     # basename_to_asmid/basename_to_locustag at all), so they must be checked
     # against separately -- otherwise an ambiguous file would fall through to
     # whatever shorter, unrelated candidate happens to also prefix-match, or to
     # plain UNMATCHED, losing the distinction entirely.
-    matched = longest_prefix_match(filename, basename_map_desc)
-    ambiguous_match = longest_prefix_match(filename, ambiguous_desc)
+    matched = longest_prefix_match(filename, basename_lookup)
+    ambiguous_match = longest_prefix_match(filename, ambiguous_basenames)
     if ambiguous_match and (not matched or len(ambiguous_match) >= len(matched)):
         return AMBIGUOUS, None, ambiguous_match
     if not matched:
@@ -366,10 +458,11 @@ def build_plan(root: Path, types, asmid_set, basename_to_asmid, basename_to_locu
     unmatched_rows: list of dict(old_path, new_path=_UNMATCHED path, type, key=None)
     ambiguous_rows: list of dict(old_path, new_path=_AMBIGUOUS_BASENAME path, type, key=None)
     """
-    asmid_list_desc = sorted(asmid_set, key=len, reverse=True)
-    basename_asmid_desc = sorted(basename_to_asmid, key=len, reverse=True)
-    basename_locustag_desc = sorted(basename_to_locustag, key=len, reverse=True)
-    ambiguous_desc = sorted(ambiguous_basenames, key=len, reverse=True)
+    # longest_prefix_match() only needs membership testing, so the dicts'
+    # keys/the sets themselves serve directly as candidate pools -- no sorted
+    # list to build (see longest_prefix_match()'s docstring for why the old
+    # sorted-list-of-candidates approach was the actual bottleneck at
+    # production scale).
 
     plan_rows = []
     unmatched_rows = []
@@ -401,9 +494,7 @@ def build_plan(root: Path, types, asmid_set, basename_to_asmid, basename_to_locu
             filename = entry.name
             status, key, matched_prefix = resolve_key(
                 filename, source_kind, target_kind,
-                asmid_list_desc, basename_asmid_desc, basename_locustag_desc,
-                basename_to_asmid, basename_to_locustag,
-                ambiguous_basenames, ambiguous_desc,
+                asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames,
             )
             old_path = src_dir / filename
             if status == UNMATCHED:
@@ -467,7 +558,12 @@ def main():
     parser.add_argument("--apply", action="store_true", help="actually move files (default: dry-run)")
     parser.add_argument("--manifest-out", default=None,
                         help="manifest CSV path [<root>/_migration_manifest.<timestamp-free, appended>.csv]")
-    parser.add_argument("--spot-check", type=int, default=25, help="number of moved files to sha256-verify after --apply [25]")
+    parser.add_argument("--spot-check", type=int, default=25,
+                        help="after --apply, re-verify sha256 of this many randomly-sampled moved files [25]; 0 disables")
+    parser.add_argument("--ambiguity-report", default=None,
+                        help="write a per-basename detail CSV (category, contributing samples.csv rows) for every "
+                             "ambiguous/GCA-GCF-auto-resolved basename to this path; omit to skip (dry-run stays "
+                             "side-effect-free by default)")
     args = parser.parse_args()
 
     root = Path(args.root)
@@ -482,7 +578,10 @@ def main():
         print(f"ERROR: unknown type(s) {unknown}; known types: {list(TYPE_CONFIG.keys())}", file=sys.stderr)
         sys.exit(1)
 
-    asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames = load_samples(samples_path)
+    ambiguity_report_path = Path(args.ambiguity_report) if args.ambiguity_report else None
+    asmid_set, basename_to_asmid, basename_to_locustag, ambiguous_basenames = load_samples(
+        samples_path, report_path=ambiguity_report_path
+    )
     print(f"Loaded samples.csv: {len(asmid_set)} ASMIDs, {len(basename_to_asmid)} basenames -> ASMID, "
           f"{len(basename_to_locustag)} basenames -> LOCUSTAG, {len(ambiguous_basenames)} ambiguous basenames")
 
@@ -563,6 +662,7 @@ def main():
     moved = 0
     skipped_already_done = 0
     errors = 0
+    moved_this_run = []  # (new_path, sha) -- for the --spot-check re-verification below
 
     with open(manifest_path, "a", newline="") as mfh:
         writer = csv.writer(mfh)
@@ -594,12 +694,31 @@ def main():
                 os.utime(new_path, (mtime, mtime))
                 writer.writerow([str(old_path), str(new_path), row["type"], row["key"], sha, size, mtime])
                 moved += 1
+                moved_this_run.append((new_path, sha))
             except OSError as exc:
                 print(f"ERROR moving {old_path} -> {new_path}: {exc}", file=sys.stderr)
                 errors += 1
 
     print(f"\nMoved {moved} files, skipped {skipped_already_done} already-done, {errors} errors.")
     print(f"Manifest: {manifest_path}")
+
+    if args.spot_check > 0 and moved_this_run:
+        sample = random.sample(moved_this_run, min(args.spot_check, len(moved_this_run)))
+        mismatches = []
+        for new_path, expected_sha in sample:
+            try:
+                actual_sha = sha256_of(new_path)
+            except OSError as exc:
+                mismatches.append((new_path, f"unreadable: {exc}"))
+                continue
+            if actual_sha != expected_sha:
+                mismatches.append((new_path, f"sha256 mismatch: expected {expected_sha}, got {actual_sha}"))
+        print(f"Spot-check: re-verified sha256 of {len(sample)}/{len(moved_this_run)} moved files.")
+        if mismatches:
+            print(f"  WARNING: {len(mismatches)} spot-check failures -- investigate before trusting this run:",
+                  file=sys.stderr)
+            for path, reason in mismatches:
+                print(f"    {path}: {reason}", file=sys.stderr)
 
     # Verification pass.
     print("\nVerification:")
