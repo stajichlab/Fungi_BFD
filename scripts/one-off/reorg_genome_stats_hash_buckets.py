@@ -3,24 +3,30 @@
 
 Background
 ----------
-`results/genome_stats/{asm_stats,asm_reports,BUSCO_genome,BUSCO_protein,aa_freq,
+`results/genome_stats/{asm_stats,BUSCO_genome,BUSCO_protein,aa_freq,
 codon_freq,gene_stats,intergenic_stats}/` and `results/function/{aiupred,cazy,
 merops,pfam_hmmscan,predgpi,signalp,targetP,tmhmm,wolfpsort}/` are flat directories
 that reach tens of thousands of files each (gene_stats: 55,398). This is slow to
 list/back up on this cluster's NFS-backed storage. See
 `todo/genome_stats_storage_reorg.md` (T-014) for the full plan.
 
+`results/genome_stats/asm_reports/` was investigated and confirmed dead: no
+current Nextflow module or script produces or consumes it (superseded by
+`asm_stats`/`CALC_ASM_STATS` + `summarize_asm_stats.py`). It was deleted
+outright (22,245 files) rather than migrated -- see `.living/decisions.md`.
+`scripts/collect_asm_stats.py`, its matching dead consumer, was removed too.
+
 This script moves every existing file from `<type>/<name>.<ext>` to
 `<type>/<bucket>/<key>.<ext>`, where:
-  - `key` is ASMID for asm_stats/asm_reports/BUSCO_genome (assembly-level outputs)
+  - `key` is ASMID for asm_stats/BUSCO_genome (assembly-level outputs)
     or LOCUSTAG for everything else (annotation-derived outputs)
   - `bucket` is `hash_bucket_for_type(type, key)` (nextflow/bin/genome_stats_paths.py)
 
 Key resolution
 --------------
-Accession-keyed types (asm_stats, asm_reports, BUSCO_genome... wait, BUSCO_genome is
-actually name-keyed on disk today, see below): filenames already start with the
-ASMID itself (`GCA_000149445.2_ASM14944v2.stats.txt`) -- resolve by longest-prefix
+Accession-keyed types (asm_stats -- BUSCO_genome is actually name-keyed on disk
+today, see below): filenames already start with the ASMID itself
+(`GCA_000149445.2_ASM14944v2.stats.txt`) -- resolve by longest-prefix
 match against the known ASMID set from samples.csv (handles the bare
 `GCA_000149445` vs versioned `GCA_000149445.2` ambiguity the same way
 collect_busco_stats.py::load_asmid_map() does).
@@ -156,7 +162,6 @@ from genome_stats_paths import hash_bucket_for_type  # noqa: E402
 # handled by longest_prefix_match() accepting both.
 TYPE_CONFIG = {
     "asm_stats":        ("asmid", "asmid",    "genome_stats"),
-    "asm_reports":      ("asmid", "asmid",    "genome_stats"),
     "BUSCO_genome":     ("name",  "asmid",    "genome_stats"),
     "BUSCO_protein":    ("name",  "locustag", "genome_stats"),
     "aa_freq":          ("name",  "locustag", "genome_stats"),
