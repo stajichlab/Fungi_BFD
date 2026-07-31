@@ -67,7 +67,13 @@ def staleGuardBucketed(ch, String type, List relOuts) {
     }
 }
 
-// Root a gated glob in params.outdir.
+// Root a gated glob in params.outdir. Globs for the hash-bucketed tools use
+// "**/*.ext", not "*.ext" -- these directories are hash-bucketed one level
+// deep (T-014); a flat glob would silently match nothing for any bucketed
+// genome, the same silent-loss failure class already documented for
+// gated-glob-vs-live-channel elsewhere in this repo (.living/learnings.md).
+// CAZY is the one exception -- its own pre-existing per-genome-subdirectory
+// layout (not a hash bucket) already uses "*/*.ext" and is unaffected.
 def gatedGlob(sync_ch, String glob) {
     gatedGlobIn(sync_ch, params.outdir, glob)
 }
@@ -124,7 +130,7 @@ workflow BFD_FUNCTIONAL {
     // previously-computed genomes still make it into the table. In run mode a
     // tool that did not run has nothing to merge and is skipped.
     if (!skip_merge) {
-        def pfam_in = mergeInput(use_glob, run_pfam, run_pfam ? RUN_PFAM.out.domtbl : null, "pfam_hmmscan/*.domtblout.gz")
+        def pfam_in = mergeInput(use_glob, run_pfam, run_pfam ? RUN_PFAM.out.domtbl : null, "pfam_hmmscan/**/*.domtblout.gz")
         if (pfam_in) MERGE_PFAM(pfam_in)
 
         if (use_glob || run_cazy) {
@@ -136,31 +142,31 @@ workflow BFD_FUNCTIONAL {
             )
         }
 
-        def merops_in = mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/*.blasttab.gz")
+        def merops_in = mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
         if (merops_in) MERGE_MEROPS(merops_in)
 
-        def signalp_in = mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/*.signalp.gff3.gz")
+        def signalp_in = mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
         if (signalp_in) MERGE_SIGNALP(signalp_in)
 
-        def tmhmm_in = mergeInput(use_glob, run_tmhmm, run_tmhmm ? RUN_TMHMM.out.short_tsv : null, "tmhmm/*.tmhmm_short.tsv.gz")
+        def tmhmm_in = mergeInput(use_glob, run_tmhmm, run_tmhmm ? RUN_TMHMM.out.short_tsv : null, "tmhmm/**/*.tmhmm_short.tsv.gz")
         if (tmhmm_in) MERGE_TMHMM(tmhmm_in)
 
-        def targetp_in = mergeInput(use_glob, run_targetp, run_targetp ? RUN_TARGETP.out.summary : null, "targetP/*_summary.targetp2.gz")
+        def targetp_in = mergeInput(use_glob, run_targetp, run_targetp ? RUN_TARGETP.out.summary : null, "targetP/**/*_summary.targetp2.gz")
         if (targetp_in) MERGE_TARGETP(targetp_in)
 
         if (use_glob || run_idp) {
             def idp_sync = run_idp ? RUN_IDP.out.idp_csv.collect()         : Channel.of(true)
             def sum_sync = run_idp ? RUN_IDP.out.idp_summary_csv.collect() : Channel.of(true)
             MERGE_IDP(
-                use_glob ? gatedGlob(idp_sync, "aiupred/*.idp.csv.gz")         : idp_sync,
-                use_glob ? gatedGlob(sum_sync, "aiupred/*.idp_summary.csv.gz") : sum_sync
+                use_glob ? gatedGlob(idp_sync, "aiupred/**/*.idp.csv.gz")         : idp_sync,
+                use_glob ? gatedGlob(sum_sync, "aiupred/**/*.idp_summary.csv.gz") : sum_sync
             )
         }
 
-        def wolf_in = mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/*.wolfpsort.results.txt.gz")
+        def wolf_in = mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/**/*.wolfpsort.results.txt.gz")
         if (wolf_in) MERGE_WOLFPSORT(wolf_in)
 
-        def predgpi_in = mergeInput(use_glob, run_predgpi, run_predgpi ? RUN_PREDGPI.out.gff3 : null, "predgpi/*.predgpi.gff3.gz")
+        def predgpi_in = mergeInput(use_glob, run_predgpi, run_predgpi ? RUN_PREDGPI.out.gff3 : null, "predgpi/**/*.predgpi.gff3.gz")
         if (predgpi_in) MERGE_PREDGPI(predgpi_in)
     }
 }

@@ -52,26 +52,30 @@ workflow BFD_MERGE {
 
     if (use_glob) {
         // In glob mode a table is rebuilt even when its producer did not run this
-        // session, so genomes computed earlier still reach the table.
+        // session, so genomes computed earlier still reach the table. Globs are
+        // "**/*.ext", not "*.ext" -- these directories are hash-bucketed one level
+        // deep (T-014); a flat glob would silently match nothing for any bucketed
+        // genome, the same silent-loss failure class already documented for
+        // gated-glob-vs-live-channel elsewhere in this repo (.living/learnings.md).
         MERGE_AA_FREQ(toManifest(gatedGlobStats(
             params.run_aa_freq.toBoolean() ? aa_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
-            "aa_freq/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
+            "aa_freq/**/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
 
         MERGE_CODON_FREQ(toManifest(gatedGlobStats(
             params.run_codon_freq.toBoolean() ? codon_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
-            "codon_freq/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
+            "codon_freq/**/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
 
         MERGE_INTERGENIC(toManifest(gatedGlobStats(
             params.run_intergenic.toBoolean() ? intergenic_csv.collect() : Channel.of(true),
-            "intergenic_stats/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
+            "intergenic_stats/**/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
 
         MERGE_GENE_STATS(toManifest(gatedGlobStats(
             params.run_gene_stats.toBoolean() ? gene_stats.collect() : Channel.of(true),
-            "gene_stats/*.csv.gz"), 'gene_stats.manifest.txt'))
+            "gene_stats/**/*.csv.gz"), 'gene_stats.manifest.txt'))
 
         MERGE_ASM_STATS(toManifest(gatedGlobStats(
             params.run_asm_stats.toBoolean() ? asm_stats.collect() : Channel.of(true),
-            "asm_stats/*.stats.txt"), 'asm_stats.manifest.txt'))
+            "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'))
 
     } else {
         // Run mode: the frequency merges take the union of genomes already cached
