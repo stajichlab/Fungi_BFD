@@ -458,7 +458,6 @@ def hashBucket(String key, int width) {
 def bucketWidthFor(String type) {
     def widths = [
         asm_stats       : 2,
-        asm_reports     : 2,
         BUSCO_genome    : 2,
         BUSCO_protein   : 2,
         aa_freq         : 2,

@@ -34,7 +34,6 @@ import hashlib
 # nextflow/modules/common/utils.nf::bucketWidthFor().
 BUCKET_WIDTH = {
     "asm_stats": 2,
-    "asm_reports": 2,
     "BUSCO_genome": 2,
     "BUSCO_protein": 2,
     "aa_freq": 2,
