@@ -11,20 +11,28 @@ Options:
     --busco-dir DIR        Legacy BUSCO results root; walks for short_summary*.txt
                            (default: busco_results; skipped if directory absent)
     --genome-busco-dir DIR BFD storeDir for BUSCO_GENOME results (default:
-                           results/genome_stats/BUSCO_genome).  Files are named
-                           {basename}.BUSCO_summary.{lineage}.txt
+                           results/genome_stats/BUSCO_genome), hash-bucketed one
+                           level deep. Files are named
+                           {bucket}/{ASMID}.BUSCO_summary.{lineage}.txt --
+                           BUSCO_genome is an assembly-level statistic, so the key
+                           IS the ASMID directly, no samples.csv lookup needed.
     --pep-busco-dir DIR    BFD storeDir for BUSCO_PEP results (default:
-                           results/genome_stats/BUSCO_protein).  Same naming.
-    --samples CSV          samples.csv path — used to map basename → ASMID
-                           (default: samples.csv)
+                           results/genome_stats/BUSCO_protein), hash-bucketed one
+                           level deep. Files are named
+                           {bucket}/{LOCUSTAG}.BUSCO_summary.{lineage}.txt --
+                           BUSCO_protein is annotation-derived, so the key is
+                           LOCUSTAG, resolved to ASMID via samples.csv (this
+                           script's output is always keyed by ASMID).
+    --samples CSV          samples.csv path — used to map LOCUSTAG → ASMID for
+                           --pep-busco-dir (default: samples.csv)
     --output FILE          Output CSV.gz path (default: tables/BUSCO.csv.gz)
     --project-dir DIR      Project root (default: current directory)
 
 Source priority (later sources win):
   1. batch_summary.txt in --busco-dir
   2. per-run short_summary*.txt in --busco-dir subtree
-  3. BFD-style {basename}.BUSCO_summary.{lineage}.txt from --genome-busco-dir
-  4. BFD-style {basename}.BUSCO_summary.{lineage}.txt from --pep-busco-dir
+  3. BFD-style {bucket}/{ASMID}.BUSCO_summary.{lineage}.txt from --genome-busco-dir
+  4. BFD-style {bucket}/{LOCUSTAG}.BUSCO_summary.{lineage}.txt from --pep-busco-dir
 
 Output columns:
     ASMID, complete_pct, single_pct, duplicated_pct, fragmented_pct, missing_pct,
@@ -95,32 +103,6 @@ def parse_batch_summary(path: Path) -> dict[str, dict]:
     return results
 
 
-def build_basename_map(samples_path: Path) -> dict[str, str]:
-    """
-    Build basename -> ASMID map from samples.csv.
-
-    The basename is constructed the same way as the Nextflow workflow:
-        species_strain (spaces/slashes/# replaced with _; strain uses first
-        semicolon-delimited token with quotes and colons cleaned).
-    """
-    bmap: dict[str, str] = {}
-    if not samples_path.exists():
-        return bmap
-    with open(samples_path) as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            asmid   = row.get("ASMID", "").strip()
-            species = row.get("SPECIES", "").strip()
-            strain  = row.get("STRAIN", "").strip().split(";")[0].strip()
-            strain  = strain.replace("'", "").replace(":", " ")
-            parts   = [p for p in [species, strain] if p]
-            basename = "_".join(parts)
-            basename = re.sub(r"[\s/\#]+", "_", basename)
-            if asmid and basename:
-                bmap[basename] = asmid
-    return bmap
-
-
 def load_asmid_map(samples_path: Path) -> dict[str, str]:
     """Map ASMID (and version-only prefix) -> canonical ASMID."""
     amap: dict[str, str] = {}
@@ -139,28 +121,46 @@ def load_asmid_map(samples_path: Path) -> dict[str, str]:
     return amap
 
 
-def scan_bfd_storeDir(directory: Path, basename_map: dict[str, str],
-                      records: dict[str, dict], label: str) -> int:
-    """
-    Parse {basename}.BUSCO_summary.{lineage}.txt files from a BFD storeDir.
+def load_locustag_map(samples_path: Path) -> dict[str, str]:
+    """Map LOCUSTAG -> ASMID, for BUSCO_protein (annotation-derived, LOCUSTAG-keyed)."""
+    lmap: dict[str, str] = {}
+    if not samples_path.exists():
+        return lmap
+    with open(samples_path) as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            asmid = row.get("ASMID", "").strip()
+            locustag = row.get("LOCUSTAG", "").strip()
+            if asmid and locustag:
+                lmap[locustag] = asmid
+    return lmap
 
-    Updates `records` in place (basename_map used to resolve ASMID).
-    Returns number of new entries added.
+
+def scan_bfd_storeDir(directory: Path, key_map: dict[str, str],
+                      records: dict[str, dict], label: str, key_kind: str) -> int:
+    """
+    Parse {key}.BUSCO_summary.{lineage}.txt files from a BFD storeDir, hash-bucketed
+    one level deep (results/genome_stats/BUSCO_genome|BUSCO_protein/<bucket>/...).
+
+    key_kind is "asmid" (BUSCO_genome -- the filename key IS the ASMID already, no
+    lookup needed) or "locustag" (BUSCO_protein -- key_map resolves LOCUSTAG -> ASMID,
+    since `records` is always keyed by ASMID for the output CSV). Updates `records`
+    in place. Returns number of new entries added.
     """
     if not directory.is_dir():
         return 0
     added = 0
-    for path in sorted(directory.glob("*.BUSCO_summary.*.txt")):
+    for path in sorted(directory.glob("*/*.BUSCO_summary.*.txt")):
         m = _BFD_SUMMARY_RE.match(path.name)
         if not m:
             continue
-        basename = m.group(1)
+        key = m.group(1)
         stats = parse_short_summary(path)
         if not stats:
             continue
         # Prefer lineage encoded in filename over what's in the file text
         stats["lineage"] = m.group(2)
-        asmid = basename_map.get(basename, basename)
+        asmid = key if key_kind == "asmid" else key_map.get(key, key)
         records[asmid] = stats
         added += 1
     if added:
@@ -187,8 +187,8 @@ def main():
     samples_path = root / args.samples
     output_path  = root / args.output
 
-    asmid_map   = load_asmid_map(samples_path)
-    basename_map = build_basename_map(samples_path)
+    asmid_map    = load_asmid_map(samples_path)
+    locustag_map = load_locustag_map(samples_path)
 
     records: dict[str, dict] = {}
 
@@ -222,9 +222,11 @@ def main():
     else:
         print(f"[INFO] --busco-dir not found ({busco_dir}), skipping.")
 
-    # ── Sources 3 & 4: BFD storeDir flat directories ──────────────────────────
-    scan_bfd_storeDir(genome_dir, basename_map, records, "BUSCO_genome")
-    scan_bfd_storeDir(pep_dir,    basename_map, records, "BUSCO_protein")
+    # ── Sources 3 & 4: BFD storeDir hash-bucketed directories ─────────────────
+    # BUSCO_genome is ASMID-keyed (assembly-level), BUSCO_protein is LOCUSTAG-keyed
+    # (annotation-derived) -- see todo/genome_stats_storage_reorg.md §A.
+    scan_bfd_storeDir(genome_dir, {},           records, "BUSCO_genome",  key_kind="asmid")
+    scan_bfd_storeDir(pep_dir,    locustag_map, records, "BUSCO_protein", key_kind="locustag")
 
     if not records:
         print("[WARN] No BUSCO data found — output will be header-only.", file=sys.stderr)

@@ -20,7 +20,7 @@ include { CALC_ASM_STATS   } from '../../modules/BFD/CALC_ASM_STATS/main.nf'
 include { BUSCO_GENOME     } from '../../modules/BFD/BUSCO_GENOME/main.nf'
 include { BUSCO_PEP        } from '../../modules/BFD/BUSCO_PEP/main.nf'
 
-include { clearIfStale } from '../../modules/common/utils.nf'
+include { clearIfStale; hashBucketForType } from '../../modules/common/utils.nf'
 
 // Split a per-genome frequency channel into genomes whose output already exists
 // and genomes that still need computing.
@@ -31,9 +31,16 @@ include { clearIfStale } from '../../modules/common/utils.nf'
 // by re-testing exists() on expected output paths while BATCH_* was still
 // publishing, and publishDir copies asynchronously *after* a task completes, so
 // MERGE_AA_FREQ / MERGE_CODON_FREQ fired or not depending on who won the race.
+//
+// Expected path is keyed by LOCUSTAG (both aa_freq and codon_freq are
+// annotation-derived, not assembly-level) inside its hash bucket -- must match
+// exactly what BATCH_AA_FREQ/BATCH_CODON_FREQ (#20) actually write, or every
+// genome misclassifies as "todo" and gets recomputed regardless of what's
+// already on disk.
 def planFreq(ch, String subdir, String suffix) {
     ch.map { meta, input ->
-        def out = file("${params.genome_stats_outdir}/${subdir}/${meta.id}.${suffix}")
+        def bucket = hashBucketForType(subdir, meta.locustag)
+        def out = file("${params.genome_stats_outdir}/${subdir}/${bucket}/${meta.locustag}.${suffix}")
         clearIfStale(input, [out])
         tuple(meta, input, out, out.exists())
     }
@@ -78,15 +85,17 @@ workflow BFD_GENOME_STATS {
 
     if (params.run_intergenic.toBoolean())
         CALC_INTERGENIC(intergenic_ch.map { meta, gff ->
-            clearIfStale(gff, [file("${stats}/intergenic_stats/${meta.id}.gene_intergenic_distances.csv.gz")])
+            def bucket = hashBucketForType('intergenic_stats', meta.locustag)
+            clearIfStale(gff, [file("${stats}/intergenic_stats/${bucket}/${meta.locustag}.gene_intergenic_distances.csv.gz")])
             tuple(meta, gff)
         })
 
     if (params.run_gene_stats.toBoolean())
         CALC_GENE_STATS(gene_stats_ch.map { meta, gff, dna ->
+            def bucket = hashBucketForType('gene_stats', meta.locustag)
             def outs = ['gene_info', 'gene_exons', 'gene_CDS', 'gene_introns',
                         'gene_transcripts', 'gene_trnas', 'gene_proteins'].collect {
-                file("${stats}/gene_stats/${meta.id}.${it}.csv.gz")
+                file("${stats}/gene_stats/${bucket}/${meta.locustag}.${it}.csv.gz")
             }
             // GFF3 (re-annotation) and genome FASTA are both inputs; either being
             // newer than the cached outputs should force a re-run.
@@ -97,19 +106,22 @@ workflow BFD_GENOME_STATS {
 
     if (params.run_asm_stats.toBoolean())
         CALC_ASM_STATS(asm_stats_ch.map { meta, genome ->
-            clearIfStale(genome, [file("${stats}/asm_stats/${meta.asmid}.stats.txt")])
+            def bucket = hashBucketForType('asm_stats', meta.asmid)
+            clearIfStale(genome, [file("${stats}/asm_stats/${bucket}/${meta.asmid}.stats.txt")])
             tuple(meta, genome)
         })
 
     if (params.run_busco_genome.toBoolean())
         BUSCO_GENOME(busco_genome_ch.map { meta, genome ->
-            clearIfStale(genome, [file("${stats}/BUSCO_genome/${meta.id}.BUSCO_summary.${meta.lineage}.txt")])
+            def bucket = hashBucketForType('BUSCO_genome', meta.asmid)
+            clearIfStale(genome, [file("${stats}/BUSCO_genome/${bucket}/${meta.asmid}.BUSCO_summary.${meta.lineage}.txt")])
             tuple(meta, genome)
         })
 
     if (params.run_busco_pep.toBoolean())
         BUSCO_PEP(busco_pep_ch.map { meta, prot ->
-            clearIfStale(prot, [file("${stats}/BUSCO_protein/${meta.id}.BUSCO_summary.${meta.lineage}.txt")])
+            def bucket = hashBucketForType('BUSCO_protein', meta.locustag)
+            clearIfStale(prot, [file("${stats}/BUSCO_protein/${bucket}/${meta.locustag}.BUSCO_summary.${meta.lineage}.txt")])
             tuple(meta, prot)
         })
 

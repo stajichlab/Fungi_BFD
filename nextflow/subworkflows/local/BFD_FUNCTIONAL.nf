@@ -34,14 +34,34 @@ include { MERGE_IDP       } from '../../modules/BFD/MERGE_IDP/main.nf'
 include { MERGE_WOLFPSORT } from '../../modules/BFD/MERGE_WOLFPSORT/main.nf'
 include { MERGE_PREDGPI   } from '../../modules/BFD/MERGE_PREDGPI/main.nf'
 
-include { clearIfStale; gatedGlobIn } from '../../modules/common/utils.nf'
+include { clearIfStale; gatedGlobIn; hashBucketForType } from '../../modules/common/utils.nf'
 
-// Attach a staleness check to the protein channel for one tool: delete any cached
-// output older than the proteins file, then pass the tuple through unchanged.
+// Attach a staleness check to the protein channel for CAZY specifically -- CAZY
+// uses a different pre-existing layout (one subdirectory per genome, not
+// hash-bucketed) and is out of scope for the genome_stats/function hash-bucket
+// reorg (see KNOWN_SUBDIRECTORY_LAYOUT_TYPES in
+// scripts/one-off/reorg_genome_stats_hash_buckets.py). Left exactly as before.
 def staleGuard(ch, List relOuts) {
     ch.map { meta, prot ->
         clearIfStale(prot, relOuts.collect { rel ->
             file("${params.outdir}/${rel.replace('@', meta.id)}")
+        })
+        tuple(meta, prot)
+    }
+}
+
+// Same idea, but for the hash-bucketed function/* tools (everything except
+// CAZY): relOuts templates are filename-only (no type prefix, no bucket) --
+// both are computed here from `type` and meta.locustag, and must match exactly
+// what the real RUN_* module actually writes (see the corresponding module
+// under nextflow/modules/BFD/), or clearIfStale()'s check -- and therefore
+// storeDir's own existence check -- looks in the wrong place and every genome
+// gets needlessly recomputed.
+def staleGuardBucketed(ch, String type, List relOuts) {
+    ch.map { meta, prot ->
+        def bucket = hashBucketForType(type, meta.locustag)
+        clearIfStale(prot, relOuts.collect { rel ->
+            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.locustag)}")
         })
         tuple(meta, prot)
     }
@@ -81,23 +101,23 @@ workflow BFD_FUNCTIONAL {
 
     // ── Per-species RUN steps ────────────────────────────────────────────────
     if (run_pfam)
-        RUN_PFAM(staleGuard(proteins_ch, ['pfam_hmmscan/@.domtblout.gz', 'pfam_hmmscan/@.tblout.gz']))
+        RUN_PFAM(staleGuardBucketed(proteins_ch, 'pfam_hmmscan', ['@.domtblout.gz', '@.tblout.gz']))
     if (run_cazy)
         RUN_CAZY(staleGuard(proteins_ch, ['cazy/@/@.overview.tsv.gz', 'cazy/@/@.cazymes.tsv.gz', 'cazy/@/@.substrates.tsv.gz']))
     if (run_merops)
-        RUN_MEROPS(staleGuard(proteins_ch, ['merops/@.blasttab.gz']))
+        RUN_MEROPS(staleGuardBucketed(proteins_ch, 'merops', ['@.blasttab.gz']))
     if (run_signalp)
-        RUN_SIGNALP(staleGuard(proteins_ch, ['signalp/@.signalp.gff3.gz', 'signalp/@.signalp.results.txt.gz']))
+        RUN_SIGNALP(staleGuardBucketed(proteins_ch, 'signalp', ['@.signalp.gff3.gz', '@.signalp.results.txt.gz']))
     if (run_tmhmm)
-        RUN_TMHMM(staleGuard(proteins_ch, ['tmhmm/@.tmhmm_short.tsv.gz', 'tmhmm/@.tmhmm_results.tsv.gz']))
+        RUN_TMHMM(staleGuardBucketed(proteins_ch, 'tmhmm', ['@.tmhmm_short.tsv.gz', '@.tmhmm_results.tsv.gz']))
     if (run_targetp)
-        RUN_TARGETP(staleGuard(proteins_ch, ['targetP/@_summary.targetp2.gz']))
+        RUN_TARGETP(staleGuardBucketed(proteins_ch, 'targetP', ['@_summary.targetp2.gz']))
     if (run_idp)
-        RUN_IDP(staleGuard(proteins_ch, ['aiupred/@.aiupred.txt.gz', 'aiupred/@.idp.csv.gz', 'aiupred/@.idp_summary.csv.gz']))
+        RUN_IDP(staleGuardBucketed(proteins_ch, 'aiupred', ['@.aiupred.txt.gz', '@.idp.csv.gz', '@.idp_summary.csv.gz']))
     if (run_wolfpsort)
-        RUN_WOLFPSORT(staleGuard(proteins_ch, ['wolfpsort/@.wolfpsort.results.txt.gz']))
+        RUN_WOLFPSORT(staleGuardBucketed(proteins_ch, 'wolfpsort', ['@.wolfpsort.results.txt.gz']))
     if (run_predgpi)
-        RUN_PREDGPI(staleGuard(proteins_ch, ['predgpi/@.predgpi.gff3.gz']))
+        RUN_PREDGPI(staleGuardBucketed(proteins_ch, 'predgpi', ['@.predgpi.gff3.gz']))
 
     // ── MERGE steps ──────────────────────────────────────────────────────────
     // In glob mode a tool is merged even when it did not run this session, so

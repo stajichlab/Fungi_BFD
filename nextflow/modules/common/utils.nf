@@ -26,9 +26,12 @@ def tablesDir() {
 // ── Sample identity ─────────────────────────────────────────────────────────
 //
 // Moved here from lib/SampleUtils.groovy: Groovy classes on the lib/ classpath
-// are invisible to Nextflow's strict language spec (§2.1). The Python equivalents
-// are collect_busco_stats.py::build_basename_map() and
-// fix_low_trinity.py::species_key_from_row() — keep them in sync.
+// are invisible to Nextflow's strict language spec (§2.1). The Python equivalent
+// is fix_low_trinity.py::species_key_from_row() — keep them in sync.
+// (collect_busco_stats.py::build_basename_map() used to mirror this too, but was
+// removed when BUSCO_genome/BUSCO_protein switched to ASMID/LOCUSTAG-keyed
+// filenames -- neither needs a Genus_species_strain basename lookup anymore,
+// see todo/genome_stats_storage_reorg.md T-014.)
 
 // Canonicalise a raw strain value into a human-readable strain name.
 // 
