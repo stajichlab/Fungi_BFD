@@ -90,15 +90,24 @@ def parse_busco_genome_summary(path: Path):
     return {"complete_pct": float(m[1]), "n50_bp": n50_bp}
 
 
-def load_busco_by_out(busco_dir: Path) -> dict:
+def load_busco_by_asmid(busco_dir: Path) -> dict:
+    """Return {asmid: {complete_pct, n50_bp}} from results/genome_stats/BUSCO_genome/.
+
+    BUSCO_genome is ASMID-keyed (assembly-level statistic) and hash-bucketed
+    (nextflow/modules/BFD/BUSCO_GENOME/main.nf writes
+    <bucket>/<asmid>.BUSCO_summary.<lineage>.txt) -- the `*/*` glob covers the
+    one bucket-subdirectory level; the ASMID is still the filename's own
+    prefix before ".BUSCO_summary.", same extraction as before the reorg, just
+    keyed by ASMID now instead of the old Genus_species_strain basename.
+    """
     result = {}
     if not busco_dir.is_dir():
         return result
-    for p in busco_dir.glob("*.BUSCO_summary.*.txt"):
-        out = p.name.split(".BUSCO_summary.")[0]
+    for p in busco_dir.glob("*/*.BUSCO_summary.*.txt"):
+        asmid = p.name.split(".BUSCO_summary.")[0]
         parsed = parse_busco_genome_summary(p)
         if parsed:
-            result[out] = parsed
+            result[asmid] = parsed
     return result
 
 
@@ -162,7 +171,7 @@ def _sparse_ani_warning(species: str, asmids: list, ani_pairs: dict,
               file=sys.stderr)
 
 
-def pick_representative(asmids: list, busco_by_out: dict, samples: dict,
+def pick_representative(asmids: list, busco_by_asmid: dict, samples: dict,
                          ani_pairs: dict) -> str:
     asmid_set = set(asmids)
     ani_covered = [
@@ -173,14 +182,14 @@ def pick_representative(asmids: list, busco_by_out: dict, samples: dict,
 
     def sort_key(asmid):
         out = samples.get(asmid, {}).get("out", "")
-        b = busco_by_out.get(out, {"complete_pct": -1.0, "n50_bp": -1})
+        b = busco_by_asmid.get(asmid, {"complete_pct": -1.0, "n50_bp": -1})
         return (b["complete_pct"], b["n50_bp"], tuple(-ord(c) for c in out))
 
     return max(candidates, key=sort_key)
 
 
 def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
-                         busco_by_out: dict, threshold: float) -> list:
+                         busco_by_asmid: dict, threshold: float) -> list:
     by_species = defaultdict(list)
     for asmid, row in predict_input.items():
         sp = row.get("species", "").strip()
@@ -191,7 +200,7 @@ def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
     for species, asmids in sorted(by_species.items()):
         if len(asmids) < 2:
             continue
-        rep_asmid = pick_representative(asmids, busco_by_out, samples, ani_pairs)
+        rep_asmid = pick_representative(asmids, busco_by_asmid, samples, ani_pairs)
         rep_out = samples.get(rep_asmid, {}).get("out", "")
         _sparse_ani_warning(species, asmids, ani_pairs, rep_asmid)
 
@@ -331,8 +340,8 @@ def main():
     predict_input = load_predict_input(Path(args.predict_input))
     samples = load_samples(Path(args.samples))
     busco_dir = Path(args.busco_dir)
-    busco_by_out = load_busco_by_out(busco_dir)
-    if not busco_by_out and not args.allow_missing_busco:
+    busco_by_asmid = load_busco_by_asmid(busco_dir)
+    if not busco_by_asmid and not args.allow_missing_busco:
         sys.exit(
             f"[ERROR] No BUSCO summaries found in {busco_dir} "
             f"(exists: {busco_dir.is_dir()}). Representative selection picks by BUSCO "
@@ -346,11 +355,11 @@ def main():
 
     print(f"[INFO] predict_input: {len(predict_input)} strains", file=sys.stderr)
     print(f"[INFO] samples: {len(samples)} entries", file=sys.stderr)
-    print(f"[INFO] BUSCO summaries: {len(busco_by_out)}", file=sys.stderr)
+    print(f"[INFO] BUSCO summaries: {len(busco_by_asmid)}", file=sys.stderr)
     print(f"[INFO] ANI pairs: {len(ani_pairs)//2} unique pairs", file=sys.stderr)
 
     assignments = compute_assignments(predict_input, samples, ani_pairs,
-                                       busco_by_out, args.ani_threshold)
+                                       busco_by_asmid, args.ani_threshold)
 
     out_dir = Path(args.out_dir)
     write_assignments(assignments, out_dir)

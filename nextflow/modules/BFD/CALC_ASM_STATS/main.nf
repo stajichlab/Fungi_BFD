@@ -1,7 +1,9 @@
+include { hashBucketForType } from '../../common/utils.nf'
+
 process CALC_ASM_STATS {
     label    'asmstats'
     tag      "${meta.asmid}"
-    storeDir "${params.genome_stats_outdir}/asm_stats"
+    storeDir { "${params.genome_stats_outdir}/asm_stats/${hashBucketForType('asm_stats', meta.asmid)}" }
 
     input:
     tuple val(meta), path(genome)

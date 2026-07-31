@@ -96,21 +96,26 @@ def parse_busco_genome_summary(path: Path):
     return {"complete_pct": float(m.group(1)), "n50_bp": n50_bp}
 
 
-def load_busco_genome_by_out(busco_dir: Path) -> dict:
-    """Return {out: {complete_pct, n50_bp}} keyed by the BUSCO_genome filename stem
-    (the `out` = species_strain tag), read directly rather than via the aggregated
-    tables/BUSCO.csv.gz — that table's ASMID-basename join has real gaps (verified:
-    only 1/78 Aspergillus fumigatus genomes survived the join), so this script reads
-    the per-genome files directly as the design (todo/species_level_abinitio_reuse.md
-    S4.1) specifies."""
+def load_busco_genome_by_asmid(busco_dir: Path) -> dict:
+    """Return {asmid: {complete_pct, n50_bp}} keyed by the BUSCO_genome filename stem,
+    read directly rather than via the aggregated tables/BUSCO.csv.gz — that table's
+    ASMID-basename join has real gaps (verified: only 1/78 Aspergillus fumigatus
+    genomes survived the join), so this script reads the per-genome files directly
+    as the design (todo/species_level_abinitio_reuse.md S4.1) specifies.
+
+    BUSCO_genome is ASMID-keyed (assembly-level statistic) and hash-bucketed
+    (nextflow/modules/BFD/BUSCO_GENOME/main.nf writes
+    <bucket>/<asmid>.BUSCO_summary.<lineage>.txt) -- the `*/*` glob covers the
+    one bucket-subdirectory level; keyed by ASMID now instead of the old
+    Genus_species_strain `out` tag (genome_stats_storage_reorg.md, T-014)."""
     result = {}
     if not busco_dir.is_dir():
         return result
-    for p in busco_dir.glob("*.BUSCO_summary.*.txt"):
-        out = p.name.split(".BUSCO_summary.")[0]
+    for p in busco_dir.glob("*/*.BUSCO_summary.*.txt"):
+        asmid = p.name.split(".BUSCO_summary.")[0]
         parsed = parse_busco_genome_summary(p)
         if parsed:
-            result[out] = parsed
+            result[asmid] = parsed
     return result
 
 
@@ -179,7 +184,7 @@ def ani_between(pairs: dict, a: str, b: str):
 
 # ── Representative selection + reuse eligibility ────────────────────────────────
 
-def pick_representative(asmids: list, busco_by_out: dict, samples: dict, ani_pairs: dict) -> str:
+def pick_representative(asmids: list, busco_by_asmid: dict, samples: dict, ani_pairs: dict) -> str:
     """Highest BUSCO completeness, N50 tiebreak, alphabetical `out` final tiebreak
     (todo/species_level_abinitio_reuse.md S6.2) -- but ONLY among candidates that
     actually have at least one ANI pair to another strain in this species group.
@@ -198,7 +203,7 @@ def pick_representative(asmids: list, busco_by_out: dict, samples: dict, ani_pai
 
     def sort_key(asmid):
         out = samples[asmid]["out"]
-        b = busco_by_out.get(out, {"complete_pct": -1.0, "n50_bp": -1})
+        b = busco_by_asmid.get(asmid, {"complete_pct": -1.0, "n50_bp": -1})
         # max() picks the largest tuple; negate `out` alphabetical rank so that,
         # among true ties, the lexicographically SMALLEST `out` wins (a stable,
         # deterministic tiebreak per todo/species_level_abinitio_reuse.md S6.2).
@@ -206,7 +211,7 @@ def pick_representative(asmids: list, busco_by_out: dict, samples: dict, ani_pai
     return max(candidates, key=sort_key)
 
 
-def compute_assignments(samples: dict, ani_pairs: dict, busco_by_out: dict, ani_threshold: float,
+def compute_assignments(samples: dict, ani_pairs: dict, busco_by_asmid: dict, ani_threshold: float,
                          species_filter: str = None) -> list:
     by_species = defaultdict(list)
     for asmid, row in samples.items():
@@ -218,7 +223,7 @@ def compute_assignments(samples: dict, ani_pairs: dict, busco_by_out: dict, ani_
     for species, asmids in sorted(by_species.items()):
         if len(asmids) < 2:
             continue
-        rep_asmid = pick_representative(asmids, busco_by_out, samples, ani_pairs)
+        rep_asmid = pick_representative(asmids, busco_by_asmid, samples, ani_pairs)
         rep_out = samples[rep_asmid]["out"]
         for asmid in sorted(asmids, key=lambda a: samples[a]["out"]):
             out = samples[asmid]["out"]
@@ -447,13 +452,13 @@ def main():
     samples = load_samples(Path(args.samples))
     print(f"[INFO] Loaded {len(samples)} samples.csv rows", file=sys.stderr)
 
-    busco_by_out = load_busco_genome_by_out(Path(args.busco_genome_dir))
-    print(f"[INFO] Loaded {len(busco_by_out)} BUSCO genome-mode summaries", file=sys.stderr)
+    busco_by_asmid = load_busco_genome_by_asmid(Path(args.busco_genome_dir))
+    print(f"[INFO] Loaded {len(busco_by_asmid)} BUSCO genome-mode summaries", file=sys.stderr)
 
     ani_pairs = load_within_species_ani(Path(args.ani_db))
     print(f"[INFO] Loaded {len(ani_pairs) // 2} unique within-species ANI pairs", file=sys.stderr)
 
-    assignments = compute_assignments(samples, ani_pairs, busco_by_out, args.ani_threshold,
+    assignments = compute_assignments(samples, ani_pairs, busco_by_asmid, args.ani_threshold,
                                        species_filter=args.species)
     write_assignments(assignments, Path(args.out))
     n_species = len({a["species"] for a in assignments})
