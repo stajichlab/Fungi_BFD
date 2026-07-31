@@ -1,3 +1,15 @@
+include { hashBucketForType } from '../../common/utils.nf'
+
+// A single task processes a freq_batch_size-sized batch of genomes (amortises
+// SLURM startup, see BFD_GENOME_STATS.nf), each hashing to a potentially
+// different bucket -- so a single storeDir directive can't route them, and
+// the script itself creates each genome's bucket subdirectory and writes
+// directly into it. storeDir preserves the relative subdirectory structure
+// captured by the "*/*.codon_freq.csv.gz" glob (verified via a standalone
+// probe, same as publishDir), so the bucketed layout survives the copy into
+// storeDir's root. Key is LOCUSTAG, matching planFreq()'s expected path
+// (BFD_GENOME_STATS.nf) -- must stay in sync or every genome misclassifies as
+// "todo" regardless of what's already on disk.
 process BATCH_CODON_FREQ {
     label      'genestats'
     // storeDir, not publishDir: publishDir copies asynchronously AFTER the task
@@ -11,13 +23,14 @@ process BATCH_CODON_FREQ {
     tuple val(metas), path(prots)
 
     output:
-    path "*.codon_freq.csv.gz", emit: csv
+    path "*/*.codon_freq.csv.gz", emit: csv
 
     script:
-    def baseList = (metas instanceof List ? metas : [metas]).collect { m -> m.id }
+    def locustagList = (metas instanceof List ? metas : [metas]).collect { m -> m.locustag }
     def protList = prots     instanceof List ? prots     : [prots]
-    def cmds = [baseList, protList].transpose().collect { basename, prot ->
-        "python3 ${params.scripts}/calculate_codon_freq.py ${prot.name} -o ${basename}.codon_freq.csv.gz"
+    def cmds = [locustagList, protList].transpose().collect { locustag, prot ->
+        def bucket = hashBucketForType('codon_freq', locustag)
+        "mkdir -p ${bucket} && python3 ${params.scripts}/calculate_codon_freq.py ${prot.name} -o ${bucket}/${locustag}.codon_freq.csv.gz"
     }.join('\n')
     """
     module load biopython
@@ -25,8 +38,11 @@ process BATCH_CODON_FREQ {
     """
 
     stub:
-    def baseList = (metas instanceof List ? metas : [metas]).collect { m -> m.id }
+    def locustagList = (metas instanceof List ? metas : [metas]).collect { m -> m.locustag }
     """
-    ${ baseList.collect { "printf 'species_prefix,codon,frequency\\n' | gzip > ${it}.codon_freq.csv.gz" }.join('\n') }
+    ${ locustagList.collect { locustag ->
+        def bucket = hashBucketForType('codon_freq', locustag)
+        "mkdir -p ${bucket} && printf 'species_prefix,codon,frequency\\n' | gzip > ${bucket}/${locustag}.codon_freq.csv.gz"
+    }.join('\n') }
     """
 }
