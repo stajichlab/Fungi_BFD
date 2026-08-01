@@ -6,6 +6,7 @@ process MERGE_ASM_STATS {
 
     input:
     path manifest
+    path samples
 
     output:
     path "asm_stats.parquet", emit: parquet
@@ -14,7 +15,7 @@ process MERGE_ASM_STATS {
     """
     python3 ${params.scripts}/summarize_asm_stats.py \\
         --manifest ${manifest} \\
-        --samples  ${params.samples} \\
+        --samples  ${samples} \\
         -o         asm_stats.tsv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('asm_stats.tsv.gz', delim='\\t', sample_size=-1)) TO 'asm_stats.parquet' (FORMAT PARQUET);"

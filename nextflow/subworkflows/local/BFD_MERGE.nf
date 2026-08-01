@@ -76,7 +76,7 @@ workflow BFD_MERGE {
 
         MERGE_ASM_STATS(toManifest(gatedGlobStats(
             params.run_asm_stats.toBoolean() ? asm_stats.collect() : Channel.of(true),
-            "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'))
+            "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'), file(params.samples))
 
     } else {
         // Run mode: the frequency merges take the union of genomes already cached
@@ -95,6 +95,6 @@ workflow BFD_MERGE {
             MERGE_GENE_STATS(toManifest(gene_stats, 'gene_stats.manifest.txt'))
 
         if (params.run_asm_stats.toBoolean())
-            MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'))
+            MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'), file(params.samples))
     }
 }
