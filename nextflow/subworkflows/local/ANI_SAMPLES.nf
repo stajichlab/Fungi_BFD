@@ -48,7 +48,13 @@ workflow ANI_SAMPLES {
     if (!genomeDirPath.exists()) {
         error "--genome_dir does not exist: ${params.genome_dir}"
     }
-    def genomeIndex = genomeDirPath.listFiles().collectEntries { p -> [(p.getName()): p] }
+    // Path.listFiles() (Nextflow's Path extension) does NOT follow a symlinked
+    // directory the way java.io.File.listFiles() does — if genome_dir itself is
+    // a symlink (e.g. do_ANI/input_clean_genomes -> ../input_clean_genomes), it
+    // treats the symlink as "not a directory" and returns a 1-element list
+    // containing just the symlink, silently dropping every genome in it. Use
+    // toFile().listFiles(), which follows the symlink like a normal directory.
+    def genomeIndex = genomeDirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString())] }
 
     samples_ch = channel
         .fromPath(samples_csv)
