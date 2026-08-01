@@ -52,3 +52,4 @@
 | 2026-07-30 | 2026-07-30-005 | fungi-bfd | genome-stats-reorg-prune-asm-reports | 5m | 4 | 2026-07-30_2300-bfd-generic-reimplementation-plan.md,genome_stats_paths.py,utils.nf (+3 more) | | complete | | [log](2026-07-30-005-fungi-bfd.md) |
 | 2026-07-31 | 2026-07-31-001 | fungi-bfd | genome-stats-reorg-10-symlink-by-name | 0m | 0 |  | | complete | | [log](2026-07-31-001-fungi-bfd.md) |
 | 2026-08-01 | 2026-08-01-001 | fungi-bfd | main | 1m | 0 |  | | complete | | [log](2026-08-01-001-fungi-bfd.md) |
+| 2026-08-01 | 2026-08-01-002 | fungi-bfd | main | 10m | 3 | utils.nf,ANI_SAMPLES.nf,reorg_fungi_bfd.sh | | complete | | [log](2026-08-01-002-fungi-bfd.md) |
