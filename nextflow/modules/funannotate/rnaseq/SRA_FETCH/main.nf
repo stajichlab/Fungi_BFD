@@ -200,7 +200,7 @@ process SRA_FETCH {
             fi
         done
         rm -rf reads
-        ENFORCE="${launchDir}/scripts/enforce_seqpair_readlen"
+        ENFORCE="${projectDir}/bin/enforce_seqpair_readlen"
         [[ -x "\$ENFORCE" ]] || { echo "[ERROR] enforce_seqpair_readlen not found or not executable at \$ENFORCE"; exit 1; }
         if ! "\$ENFORCE" in=\$TMPDIR/${species_tag}_R1.fastq.gz \
                 in2=\$TMPDIR/${species_tag}_R2.fastq.gz \

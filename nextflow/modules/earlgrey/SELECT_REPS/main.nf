@@ -13,7 +13,7 @@ process SELECT_REPS {
 
     script:
     """
-    python ${launchDir}/scripts/select_repeat_representatives.py \
+    python ${projectDir}/bin/select_repeat_representatives.py \
         --samples ${samples} \
         --asm-stats ${asm_stats} \
         --genome-dir ${params.genome_dir} \

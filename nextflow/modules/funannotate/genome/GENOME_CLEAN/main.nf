@@ -31,7 +31,7 @@ process GENOME_CLEAN {
     module load miniconda3
     eval "\$(conda shell.bash hook)"
     # Ensure /dev/shm/gxdb is present on this node; register for cleanup when done.
-    source ${launchDir}/scripts/setup_fcs_shm.sh
+    source ${projectDir}/bin/setup_fcs_shm.sh
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     TAXONKIT_DB=${taxondb}
     module load taxonkit
