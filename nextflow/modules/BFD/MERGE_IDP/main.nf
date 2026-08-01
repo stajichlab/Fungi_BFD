@@ -35,8 +35,8 @@ process MERGE_IDP {
 
     stub:
     """
-    printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > idp.csv.gz
-    printf 'protein_id,idp_status\\n'                                     | gzip > idp_summary.csv.gz
+    printf 'species_prefix,protein_id,IDP_start,IDP_end,IDP_length,mean_score\\n' | gzip > idp.csv.gz
+    printf 'species_prefix,protein_id,IDP_residues,IDP_fraction,length\\n'        | gzip > idp_summary.csv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
     module load duckdb 2>/dev/null || true
