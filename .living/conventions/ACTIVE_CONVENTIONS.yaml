@@ -1,0 +1,13 @@
+# Active Convention Packs
+# Updated by install_convention.py
+
+active_conventions: []
+- name: robust-analysis
+  path: .living/conventions/robust-analysis/
+  installed: 2026-06-19T03:43:13Z
+- name: report-generator
+  path: .living/conventions/report-generator/
+  installed: 2026-06-19T03:43:13Z
+- name: idea-generator
+  path: .living/conventions/idea-generator/
+  installed: 2026-06-19T03:43:13Z
