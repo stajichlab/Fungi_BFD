@@ -830,3 +830,21 @@ Root cause, confirmed by direct experimentation (not guessed): Nextflow's genera
 **mitigation_type**: operational
 
 **structural_mitigation_candidate**: Not yet shipped. Repo convention candidate: add an explicit `mkdir -p ${launchDir}/work/ANI/pip_cache ${launchDir}/work/ANI/python_packages` guard (e.g. as a cheap `beforeScript` on the affected label — safe here since it's a plain `mkdir`, not a `PATH`-mutating module load, so the earlier `beforeScript` gotcha doesn't apply) so a from-scratch ANI run doesn't hit this opaque singularity mount failure.
+
+## `stub:` blocks drift from the real schema silently — only a downstream consumer with real column-name assertions catches it (2026-08-01)
+
+**Category**: gotcha
+
+**What happened**: While implementing #28 (`build_BFD_duckDB.sh` → Parquet), built a real-data test fixture set to validate the rewritten SQL end-to-end. `MERGE_IDP`'s `stub:` block (`printf 'protein_id,idp_status,disordered_residues,total_residues\n'` / `printf 'protein_id,idp_status\n'`) turned out to never have matched the real `idp.csv.gz`/`idp_summary.csv.gz` schema at all — real production output (checked against `results/function/aiupred/*/*.idp.csv.gz`) is `species_prefix,protein_id,IDP_start,IDP_end,IDP_length,mean_score` for `idp` and `species_prefix,protein_id,IDP_residues,IDP_fraction,length` for `idp_summary`. Every sibling module's stub block (`MERGE_CAZY`, `MERGE_MEROPS`, `MERGE_PREDGPI`, `MERGE_SIGNALP`, `MERGE_TARGETP`, `MERGE_TMHMM`, `MERGE_WOLFPSORT`) correctly includes `species_prefix`; only `MERGE_IDP`'s was wrong, and predates the #27 Parquet-conversion work entirely (the stub `printf` content itself was never touched by #27, only wrapped in a `duckdb COPY` step).
+
+**Why it matters**: `-stub-run` succeeded every time regardless of this gap, because nothing in the stub-run wiring check actually asserts column names — it just confirms every process produces *a* file at the expected path. The bug was invisible until something downstream (here, `build_BFD_duckDB.sh`'s `CREATE INDEX ... ON idp_summary(species_prefix)`) tried to use a column the stub never had. This is the same root cause class as the pfam `hmm_id`/`hmm_acc` vs real `pfam_id`/`pfam_acc` mismatch already fixed in `nextflow/tests/validate_outputs.py` during #27 — stub content and real-schema content are two independently-maintained sources of truth with nothing enforcing they agree, and `-stub-run` alone cannot detect drift between them.
+
+**Resolution**: Fixed `MERGE_IDP`'s stub block to match the real schema (see #28's commit). Found by deliberately building a fully real-data test set (ran the real per-genome merge, not stub placeholders) rather than trusting the stub fixtures — the stub-only fixtures from #27's own testing had this exact gap sitting invisible in `nextflow/tests/output/tables/idp_summary.parquet` (2 columns, no `species_prefix`) the whole time.
+
+**How to apply**: `-stub-run` verifies wiring (does the DAG connect, does every process produce *a* file), not schema correctness. Before trusting a stub fixture's columns for anything downstream (a `CREATE INDEX`, a `validate_outputs.py`-style assertion, a joined view), diff it against one real per-genome output file for that type. When adding or touching a `stub:` block, treat its column list as needing the same scrutiny as the real `script:` block's — it's not "just a placeholder," it's the thing every future `-stub-run` will silently trust.
+
+**Tags**: nextflow, stub-run, schema-drift, merge-idp, idp-summary, T-014, validate-outputs, gotcha
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: Fixed for `MERGE_IDP` in #28. Repo convention candidate: when writing or reviewing a `stub:` block that emits a CSV/Parquet header, require it be copy-pasted or diffed from one real per-genome output file of that type, not hand-typed from memory of what the columns "should" be — this is now the second instance of exactly this drift (pfam in #27, idp in #28) caught only by accident (a downstream consumer with real assertions), not by `-stub-run` itself.
