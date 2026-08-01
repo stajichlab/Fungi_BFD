@@ -373,7 +373,11 @@ def dirIndex(String dir) {
     if (!dirPath.exists()) {
         error "directory does not exist: ${dir}"
     }
-    dirPath.listFiles().collectEntries { p -> [(p.getName()): p] }
+    // toFile().listFiles(), not Path.listFiles() -- the latter is Nextflow's
+    // Path extension and does not follow a symlinked directory (treats it as
+    // "not a directory" and returns a 1-element list containing just the
+    // symlink). See ANI_SAMPLES.nf's genomeIndex, same fix.
+    dirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString())] }
 }
 
 // Resolve a genome FASTA for BFD's genome-stats channels, which need to work
