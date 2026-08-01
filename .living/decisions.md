@@ -407,3 +407,20 @@ set as the single source of truth, taxon-scoped views become an on-demand extrac
 than a pipeline-time artifact. Full detail in `todo/genome_stats_storage_reorg.md` §D.2.
 
 **Tags**: genome_stats, merge_samples, extract_bfd_taxonomic_subset, duckdb, parquet, taxon-filter, T-014, decision
+
+## D: Implement EXTRACT_BFD_TAXONOMIC_SUBSET as a standalone Python/DuckDB CLI (2026-08-01)
+
+**Context**: Follow-up to the decision above — with `MERGE_SAMPLES` now building only the full master table set (#27/#28 merged), a taxon-scoped view of the data needs a post-hoc extraction path. Fable's original review recommended a Python CLI wrapping DuckDB `ATTACH`/`COPY`, driven by `species` as the authoritative key table with `INNER JOIN`-based filtering and a post-extract row-count assertion.
+
+**Decision**: `scripts/extract_bfd_taxonomic_subset.py` — `--taxon RANK:VALUE` (same convention as `taxonRowFilter()` elsewhere in this pipeline: uppercase RANK, exact-match VALUE), `--master` (default `db/BFD.duckdb`), `-o/--outfile` (required), `--dry-run` (report match count without writing). Implementation:
+1. `ATTACH` the master DB read-only; filter `species` by the taxon predicate into the new output DB first.
+2. Every other table (`asm_stats`, `gene_info` keyed by `LOCUSTAG`; all 19 remaining tables keyed by the derived `species_prefix` column) is built via `INNER JOIN` against the just-filtered `species` table in the *output* DB, not re-filtered independently — avoids orphaned rows if a table's own taxonomy columns ever drifted from `species`'s.
+3. Indexes mirrored from `build_BFD_duckDB.sh` (kept manually in sync — no DuckDB API to introspect/replay index DDL from a read-only attached DB without also losing UNIQUE constraints).
+4. The two analytical views (`v_species_summary`, `v_protein_annotation`) are recreated by reading their SQL directly from `duckdb_views()` on the master and re-executing verbatim against the output DB — avoids duplicating view definitions a second time (drift risk if `build_BFD_duckDB.sh`'s views ever change).
+5. Post-extract row-count assertion: every table checked for orphaned keys not present in the filtered `species` table; on any orphan, the output file is deleted and the script fails loudly (robust-analysis convention) rather than leaving a partially-valid DB on disk.
+
+**Verified against the real master DB** (`GENUS:Malassezia`, 81 genomes matched in `species`): correct partial-population behavior confirmed (function/gene tables scoped to whichever of the 81 genomes actually have computed data — 1, at time of testing — not all 81, since the master DB itself is only as complete as what's been computed so far); views queryable and return correct joined output; 46 indexes created; error paths (bad rank, zero matches, missing master file) all fail loudly with exit code 1 as designed.
+
+**Alternatives considered**: (a) Making extraction a Nextflow process — rejected per the original decision's reasoning (pure SQL filtering over already-materialized data, no per-genome parallelism to gain). (b) Duplicating the view SQL inline rather than reading it from `duckdb_views()` — rejected in favor of reading it live from master, since duplicating it would be a second copy to keep in sync with `build_BFD_duckDB.sh` forever.
+
+**Tags**: genome_stats, extract_bfd_taxonomic_subset, duckdb, taxon-filter, T-014, decision
