@@ -848,3 +848,33 @@ Root cause, confirmed by direct experimentation (not guessed): Nextflow's genera
 **mitigation_type**: structural
 
 **structural_mitigation_candidate**: Fixed for `MERGE_IDP` in #28. Repo convention candidate: when writing or reviewing a `stub:` block that emits a CSV/Parquet header, require it be copy-pasted or diffed from one real per-genome output file of that type, not hand-typed from memory of what the columns "should" be — this is now the second instance of exactly this drift (pfam in #27, idp in #28) caught only by accident (a downstream consumer with real assertions), not by `-stub-run` itself.
+
+## PFAM/HMMER real-timing A/B results (T-015): scratch-copy doesn't help, MPI needs `--cpu-bind=none` and peaks around 4 tasks (2026-08-01)
+
+**Category**: insight
+
+**What happened**: Ran real (non-stub) `hmmsearch` A/B timing tests on this cluster (`highclock` partition, real Pfam-A DB, real `Malassezia brasiliensis` protein set, 3786 proteins) to answer T-015's open questions (`todo/pfam_hmmer_performance.md`) with data instead of guessing. Full setup/scripts in `analysis/pfam_hmmsearch_perf/`.
+
+**Scratch-copy the Pfam-A DB — no benefit.** Copying the ~3.7GB DB from `/srv/projects/db/pfam/...` to node-local NVMe scratch took only 2.7s (fast NFS→NVMe transfer), and `hmmsearch` wall time was statistically identical whether reading from shared storage or the scratch copy: shared=5:00.35, scratch=5:02.54, shared-repeat=5:02.84 (within noise, ~1% spread). This task is compute-bound (HMM scan against a real protein set), not I/O-bound — the DB read itself is a negligible fraction of total wall time. **Decision: not worth implementing scratch-copy staging for PFAM.**
+
+**MPI needs `--cpu-bind=none` on this cluster — otherwise every multi-task `srun` fails outright.** First attempt at MPI timing (`srun -N 1 -n 4 --mpi hmmsearch ...`, matching `RUN_PFAM`'s exact current invocation pattern) failed immediately: `srun: error: CPU binding outside of job step allocation ... Unable to satisfy cpu bind request`. This happened identically regardless of `--mpi=pmix`/`--mpi=pmi2`/omitted — ruled out via a minimal compiled MPI hello-world (`mpicc`, `MPI_Comm_rank`/`MPI_Comm_size`) that reproduced the exact same failure with plain `srun -n 4`, then succeeded with real distinct ranks reporting in once `--cpu-bind=none` (or `--cpu-bind=threads`) was added. Root cause: SLURM's default `--cpu-bind` mode conflicts with this node's cpuset/allocation mask for multi-task job steps — not an MPI-plugin selection problem. **This means `nextflow/modules/BFD/PFAM/main.nf`'s existing MPI code path is currently broken as written** (`srun -N ${pfam_nodes} -n ${pfam_tasks} --mpi hmmsearch`, no `--cpu-bind` override) — dormant/never-hit today only because `pfam_tasks`/`pfam_nodes` both default to 1 in `conf/profile_BFD.config`, so the MPI branch is never actually exercised in production.
+
+**MPI task scaling is real but non-monotonic — peaks around `-n 4`, gets worse beyond that.** With the `--cpu-bind=none` fix applied, real `hmmsearch --mpi` timing vs. the single-task 4-thread baseline (5:00.35):
+
+| `pfam_tasks` (`-n`) | real workers (rank 0 is a dispatcher, not a worker) | wall time | vs. baseline |
+|---|---|---|---|
+| 1 (current default, non-MPI, 4 threads) | — | 5:00.35 | baseline |
+| 2 | 1 | 9:15.56 | **-85% (worse)** — coordination overhead, nothing to actually parallelize against |
+| 4 | 3 | 4:16.58 | **+15% faster** — best result |
+| 8 | 7 | 4:49.62 | +4% faster |
+| 16 | 15 | 5:11.42 | -3% (worse than baseline) |
+
+Domain-count sanity check (`grep -vc '^#' *.tblout`) confirmed identical output (7819 domains) across every configuration — the scaling differences are pure wall-time, not partial/incorrect results.
+
+**Why it matters**: The relationship is not "more MPI tasks = faster" — for this genome's protein-set size, useful parallel work runs out well before 16 workers, and beyond ~4 tasks the master/worker coordination and scheduling overhead outweighs the added parallelism, eventually erasing the entire gain. `-n 2` specifically is a trap: HMMER's `--mpi` mode dedicates rank 0 to dispatching work rather than searching, so `-n 2` gives exactly 1 real worker plus coordination overhead — worse than no MPI at all. Any future decision to enable `pfam_tasks > 1` in production needs the `--cpu-bind=none` fix and should default to a small task count (this data suggests ~4) rather than "more is better," and should be re-profiled against a larger, more typical protein set (3786 proteins is on the small side) before committing to a specific default.
+
+**Resolution**: T-015 (`todo/pfam_hmmer_performance.md`) updated with these results and a concrete recommendation: don't implement scratch-copy; if enabling `pfam_tasks > 1` is ever pursued, it needs the `--cpu-bind=none` fix in `RUN_PFAM`'s `mpi_launch` construction first, and should start from `pfam_tasks≈4` rather than assuming higher is better. Findings also written into the personal `nextflow-hpcc` skill (`~/.claude/skills/nextflow-hpcc/SKILL.md`) as two new general-purpose subsections (`beforeScript` module-load gotcha review + the new `--cpu-bind=none` requirement) so any future Nextflow-on-this-HPCC session gets this automatically, not just this repo.
+
+**How to apply**: Before assuming an I/O-bound bottleneck (shared storage, network mount) explains a slow HPC task, profile the actual wall-time split — this task turned out to be purely compute-bound despite reading a multi-GB file from network storage per run. Before assuming "more MPI tasks always helps," profile a real scaling curve on real data — the non-monotonic peak-then-decline shape here would have been missed by testing only one or two task counts. Before trusting any MPI timing number, verify the *launch mechanism itself* isn't silently broken (the `--cpu-bind` failure here would have made every "does MPI help" test either crash outright or need investigation) using a cheap, fast-to-iterate compiled sanity check rather than debugging through the slower real tool.
+
+**Tags**: performance, pfam, hmmer, hmmsearch, mpi, cpu-bind, slurm, srun, scratch-partition, task-scaling, T-015, insight

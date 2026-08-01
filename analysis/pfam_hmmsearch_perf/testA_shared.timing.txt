@@ -1,0 +1,23 @@
+	Command being timed: "hmmsearch --cut_ga --noali --cpu 4 --domtbl analysis/pfam_hmmsearch_perf/testA_shared.domtblout --tblout analysis/pfam_hmmsearch_perf/testA_shared.tblout /srv/projects/db/pfam/2026-01-27-Pfam38.2/Pfam-A.hmm input/pep/Malassezia_brasiliensis_CBS_14135.proteins.fa"
+	User time (seconds): 569.21
+	System time (seconds): 26.77
+	Percent of CPU this job got: 198%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 5:00.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 148676
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 130491
+	Voluntary context switches: 737922
+	Involuntary context switches: 61072
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 0
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
