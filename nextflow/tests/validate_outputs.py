@@ -1,64 +1,63 @@
 #!/usr/bin/env python3
 """
-Validate that genome_functional.nf produced the expected tables CSV.gz outputs.
-Used by run_test.sh after a -stub-run.
+Validate that genome_functional.nf produced the expected tables Parquet outputs.
+Used by run_test.sh after a -stub-run. Per T-014 §D.1/#27, tables/ outputs are
+Parquet (one unpartitioned file per type), not CSV.gz.
 """
 
 import argparse
-import csv
-import gzip
 import sys
 from pathlib import Path
 
+import duckdb
+
 EXPECTED_BIGQUERY = {
-    "pfam.csv.gz": [
-        "protein_id", "hmm_id", "hmm_acc",
+    "pfam.parquet": [
+        "protein_id", "pfam_id", "pfam_acc",
     ],
-    "cazy.overview.csv.gz": [
+    "cazy.overview.parquet": [
         "species_prefix", "protein_id", "EC", "cazyme_fam",
     ],
-    "cazy.cazymes_hmm.csv.gz": [
+    "cazy.cazymes_hmm.parquet": [
         "species_prefix", "HMM_id", "protein_id",
     ],
-    "merops.csv.gz": [
+    "merops.parquet": [
         "species_prefix", "protein_id", "merops_id",
     ],
-    "signalp.signal_peptide.csv.gz": [
+    "signalp.signal_peptide.parquet": [
         "species_prefix", "protein_id", "peptide_start",
     ],
-    "tmhmm.csv.gz": [
+    "tmhmm.parquet": [
         "species_prefix", "protein_id", "PredHel",
     ],
-    "targetP.csv.gz": [
+    "targetP.parquet": [
         "species_prefix", "protein_id", "prediction",
     ],
-    "idp.csv.gz": [
+    "idp.parquet": [
         "protein_id",
     ],
-    "idp_summary.csv.gz": [
+    "idp_summary.parquet": [
         "protein_id",
     ],
-    "wolfpsort.csv.gz": [
+    "wolfpsort.parquet": [
         "species_prefix", "protein_id", "localization",
     ],
-    "predgpi.csv.gz": [
+    "predgpi.parquet": [
         "species_prefix", "protein_id", "feature",
     ],
 }
 
 
-def check_csv_gz(path: Path, required_cols: list[str]) -> list[str]:
+def check_parquet(path: Path, required_cols: list[str]) -> list[str]:
     """Return list of error strings (empty = pass)."""
     errors = []
     if not path.exists():
         return [f"MISSING: {path}"]
     try:
-        with gzip.open(path, "rt") as fh:
-            reader = csv.DictReader(fh)
-            header = reader.fieldnames or []
-            for col in required_cols:
-                if col not in header:
-                    errors.append(f"{path.name}: missing column '{col}' (header={header})")
+        header = duckdb.sql(f"SELECT * FROM read_parquet('{path}') LIMIT 0").columns
+        for col in required_cols:
+            if col not in header:
+                errors.append(f"{path.name}: missing column '{col}' (header={header})")
     except Exception as exc:
         errors.append(f"{path.name}: could not read — {exc}")
     return errors
@@ -79,7 +78,7 @@ def main():
 
     print(f"Checking tables outputs in: {bq}")
     for fname, cols in EXPECTED_BIGQUERY.items():
-        errs = check_csv_gz(bq / fname, cols)
+        errs = check_parquet(bq / fname, cols)
         if errs:
             errors.extend(errs)
         else:

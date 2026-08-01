@@ -9,8 +9,8 @@ process MERGE_IDP {
         path 'sum/*'
 
     output:
-        path("idp.csv.gz"),         emit: idp
-        path("idp_summary.csv.gz"), emit: summary
+        path("idp.parquet"),         emit: idp
+        path("idp_summary.parquet"), emit: summary
 
     script:
     """
@@ -25,11 +25,22 @@ process MERGE_IDP {
         if [ "\$first" = "1" ]; then zcat "\$f"; first=0
         else zcat "\$f" | tail -n +2; fi
     done | gzip > idp_summary.csv.gz
+
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp_summary.csv.gz', sample_size=-1)) TO 'idp_summary.parquet' (FORMAT PARQUET);"
+    rm -f idp.csv.gz idp_summary.csv.gz
     """
 
     stub:
     """
     printf 'protein_id,idp_status,disordered_residues,total_residues\\n' | gzip > idp.csv.gz
     printf 'protein_id,idp_status\\n'                                     | gzip > idp_summary.csv.gz
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp_summary.csv.gz', sample_size=-1)) TO 'idp_summary.parquet' (FORMAT PARQUET);"
+    rm -f idp.csv.gz idp_summary.csv.gz
     """
 }

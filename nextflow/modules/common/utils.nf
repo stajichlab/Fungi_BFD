@@ -12,15 +12,17 @@
 //   include { tablesDir; clearIfStale } from '../common/utils.nf'
 //
 
-// Resolve the output subdirectory under params.tables for the MERGE steps.
-//   no --taxon         → ${params.tables}/All_Taxa   (the full dataset)
-//   --taxon RANK:VALUE → ${params.tables}/<sanitised VALUE>
-// Used by every MERGE_* process so all merged tables land in a subfolder and
-// nothing is written loose at the top level of tables/.
+// Resolve the output directory for the MERGE steps: always params.tables.
+// Per T-014 §D.2, MERGE_* always builds one full/unscoped master table set now
+// -- a --taxon run still only *processes* that clade (taxonRowFilter() at the
+// base genome channel), it no longer also produces a separate
+// tables/<Taxon>/ subset. (Previously branched on params.taxon into
+// tables/All_Taxa vs tables/<sanitised taxon value>; retired along with
+// MERGE_SAMPLES's per-taxon --matched filtering.) Post-hoc taxon-scoped
+// extraction from the master DB is EXTRACT_BFD_TAXONOMIC_SUBSET (separate
+// tool, not this function).
 def tablesDir() {
-    params.taxon
-        ? "${params.tables}/${(params.taxon as String).split(':',2)[1].replaceAll(/[^A-Za-z0-9_.-]/, '_')}"
-        : "${params.tables}/All_Taxa"
+    "${params.tables}"
 }
 
 // ── Sample identity ─────────────────────────────────────────────────────────

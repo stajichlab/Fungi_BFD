@@ -180,13 +180,8 @@ workflow BFD {
     )
 
     if (!skip_merge) {
-        // Keys come from the post-setup channel, so a --taxon run yields a
-        // manifest restricted to that clade.
-        def matched_keys_file = ready_ch
-            .map { meta -> (meta.locustag ?: '').trim() }
-            .filter { it }
-            .collectFile(name: 'matched_locustags.txt', newLine: true)
-
+        // MERGE_SAMPLES always builds the full/unscoped master table now (T-014
+        // §D.2), so no matched-keys manifest is needed here anymore.
         BFD_MERGE(
             BFD_GENOME_STATS.out.aa_cached,
             BFD_GENOME_STATS.out.aa_csv,
@@ -195,7 +190,6 @@ workflow BFD {
             BFD_GENOME_STATS.out.intergenic_csv,
             BFD_GENOME_STATS.out.gene_stats,
             BFD_GENOME_STATS.out.asm_stats,
-            matched_keys_file,
             use_glob
         )
     }
