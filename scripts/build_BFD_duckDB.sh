@@ -1,20 +1,21 @@
 #!/usr/bin/bash -l
 #SBATCH -p short --mem 64gb -c 16 -N 1 -n 1 --out logs/build_duckdb.%j.log
 
-# Build a BFD DuckDB from one taxon subset folder under tables/.
+# Build the master BFD DuckDB from tables/*.parquet.
 #
 # Usage:
-#   sbatch scripts/build_BFD_duckDB.sh [SUBSET]
-#   bash   scripts/build_BFD_duckDB.sh [SUBSET]
+#   sbatch scripts/build_BFD_duckDB.sh
+#   bash   scripts/build_BFD_duckDB.sh
 #
-# SUBSET names a folder inside tables/ (default: All_Taxa). Each folder holds a
-# self-contained set of the gzipped source tables for that taxonomic slice, so
-# building 'Cryptococcus' reads tables/Cryptococcus/*.csv.gz and so on. The
-# subset name is embedded in the output filename: db/BFD.<SUBSET>.duckdb
+# Per T-014 §D.1/§D.2, MERGE_SAMPLES (and every other MERGE_* process) now
+# always builds one full, unscoped master table set in tables/ (Parquet, one
+# unpartitioned file per type -- see #27) -- there is no more per-taxon
+# tables/<Taxon>/ subset or db/BFD.<SUBSET>.duckdb. A taxon-scoped view is a
+# post-hoc extraction from this master DB (EXTRACT_BFD_TAXONOMIC_SUBSET,
+# tracked separately), not a build-time option here.
 #
-# Examples:
-#   sbatch scripts/build_BFD_duckDB.sh                # -> db/BFD.All_Taxa.duckdb
-#   sbatch scripts/build_BFD_duckDB.sh Cryptococcus   # -> db/BFD.Cryptococcus.duckdb
+# Full rebuild every run (rm -f "$DB" + CREATE TABLE AS SELECT), same as
+# before Parquet -- no incremental upsert, per §D.1's decision.
 
 set -euo pipefail
 
@@ -24,21 +25,17 @@ TABLES=tables
 DBDIR=db
 DBNAME=BFD
 
-# Subset folder: first positional arg, or $SUBSET env var, or All_Taxa default.
-SUBSET="${1:-${SUBSET:-All_Taxa}}"
-SRC="$TABLES/$SUBSET"
+SRC="$TABLES"
 
 if [ ! -d "$SRC" ]; then
-    echo "ERROR: subset folder '$SRC' does not exist." >&2
-    echo "Available subsets:" >&2
-    ls -1 "$TABLES" 2>/dev/null | sed 's/^/  - /' >&2
+    echo "ERROR: tables folder '$SRC' does not exist." >&2
     exit 1
 fi
 
 mkdir -p "$DBDIR"
 mkdir -p logs
 
-DB="$DBDIR/$DBNAME.$SUBSET.duckdb"
+DB="$DBDIR/$DBNAME.duckdb"
 # Remove existing DB to allow clean rebuild
 rm -f "$DB"
 
@@ -46,7 +43,7 @@ echo "Building $DB from $SRC"
 
 # ─── species ──────────────────────────────────────────────────────────────────
 duckdb -c "
-CREATE TABLE species AS SELECT * FROM read_csv_auto('$SRC/species.csv.gz');
+CREATE TABLE species AS SELECT * FROM read_parquet('$SRC/species.parquet');
 CREATE UNIQUE INDEX idx_species_locustag ON species(LOCUSTAG);
 CREATE UNIQUE INDEX idx_species_asm      ON species(ASMID);
 -- Non-unique: a genus-level taxonomy tuple is shared by multiple species.
@@ -54,7 +51,7 @@ CREATE INDEX idx_species_taxonomy ON species(PHYLUM, CLASS, \"ORDER\", FAMILY, G
 " "$DB"
 
 # ─── asm_stats ────────────────────────────────────────────────────────────────
-# Source TSV has ASMID/gc_pct/total_length_bp; we join to species for LOCUSTAG
+# Source has ASMID/gc_pct/total_length_bp; we join to species for LOCUSTAG
 # and alias columns to match existing R-script conventions (GC_PERCENT, TOTAL_LENGTH).
 duckdb -c "
 CREATE TABLE asm_stats AS
@@ -76,7 +73,7 @@ SELECT
     a.t2t_scaffolds,
     a.telomere_fwd,
     a.telomere_rev
-FROM read_csv('$SRC/asm_stats.tsv.gz', delim='\t') AS a
+FROM read_parquet('$SRC/asm_stats.parquet') AS a
 JOIN species AS sp USING(ASMID);
 CREATE UNIQUE INDEX idx_asm_locustag ON asm_stats(LOCUSTAG);
 CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
@@ -85,7 +82,7 @@ CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
 # ─── gene tables ──────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE gene_info AS
-SELECT * FROM read_csv_auto('$SRC/gene_info.csv.gz');
+SELECT * FROM read_parquet('$SRC/gene_info.parquet');
 CREATE UNIQUE INDEX idx_gene_info_gene_id  ON gene_info(gene_id);
 CREATE        INDEX idx_gene_info_locustag ON gene_info(LOCUSTAG);
 " "$DB"
@@ -93,7 +90,7 @@ CREATE        INDEX idx_gene_info_locustag ON gene_info(LOCUSTAG);
 duckdb -c "
 CREATE TABLE gene_proteins AS
 SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_proteins.csv.gz');
+FROM read_parquet('$SRC/gene_proteins.parquet');
 CREATE UNIQUE INDEX idx_gene_prot_protein_id  ON gene_proteins(protein_id);
 CREATE        INDEX idx_gene_prot_locustag    ON gene_proteins(species_prefix);
 " "$DB"
@@ -101,7 +98,7 @@ CREATE        INDEX idx_gene_prot_locustag    ON gene_proteins(species_prefix);
 duckdb -c "
 CREATE TABLE gene_transcripts AS
 SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_transcripts.csv.gz');
+FROM read_parquet('$SRC/gene_transcripts.parquet');
 CREATE UNIQUE INDEX idx_tx_transcript_id ON gene_transcripts(transcript_id);
 CREATE        INDEX idx_tx_locustag      ON gene_transcripts(species_prefix);
 " "$DB"
@@ -109,7 +106,7 @@ CREATE        INDEX idx_tx_locustag      ON gene_transcripts(species_prefix);
 duckdb -c "
 CREATE TABLE gene_exons AS
 SELECT *, string_split(exon_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_exons.csv.gz');
+FROM read_parquet('$SRC/gene_exons.parquet');
 CREATE UNIQUE INDEX idx_exon_exon_id  ON gene_exons(exon_id);
 CREATE        INDEX idx_exon_locustag ON gene_exons(species_prefix);
 " "$DB"
@@ -117,7 +114,7 @@ CREATE        INDEX idx_exon_locustag ON gene_exons(species_prefix);
 duckdb -c "
 CREATE TABLE gene_CDS AS
 SELECT *, string_split(cds_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_CDS.csv.gz');
+FROM read_parquet('$SRC/gene_CDS.parquet');
 CREATE UNIQUE INDEX idx_cds_cds_id   ON gene_CDS(cds_id);
 CREATE        INDEX idx_cds_locustag ON gene_CDS(species_prefix);
 " "$DB"
@@ -125,7 +122,7 @@ CREATE        INDEX idx_cds_locustag ON gene_CDS(species_prefix);
 duckdb -c "
 CREATE TABLE gene_introns AS
 SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_introns.csv.gz');
+FROM read_parquet('$SRC/gene_introns.parquet');
 CREATE UNIQUE INDEX idx_intron_intron_id  ON gene_introns(intron_id);
 CREATE        INDEX idx_intron_locustag   ON gene_introns(species_prefix);
 " "$DB"
@@ -133,7 +130,7 @@ CREATE        INDEX idx_intron_locustag   ON gene_introns(species_prefix);
 duckdb -c "
 CREATE TABLE gene_trna AS
 SELECT *, string_split(gene_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/gene_trnas.csv.gz');
+FROM read_parquet('$SRC/gene_trnas.parquet');
 CREATE UNIQUE INDEX idx_trna_gene_id  ON gene_trna(gene_id);
 CREATE        INDEX idx_trna_locustag ON gene_trna(species_prefix);
 " "$DB"
@@ -141,7 +138,7 @@ CREATE        INDEX idx_trna_locustag ON gene_trna(species_prefix);
 # intergenic distances (large — only species_prefix index)
 duckdb -c "
 CREATE TABLE gene_intergenic_distances AS
-SELECT * FROM read_csv_auto('$SRC/gene_intergenic_distances.csv.gz');
+SELECT * FROM read_parquet('$SRC/gene_intergenic_distances.parquet');
 CREATE INDEX idx_intergenic_locustag ON gene_intergenic_distances(species_prefix);
 " "$DB"
 
@@ -149,7 +146,7 @@ CREATE INDEX idx_intergenic_locustag ON gene_intergenic_distances(species_prefix
 duckdb -c "
 CREATE TABLE pfam AS
 SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_csv_auto('$SRC/pfam.csv.gz');
+FROM read_parquet('$SRC/pfam.parquet');
 CREATE UNIQUE INDEX idx_pfam_domain_hit    ON pfam(protein_id, pfam_id, domain_num);
 CREATE        INDEX idx_pfam_locustag      ON pfam(species_prefix);
 CREATE        INDEX idx_pfam_pfam_id       ON pfam(pfam_id);
@@ -157,7 +154,7 @@ CREATE        INDEX idx_pfam_pfam_id       ON pfam(pfam_id);
 
 duckdb -c "
 CREATE TABLE cazy AS
-SELECT * FROM read_csv_auto('$SRC/cazy.cazymes_hmm.csv.gz');
+SELECT * FROM read_parquet('$SRC/cazy.cazymes_hmm.parquet');
 CREATE UNIQUE INDEX idx_cazy_hit        ON cazy(protein_id, HMM_id, s_start);
 CREATE        INDEX idx_cazy_locustag   ON cazy(species_prefix);
 CREATE        INDEX idx_cazy_hmm_id     ON cazy(HMM_id);
@@ -165,14 +162,14 @@ CREATE        INDEX idx_cazy_hmm_id     ON cazy(HMM_id);
 
 duckdb -c "
 CREATE TABLE cazy_overview AS
-SELECT * FROM read_csv_auto('$SRC/cazy.overview.csv.gz');
+SELECT * FROM read_parquet('$SRC/cazy.overview.parquet');
 CREATE UNIQUE INDEX idx_cazyov_protein_id ON cazy_overview(protein_id);
 CREATE        INDEX idx_cazyov_locustag   ON cazy_overview(species_prefix);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE merops AS
-SELECT * FROM read_csv_auto('$SRC/merops.csv.gz');
+SELECT * FROM read_parquet('$SRC/merops.parquet');
 CREATE        INDEX idx_merops_locustag  ON merops(species_prefix);
 CREATE        INDEX idx_merops_merops_id ON merops(merops_id);
 " "$DB"
@@ -180,35 +177,35 @@ CREATE        INDEX idx_merops_merops_id ON merops(merops_id);
 # ─── subcellular localisation / secretome ─────────────────────────────────────
 duckdb -c "
 CREATE TABLE signalp AS
-SELECT * FROM read_csv_auto('$SRC/signalp.signal_peptide.csv.gz');
+SELECT * FROM read_parquet('$SRC/signalp.signal_peptide.parquet');
 CREATE INDEX idx_signalp_locustag  ON signalp(species_prefix);
 CREATE INDEX idx_signalp_protein   ON signalp(protein_id);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE targetp AS
-SELECT * FROM read_csv_auto('$SRC/targetP.csv.gz');
+SELECT * FROM read_parquet('$SRC/targetP.parquet');
 CREATE INDEX idx_targetp_locustag ON targetp(species_prefix);
 CREATE INDEX idx_targetp_protein  ON targetp(protein_id);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE wolfpsort AS
-SELECT * FROM read_csv_auto('$SRC/wolfpsort.csv.gz');
+SELECT * FROM read_parquet('$SRC/wolfpsort.parquet');
 CREATE INDEX idx_wolfpsort_locustag ON wolfpsort(species_prefix);
 CREATE INDEX idx_wolfpsort_protein  ON wolfpsort(protein_id);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE predgpi AS
-SELECT * FROM read_csv_auto('$SRC/predgpi.csv.gz');
+SELECT * FROM read_parquet('$SRC/predgpi.parquet');
 CREATE INDEX idx_predgpi_locustag ON predgpi(species_prefix);
 CREATE INDEX idx_predgpi_protein  ON predgpi(protein_id);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE tmhmm AS
-SELECT * FROM read_csv_auto('$SRC/tmhmm.csv.gz');
+SELECT * FROM read_parquet('$SRC/tmhmm.parquet');
 CREATE INDEX idx_tmhmm_locustag ON tmhmm(species_prefix);
 CREATE INDEX idx_tmhmm_protein  ON tmhmm(protein_id);
 " "$DB"
@@ -216,14 +213,14 @@ CREATE INDEX idx_tmhmm_protein  ON tmhmm(protein_id);
 # ─── disorder ─────────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE idp_summary AS
-SELECT * FROM read_csv_auto('$SRC/idp_summary.csv.gz');
+SELECT * FROM read_parquet('$SRC/idp_summary.parquet');
 CREATE UNIQUE INDEX idx_idpsum_protein   ON idp_summary(protein_id);
 CREATE        INDEX idx_idpsum_locustag  ON idp_summary(species_prefix);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE idp AS
-SELECT * FROM read_csv_auto('$SRC/idp.csv.gz');
+SELECT * FROM read_parquet('$SRC/idp.parquet');
 CREATE UNIQUE INDEX idx_idp_region    ON idp(protein_id, IDP_start);
 CREATE        INDEX idx_idp_locustag  ON idp(species_prefix);
 " "$DB"
@@ -231,13 +228,13 @@ CREATE        INDEX idx_idp_locustag  ON idp(species_prefix);
 # ─── composition ──────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE aa_frequency AS
-SELECT * FROM read_csv_auto('$SRC/aa_freq.csv.gz');
+SELECT * FROM read_parquet('$SRC/aa_freq.parquet');
 CREATE INDEX idx_aa_locustag ON aa_frequency(species_prefix);
 " "$DB"
 
 duckdb -c "
 CREATE TABLE codon_frequency AS
-SELECT * FROM read_csv_auto('$SRC/codon_freq.csv.gz');
+SELECT * FROM read_parquet('$SRC/codon_freq.parquet');
 CREATE INDEX idx_codon_locustag ON codon_frequency(species_prefix);
 " "$DB"
 
