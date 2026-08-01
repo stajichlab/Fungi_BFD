@@ -12,6 +12,7 @@ input/cds/
 input/gff3/
 input/gff/
 input/trna
+tables/*parquet
 genome_annotation/
 rnaseq_data/
 rnaseq_reads/
