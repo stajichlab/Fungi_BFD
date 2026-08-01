@@ -3,8 +3,9 @@
 
 Projects samples.csv down to one row per genome carrying the identifier and
 taxonomy fields the BFD DuckDB build expects: LOCUSTAG, ASMID, the taxonomy ranks
-(PHYLUM → SPECIES), and BUSCO_LINEAGE. Restricted to the genomes matched/processed
-in a run (via --matched), so a --taxon run yields a clade-restricted species table.
+(PHYLUM → SPECIES), and BUSCO_LINEAGE. Per T-014 §D.2, MERGE_SAMPLES always calls
+this unscoped (full samples.csv, no --matched) -- --matched is kept only as an
+optional filter for any future caller that still wants a restricted subset.
 
 This is intentionally distinct from samples.csv.gz (the run manifest, which keeps
 every original column): species.csv.gz is the normalized table the database loads
@@ -36,8 +37,8 @@ def main():
                         help="file with one matched key per line; if omitted, keep all rows")
     parser.add_argument("--key", default="LOCUSTAG",
                         help="samples column to match against --matched values [LOCUSTAG]")
-    parser.add_argument("-o", "--outfile", default="tables/All_Taxa/species.csv.gz",
-                        help="output CSV; gzipped when name ends in .gz [tables/All_Taxa/species.csv.gz]")
+    parser.add_argument("-o", "--outfile", default="tables/species.csv.gz",
+                        help="output CSV; gzipped when name ends in .gz [tables/species.csv.gz]")
     args = parser.parse_args()
 
     keep = None

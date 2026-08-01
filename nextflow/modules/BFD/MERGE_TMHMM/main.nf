@@ -8,17 +8,22 @@ process MERGE_TMHMM {
         path(tsvs)
 
     output:
-        path("tmhmm.csv.gz"), emit: csv
+        path("tmhmm.parquet"), emit: parquet
 
     script:
     """
     export PATH="${projectDir}/bin:\$PATH"
     merge_tmhmm.py -o tmhmm.csv ${tsvs}
-    pigz tmhmm.csv
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('tmhmm.csv', sample_size=-1)) TO 'tmhmm.parquet' (FORMAT PARQUET);"
+    rm -f tmhmm.csv
     """
 
     stub:
     """
-    printf 'species_prefix,protein_id,len,ExpAA,First60,PredHel,Topology\\n' | gzip > tmhmm.csv.gz
+    printf 'species_prefix,protein_id,len,ExpAA,First60,PredHel,Topology\\n' > tmhmm.csv
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('tmhmm.csv', sample_size=-1)) TO 'tmhmm.parquet' (FORMAT PARQUET);"
+    rm -f tmhmm.csv
     """
 }

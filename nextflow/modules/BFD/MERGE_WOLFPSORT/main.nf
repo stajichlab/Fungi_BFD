@@ -8,17 +8,22 @@ process MERGE_WOLFPSORT {
         path(results)
 
     output:
-        path("wolfpsort.csv.gz"), emit: csv
+        path("wolfpsort.parquet"), emit: parquet
 
     script:
     """
     export PATH="${projectDir}/bin:\$PATH"
     merge_wolfpsort.py -o wolfpsort.csv ${results}
-    pigz wolfpsort.csv
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('wolfpsort.csv', sample_size=-1)) TO 'wolfpsort.parquet' (FORMAT PARQUET);"
+    rm -f wolfpsort.csv
     """
 
     stub:
     """
-    printf 'species_prefix,protein_id,localization,score\\n' | gzip > wolfpsort.csv.gz
+    printf 'species_prefix,protein_id,localization,score\\n' > wolfpsort.csv
+    module load duckdb 2>/dev/null || true
+    duckdb -c "COPY (SELECT * FROM read_csv_auto('wolfpsort.csv', sample_size=-1)) TO 'wolfpsort.parquet' (FORMAT PARQUET);"
+    rm -f wolfpsort.csv
     """
 }

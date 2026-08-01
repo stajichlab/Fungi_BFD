@@ -44,11 +44,12 @@ workflow BFD_MERGE {
     intergenic_csv
     gene_stats
     asm_stats
-    matched_keys    // one locustag per line, for the run manifest
     use_glob
 
     main:
-    MERGE_SAMPLES(file(params.samples), matched_keys)
+    // Always the full/unscoped master samples+species table now (T-014 §D.2) --
+    // no matched-keys input, no per-taxon subset.
+    MERGE_SAMPLES(file(params.samples))
 
     if (use_glob) {
         // In glob mode a table is rebuilt even when its producer did not run this
