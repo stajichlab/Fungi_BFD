@@ -1,9 +1,13 @@
 # PFAM/HMMER scan performance — scratch-copy DB and MPI task scaling
 
-**Status**: real A/B timing data collected 2026-08-01 (see §Results below) — both
-open questions answered. Remaining work is implementation, not investigation:
-fix `RUN_PFAM`'s MPI `--cpu-bind` bug and decide whether to enable
-`pfam_tasks>1` in production given the modest (+15%) real-world gain.
+**Status**: fixed and validated end-to-end (2026-08-01). `RUN_PFAM`'s MPI code
+path had **two** real bugs (`--cpu-bind` missing, and `--cpu`+`--mpi` being
+mutually exclusive in `hmmsearch` — the second only surfaced when testing the
+actual generated command, not a hand-built reproduction). Both fixed on branch
+`pfam-mpi-cpu-bind-fix` and re-validated through the real Nextflow pipeline
+against a larger, more representative genome (10,079 proteins): **9m 9s
+baseline → 7m 40s with `pfam_tasks=4`, a real 16.2% improvement**. Remaining
+decision: whether to flip the production default (currently `pfam_tasks=1`).
 **Added**: 2026-08-01, during T-014 (genome_stats/function storage reorg) work.
 **Relationship to T-014**: separate concern — T-014 changed *where* PFAM's merged
 output lands (bucketed storeDir, then Parquet staging via `MERGE_PFAM`), not how
@@ -106,26 +110,51 @@ overhead outgrows available parallel work. `pfam_tasks=2` is a specific trap —
 counts (7819) identical across every configuration — differences are pure
 wall-time, not correctness.
 
-**Caveat**: 3786 proteins is a smallish genome. The scaling curve (where it
-peaks, how much headroom exists) should be re-checked against a large/typical
-genome before picking a production default — a bigger protein set may sustain
-more real workers before coordination overhead dominates.
+**Caveat, now resolved**: 3786 proteins is a smallish genome, so this was
+re-checked against a larger, more typical genome (*Aspergillus fumigatus*
+B-1-43-1, 10,079 proteins) — see §Fix and real-scale validation below. Also,
+applying the `--cpu-bind=none` fix directly to `RUN_PFAM` and running it
+through the real Nextflow pipeline (not a hand-built `sbatch` reproduction)
+surfaced a **second** real bug: `hmmsearch` rejects `--cpu`+`--mpi` together
+(`Option --cpu is incompatible with option(s) --mpi`) — the module
+unconditionally passed both. Fixed in the same commit; see `.living/learnings.md`
+(2026-08-01, "hmmsearch --cpu and --mpi are mutually exclusive").
+
+## Fix and real-scale validation (2026-08-01)
+
+`nextflow/modules/BFD/PFAM/main.nf` (branch `pfam-mpi-cpu-bind-fix`):
+- `mpi_launch` now includes `--cpu-bind=none`.
+- `--cpu ${task.cpus}` only passed in the non-MPI branch (`cpu_flag` is empty
+  when `--mpi` is active).
+
+Re-validated end-to-end through the real Nextflow pipeline (`--pipeline BFD
+--asmid ... pfam_tasks=4`, not a hand-built `sbatch` script) against the
+larger genome:
+
+| Config | Wall time | vs. baseline |
+|---|---|---|
+| `pfam_tasks=1` (current default) | 9m 9s | baseline |
+| `pfam_tasks=4` (both fixes applied) | 7m 40s | **-16.2% (faster)** |
+
+Consistent with (slightly better than) the smaller genome's +15% result.
+Output validated: real, non-empty, structurally correct (16,874 domain hits).
 
 ## Recommendation
 
 1. **Don't implement scratch-copy staging.** No measurable benefit, real cost
    (dev time, extra failure surface).
-2. **If enabling `pfam_tasks>1` in production**: first fix `RUN_PFAM`'s
-   `mpi_launch`/`srun` construction (`nextflow/modules/BFD/PFAM/main.nf`) to
-   add `--cpu-bind=none` — without it, turning on `pfam_tasks>1` today would
-   crash every PFAM task, not just underperform. Then default to
-   `pfam_tasks≈4`, not a larger number — this data shows more tasks make it
-   *worse*, not better, past that point. Re-validate against a large genome's
-   protein set before committing to a specific default, since 3786 proteins is
-   on the small end of what this pipeline processes.
-3. **Given the modest realistic gain (+15% at best, on a small genome)**,
-   weigh implementation/maintenance cost against the win before prioritizing
-   this — it's a real but not dramatic speedup, not a step-change.
+2. **`RUN_PFAM`'s MPI code path is now fixed and validated** (both bugs). Left
+   the production default at `pfam_tasks=1` — flipping it to `pfam_tasks=4` is
+   a deliberate call for the repo owner, not bundled into this fix, since it
+   changes resource requests (`-N`/`-n`) for every PFAM task going forward.
+3. **If enabling `pfam_tasks>1` in production**: default to `pfam_tasks=4`,
+   not a larger number — both the small-genome and large-genome scaling data
+   show more tasks make it *worse* past that point, not better.
+4. **Given the confirmed but modest realistic gain (16.2% on a real, typical
+   genome)**, weigh rollout cost (queue behavior at scale, whether `-N`/`-n`
+   resource requests interact well with cluster scheduling for thousands of
+   concurrent PFAM tasks) against the win before defaulting to it broadly —
+   it's a real but not dramatic speedup, not a step-change.
 
 ## Relevant existing code
 

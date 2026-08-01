@@ -13,8 +13,17 @@ process RUN_PFAM {
         path("${meta.locustag}.tblout.gz"),  emit: tblout
 
     script:
-    def mpi_launch = params.pfam_tasks > 1 ? "srun -N ${params.pfam_nodes} -n ${params.pfam_tasks}" : ""
+    // --cpu-bind=none is required for multi-task srun on this cluster -- the
+    // default cpu-bind mode conflicts with the job step's cgroup/allocation
+    // mask and fails every task outright ("CPU binding outside of job step
+    // allocation"), independent of --mpi=<plugin> choice. See T-015
+    // (.living/learnings.md 2026-08-01) for the full diagnosis.
+    def mpi_launch = params.pfam_tasks > 1 ? "srun --cpu-bind=none -N ${params.pfam_nodes} -n ${params.pfam_tasks}" : ""
     def mpi_flag   = params.pfam_tasks > 1 ? "--mpi" : ""
+    // --cpu is REJECTED by hmmsearch when combined with --mpi ("Option --cpu
+    // is incompatible with option(s) --mpi") -- confirmed directly, not
+    // assumed. Only pass --cpu in the non-MPI (threaded) branch.
+    def cpu_flag   = params.pfam_tasks > 1 ? "" : "--cpu ${task.cpus}"
     """
     if [ ! -z "${mpi_flag}" ]; then
         module load hmmer/3.4-mpi
@@ -22,7 +31,7 @@ process RUN_PFAM {
         module load hmmer/3.4
     fi
     module load db-pfam
-    ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali --cpu ${task.cpus} \\
+    ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
         --domtbl    ${meta.locustag}.domtblout \\
         --tblout    ${meta.locustag}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
