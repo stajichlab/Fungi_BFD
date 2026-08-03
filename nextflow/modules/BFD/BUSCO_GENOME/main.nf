@@ -15,21 +15,24 @@ process BUSCO_GENOME {
     """
     module load busco
     export BUSCO_LINEAGES=/srv/projects/db/BUSCO/v12/
+    SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
+    SCRATCH=\${SCRATCH:-/tmp}
     RUNDIR="${meta.asmid}_busco_genome"
     busco -i ${genome} \\
           -l ${meta.lineage} \\
           -m genome \\
           -o \$RUNDIR \\
+          --out_path \$SCRATCH \\
           -c ${task.cpus} \\
           --offline --download_path \$BUSCO_LINEAGES
-    SUMMARY=\$(ls \${RUNDIR}/short_summary.specific.*.txt 2>/dev/null | head -1)
-    [ -z "\$SUMMARY" ] && SUMMARY=\$(ls \${RUNDIR}/short_summary*.txt 2>/dev/null | head -1)
+    SUMMARY=\$(ls \$SCRATCH/\${RUNDIR}/short_summary.specific.*.txt 2>/dev/null | head -1)
+    [ -z "\$SUMMARY" ] && SUMMARY=\$(ls \$SCRATCH/\${RUNDIR}/short_summary*.txt 2>/dev/null | head -1)
     if [ -z "\$SUMMARY" ]; then
         echo "[ERROR] BUSCO genome: no short_summary file found for ${meta.asmid}" >&2
         exit 1
     fi
     cp "\$SUMMARY" "${meta.asmid}.BUSCO_summary.${meta.lineage}.txt"
-    rm -rf "\$RUNDIR"
+    rm -rf "\$SCRATCH/\$RUNDIR"
     """
 
     stub:
