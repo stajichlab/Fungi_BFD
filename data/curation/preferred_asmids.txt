@@ -1,0 +1,8 @@
+# Preferred assemblies — force the dedup winner for a species+strain isolate.
+# When a species+strain group has multiple assemblies, an ASMID listed here wins
+# over the default tie-breaker (prefer GCF, else newest GCA).
+# Format: <ASMID>\t<reason>   ('#' comments).
+# ASMID must match the samples.csv value exactly: the upstream ASM_FOLDER, i.e.
+# the filesystem-safe '{ACCESSION}_{ASM_NAME}' (no '#', spaces, commas, parens).
+#
+GCA_000976515.2_Sc_YJM981_v1	prefer older v1 over newer GCA_025434895.2 for S. cerevisiae YJM981

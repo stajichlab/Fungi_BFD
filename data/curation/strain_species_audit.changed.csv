@@ -1,0 +1,395 @@
+ASMID,ORIG SPECIES,MODIFIED SPECIES,ORIG STRAIN,MODIFIED STRAIN
+GCA_900079185.1_AG_v1,Absidia glauca,Absidia glauca,CBS 101.48 substr. RVII-324 met-,CBS 101.48 substr. RVII-324 met
+GCA_001592465.1_Acidomyces_richmondensis_BFW_v1.0,Acidomyces sp. 'richmondensis',Acidomyces sp. richmondensis,BFW,BFW
+GCA_003545705.1_ASM354570v1,Acidomyces sp. 'richmondensis',Acidomyces sp. richmondensis,FRIK2901,FRIK2901
+GCA_001572075.1_ASM157207v1,Acidomyces sp. 'richmondensis',Acidomyces sp. richmondensis,meta,meta
+GCA_024321975.1_ASM2432197v1,Alternaria sp. 'sect. Undifilum',Alternaria sp. sect. Undifilum,W740-01,W740-01
+GCA_000497225.1_AmaJack1.0,Amanita jacksonii,Amanita jacksonii,,TRTC168611
+GCA_051944865.1_ASM5194486v1,Ampelomyces sp. BRIP_72097,Ampelomyces sp. BRIP_72097,BRIP:72097,BRIP 72097
+GCA_019976455.1_ASM1997645v1,Aspergillus sp. 'subgen. Cremei',Aspergillus sp. subgen. Cremei,IBT 35662,IBT 35662
+GCA_051996935.1_ASM5199693v1,Candida orthopsilosis,Candida orthopsilosis,35763_2#27,35763_2-27
+GCA_051996775.1_ASM5199677v1,Candida orthopsilosis,Candida orthopsilosis,35763_2#47,35763_2-47
+GCA_051996715.1_ASM5199671v1,Candida orthopsilosis,Candida orthopsilosis,36186_2#56,36186_2-56
+GCA_056747355.1_ASM5674735v1,Candida parapsilosis,Candida parapsilosis,35763_2#2,35763_2-2
+GCA_963989715.1_canParSR23v1,Candida parapsilosis,Candida parapsilosis,SR23;CBS 7157,SR23
+GCA_015039395.1_CerAGI,Ceratobasidium sp. AG-I,Ceratobasidium sp. AG-I,anastomosis group I; DN8442,anastomosis group I
+GCA_012932095.1_ASM1293209v1,Ceratobasidium theobromae,Ceratobasidium theobromae,Gudang 4;Tawau Sabah,Gudang 4
+GCA_000482085.2_C_metacorallifera_KoLRI002260_v2,Cladonia metacorallifera,Cladonia metacorallifera,,KoLRI002260
+GCA_902827195.2_C_rosea_IK726,Clonostachys rosea,Clonostachys rosea,,f. rosea IK726
+GCA_027579295.1_UCR_CofoNRRL5531T_1.0,Coemansia sp. 'formosensis',Coemansia sp. formosensis,NRRL 5531,NRRL 5531
+GCA_003243855.1_ASM324385v1,Colletotrichum gloeosporioides,Colletotrichum gloeosporioides,SMCG1#C,SMCG1-C
+GCA_016772295.1_ASM1677229v1,Coprinopsis cinerea,Coprinopsis cinerea,A43mut B43mut pab1-1 #326,A43mut B43mut pab1-1 -326
+GCF_000182895.1_CC3,Coprinopsis cinerea,Coprinopsis cinerea,okayama7#130,okayama7-130
+GCA_036971435.1_ASM3697143v1,Dactylellina sp. 'tibetensis',Dactylellina sp. tibetensis,SQ 2179,SQ 2179
+GCA_025716815.1_Dicele1,Dichotomocladium elegans,Dichotomocladium elegans,RSA 919-,RSA 919
+GCA_051996825.1_ASM5199682v1,Diutina rugosa,Diutina rugosa,35763_2#41,35763_2-41
+GCA_011750725.1_ASM1175072v1,Drepanopeziza brunnea f. sp. 'monogermtubi',Drepanopeziza brunnea f. sp. monogermtubi,NL1,NL1
+GCF_022702325.1_ASM2270232v1,Drepanopeziza brunnea f. sp. 'multigermtubi',Drepanopeziza brunnea f. sp. multigermtubi,214-2,214-2
+GCF_000235365.1_ASM23536v1,Eremothecium cymbalariae,Eremothecium cymbalariae,DBVPG#7215,DBVPG-7215
+GCF_000240135.3_ASM24013v3,Fusarium graminearum,Fusarium graminearum,PH-1; NRRL 31084,PH-1
+GCA_002233875.1_Folag_005,Fusarium oxysporum f. sp. lagenariae,Fusarium oxysporum f. sp. lagenariae,Lag:1-1,Lag 1-1
+GCA_002234135.1_Folag_004,Fusarium oxysporum,Fusarium oxysporum,Lag:3-1,Lag 3-1
+GCA_014885045.1_ASM1488504v1,Fusarium sp. 'flavolapis',Fusarium sp. flavolapis,MK7,MK7
+GCA_040802825.1_ASM4080282v1,Gyromitra sp. 'persicula',Gyromitra sp. persicula,MICH346493,MICH346493
+GCA_036287555.1_ASM3628755v1,Hanseniaspora guilliermondii,Hanseniaspora guilliermondii,CBS:18551,CBS 18551
+GCA_030573555.1_ASM3057355v1,Hanseniaspora hatyaiensis,Hanseniaspora hatyaiensis,ZIM 2327;ST-476,ZIM 2327
+GCA_003708765.1_ASM370876v1,Hanseniaspora hatyaiensis,Hanseniaspora hatyaiensis,ZIM2327 Neza Cadez; ST-476,ZIM2327 Neza Cadez
+GCA_003708365.1_ASM370836v1,Hanseniaspora singularis,Hanseniaspora singularis,ZIM2326 Neza Cadez; ST-244,ZIM2326 Neza Cadez
+GCA_030573575.1_ASM3057357v1,Hanseniaspora sp. CRUB 1602,Hanseniaspora sp. CRUB 1602,CRUB 1602;ZIM 2538,CRUB 1602
+GCA_030573475.1_ASM3057347v1,Hanseniaspora thailandica,Hanseniaspora thailandica,ZIM 2325;ST-464,ZIM 2325
+GCF_000315915.1_ASM31591v1,Henningerozyma blattae,Henningerozyma blattae,type strain:CBS 6284,type strain CBS 6284
+GCA_024761885.1_ASM2476188v1,Hortaea werneckii,Hortaea werneckii,EXF-153=EXF-2781,EXF-153
+GCA_024761845.1_ASM2476184v1,Hortaea werneckii,Hortaea werneckii,EXF-161=EXF-2689,EXF-161
+GCA_024761565.1_ASM2476156v1,Hortaea werneckii,Hortaea werneckii,EXF-269=EXF-108,EXF-269
+GCF_000348985.1_ASM34898v1,Huiozyma naganishii,Huiozyma naganishii,type strain:CBS 8797,type strain CBS 8797
+GCA_976943325.1_jamAngA5,Jaminaea angkorensis,Jaminaea angkorensis,CBS 10918;C5b,CBS 10918
+GCF_000304475.1_Ka_CBS2517,Kazachstania africana,Kazachstania africana,type strain:CBS 2517,type strain CBS 2517
+GCA_900074715.1_LAME0,Lachancea meyersii,Lachancea meyersii,,CBS 8951
+GCA_900074755.1_LANO0,Lachancea nothofagi,Lachancea nothofagi,,CBS 11611
+GCA_900074735.1_LAFA0,Lachancea sp. 'fantastica',Lachancea sp. fantastica,,
+GCA_046255075.1_ASM4625507v1,Leptodophora sp. 'Broadleaf-Isolate-01',Leptodophora sp. Broadleaf-Isolate-01,Broadleaf-Isolate-01,Broadleaf-Isolate-01
+GCA_000945115.1_Lramosa_hybrid_454_Illumina,Lichtheimia ramosa,Lichtheimia ramosa,JMRC FSU:6197,JMRC FSU 6197
+GCA_047667255.1_F466,Macrophomina phaseolina,Macrophomina phaseolina,BRIP 45154; G 2020 4,BRIP 45154
+GCA_047667155.1_ASM4766715v1,Macrophomina phaseolina,Macrophomina phaseolina,BRIP 70726; DA 691,BRIP 70726
+GCA_047667075.1_F467,Macrophomina sp. BRIP 63780,Macrophomina sp. BRIP 63780,BRIP 63780; USQ339A,BRIP 63780
+GCA_900497725.1_magCapA,Magnusiomyces capitatus,Magnusiomyces capitatus,,NRRL Y-17686
+GCA_900497715.1_magIngA,Magnusiomyces ingens,Magnusiomyces ingens,,NRRL Y-17630
+GCA_002818225.1_ASM281822v1,Malassezia vespertilionis,Malassezia vespertilionis,NWHC:44797-103,NWHC 44797-103
+GCA_003971905.1_ASM397190v1,Moniliella sp. 'wahieum',Moniliella sp. wahieum,ATCC MYA-4962,ATCC MYA-4962
+GCA_051996955.1_ASM5199695v1,Nakaseomyces glabratus,Nakaseomyces glabratus,35763_2#12,35763_2-12
+GCA_051996855.1_ASM5199685v1,Nakaseomyces glabratus,Nakaseomyces glabratus,35763_2#31,35763_2-31
+GCA_051996735.1_ASM5199673v1,Nakaseomyces glabratus,Nakaseomyces glabratus,35763_2#50,35763_2-50
+GCF_000237345.1_ASM23734v1,Naumovozyma castellii,Naumovozyma castellii,type strain:CBS 4309,type strain CBS 4309
+GCF_000227115.2_ASM22711v2,Naumovozyma dairenensis,Naumovozyma dairenensis,type strain:CBS 421,type strain CBS 421
+GCA_050613775.1_Neocon1,Neocallimastix sp. 'constans',Neocallimastix sp. constans,G3,G3
+GCA_000497085.1_PVAR5_assembly01,Paecilomyces variotii,Paecilomyces variotii,,No. 5
+GCA_056247915.1_Pb03,Paracoccidioides sp. 'americana',Paracoccidioides sp. americana,Pb03,Pb03
+GCA_056247895.1_Pb28934,Paracoccidioides sp. 'americana',Paracoccidioides sp. americana,Pb28934,Pb28934
+GCA_000938895.1_PP.v1,Parasitella parasitica,Parasitella parasitica,CBS 412.66 substr. NGI-315 ade-,CBS 412.66 substr. NGI-315 ade
+GCA_014839975.1_PcamFM013r2_polished,Penicillium camemberti,Penicillium camemberti,FM013=LCP06093,FM013
+GCA_015586365.1_ASM1558636v1,Penicillium chrysogenum,Penicillium chrysogenum,IIF2*SW-F2,IIF2-SW-F2
+GCA_013138035.1_ASM1313803v1,Penicillium sp. str. #12,Penicillium sp. str. 12,#12,12
+GCA_051820765.1_ASM5182076v1,Phaeoisaria parallela,Phaeoisaria parallela,MR 4108 = CBS 153 403 holotype,MR 4108
+GCF_001638985.1_Phybl2,Phycomyces blakesleeanus,Phycomyces blakesleeanus,NRRL 1555 -,NRRL 1555
+GCA_051996985.1_ASM5199698v1,Pichia norvegensis,Pichia norvegensis,35763_2#13,35763_2-13
+GCA_030558305.1_ASM3055830v1,Pichia phayaonensis,Pichia phayaonensis,NBRC 108868;AB557865,NBRC 108868
+GCA_030569635.1_ASM3056963v1,Pichia thaimueangensis,Pichia thaimueangensis,NBRC 101967;AB264009,NBRC 101967
+GCA_018127085.1_P2C.v1.0,Pneumocystis sp. 'macacae',Pneumocystis sp. macacae,P2C,P2C
+GCA_017654855.1_PaWa137m,Podospora anserina,Podospora anserina,Wa137-,Wa137
+GCF_000226545.1_ASM22654v1,Podospora anserina,Podospora anserina,S mat+,S mat
+GCA_017354895.1_ASM1735489v1,Podospora comata,Podospora comata,Wa139-,Wa139
+GCA_050708095.1_ASM5070809v1,Podospora tetraspora,Podospora tetraspora,PSN669_mat-,PSN669_mat
+GCA_050707535.1_ASM5070753v1,Podospora tetraspora,Podospora tetraspora,PSN775_mat+,PSN775_mat
+GCA_050707415.1_ASM5070741v1,Podospora tetraspora,Podospora tetraspora,PSN778_mat+,PSN778_mat
+GCA_041722655.1_BD845-Porphyrellus-aff-excedens,Porphyrellus sp. 'aff. excedens' UT-M0000382,Porphyrellus sp. aff. excedens UT-M0000382,UT-M0000382,UT-M0000382
+GCA_028028555.1_ASM2802855v1,Pseudopestalotiopsis chinensis,Pseudopestalotiopsis chinensis,AH-3-21*,AH-3-21
+GCA_027604835.1_ASM2760483v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74427,BRIP 74427
+GCA_027604875.1_ASM2760487v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74429,BRIP 74429
+GCA_027604855.1_ASM2760485v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74430,BRIP 74430
+GCA_027604815.1_ASM2760481v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74431,BRIP 74431
+GCA_027604765.1_ASM2760476v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74432,BRIP 74432
+GCA_027604795.1_ASM2760479v1,Psilocybe subaeruginosa,Psilocybe subaeruginosa,BRIP:74433,BRIP 74433
+GCA_002900275.1_PucStrE137Aminus_diploid_v1.0,Puccinia striiformis f. sp. tritici,Puccinia striiformis f. sp. tritici,104 E137 A-,104 E137 A
+GCF_021901695.1_Pst134E36_v1_pri,Puccinia striiformis f. sp. tritici,Puccinia striiformis f. sp. tritici,134E16A+17+33+,134E16A1733
+GCA_026170125.1_Rep1-bas4#11,Pyricularia oryzae,Pyricularia oryzae,Rep1-bas4#11,Rep1-bas4-11
+GCA_026170135.1_Rep1-bas4#2,Pyricularia oryzae,Pyricularia oryzae,Rep1-bas4#2,Rep1-bas4-2
+GCA_026170115.1_Rep1-bas4#3,Pyricularia oryzae,Pyricularia oryzae,Rep1-bas4#3,Rep1-bas4-3
+GCA_025473295.1_ASM2547329v1,Pyricularia oryzae,Pyricularia oryzae,Rep1-buf1#10,Rep1-buf1-10
+GCA_025473575.1_ASM2547357v1,Pyricularia oryzae,Pyricularia oryzae,Rep1-buf1#2,Rep1-buf1-2
+GCA_025473445.1_ASM2547344v1,Pyricularia oryzae,Pyricularia oryzae,Rep1-buf1#4,Rep1-buf1-4
+GCA_025473435.1_ASM2547343v1,Pyricularia oryzae,Pyricularia oryzae,Rep1-buf1#5,Rep1-buf1-5
+GCA_025473275.1_ASM2547327v1,Pyricularia oryzae,Pyricularia oryzae,Rep1-buf1#6,Rep1-buf1-6
+GCA_025473265.1_ASM2547326v1,Pyricularia oryzae,Pyricularia oryzae,Rep4-buf1#1,Rep4-buf1-1
+GCA_025473255.1_ASM2547325v1,Pyricularia oryzae,Pyricularia oryzae,Rep4-buf1#13,Rep4-buf1-13
+GCA_025473285.1_ASM2547328v1,Pyricularia oryzae,Pyricularia oryzae,Rep4-buf1#5,Rep4-buf1-5
+GCA_905219645.1_AG8,Rhizoctonia solani,Rhizoctonia solani,type strain: AG8-Rh-89-,type strain AG8-Rh-89
+GCA_002897155.2_Rir_HGAP_ii_V2.1,Rhizophagus irregularis DAOM 181602=DAOM 197198,Rhizophagus irregularis DAOM 181602=DAOM 197198,DAOM 181602=DAOM 197198,DAOM 181602
+GCA_013036665.1_ASM1303666v1,Rhodotorula mucilaginosa,Rhodotorula mucilaginosa,IIF2*SW-B1,IIF2-SW-B1
+GCA_013036445.1_ASM1303644v1,Rhodotorula mucilaginosa,Rhodotorula mucilaginosa,IIF2*SW-F1,IIF2-SW-F1
+GCA_021209875.1_ASM2120987v1,Rosellinia necatrix,Rosellinia necatrix,R18_UHMW+HMW,R18_UHMWHMW
+GCA_002571405.2_ASM257140v2,Saccharomyces cerevisiae,Saccharomyces cerevisiae,CEN.PK113-7D; CBS 8340,CEN.PK113-7D
+GCA_030034845.1_ASM3003484v1,Saccharomyces cerevisiae,Saccharomyces cerevisiae,LL2013_040 MATalpha ho::kanMX4 ade2::hphNT1,LL2013_040 MATalpha ho kanMX4 ade2 hphNT1
+GCA_030034815.1_ASM3003481v1,Saccharomyces cerevisiae,Saccharomyces cerevisiae,LL2013_054 MATalpha ho::natMX4 ade2::hphNT1,LL2013_054 MATalpha ho natMX4 ade2 hphNT1
+GCA_918239655.1_yHAB335,Saccharomyces cerevisiae,Saccharomyces cerevisiae,SX35.1=14,SX35.1
+GCA_905220315.1_ScPE_H4_f,Saccharomyces cerevisiae,Saccharomyces cerevisiae,,PE-2
+GCA_918272125.1_yHAB336,Saccharomyces mikatae,Saccharomyces mikatae,SDPGP3=15,SDPGP3
+GCA_030035055.1_ASM3003505v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2011_001 MATa ho::kanMX4 ade2::hphNT1,LL2011_001 MATa ho kanMX4 ade2 hphNT1
+GCA_030035175.1_ASM3003517v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2011_004 MATalpha ho::kanMX4 ade2::hphNT1,LL2011_004 MATalpha ho kanMX4 ade2 hphNT1
+GCA_030035145.1_ASM3003514v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2011_009 MATalpha ho::natMX4 ade2::hphNT1,LL2011_009 MATalpha ho natMX4 ade2 hphNT1
+GCA_030035085.1_ASM3003508v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2011_012 MATa ho::kanMX4 ade2::hphNT1,LL2011_012 MATa ho kanMX4 ade2 hphNT1
+GCA_030034935.1_ASM3003493v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2012_021 MATalpha ho::natMX4 ade2::hphNT1,LL2012_021 MATalpha ho natMX4 ade2 hphNT1
+GCA_030034965.1_ASM3003496v1,Saccharomyces paradoxus,Saccharomyces paradoxus,LL2012_028 MATalpha ho::kanMX4 ade2::hphNT1,LL2012_028 MATalpha ho kanMX4 ade2 hphNT1
+GCA_030035115.1_ASM3003511v1,Saccharomyces paradoxus,Saccharomyces paradoxus,MSH-587-1 MATa ho::natMX4 ade2::hphNT1,MSH-587-1 MATa ho natMX4 ade2 hphNT1
+GCA_030035025.1_ASM3003502v1,Saccharomyces paradoxus,Saccharomyces paradoxus,MSH-604 MATa ho::natMX4 ade2::hphNT1,MSH-604 MATa ho natMX4 ade2 hphNT1
+GCA_030034995.1_ASM3003499v1,Saccharomyces paradoxus,Saccharomyces paradoxus,UWOPS-91-202 MATa ho::kanMX4 ade2::hphNT1,UWOPS-91-202 MATa ho kanMX4 ade2 hphNT1
+GCA_030034905.1_ASM3003490v1,Saccharomyces paradoxus,Saccharomyces paradoxus,YPS644 MATalpha ho::kanMX4 ade2::hphNT1,YPS644 MATalpha ho kanMX4 ade2 hphNT1
+GCA_030034875.1_ASM3003487v1,Saccharomyces paradoxus,Saccharomyces paradoxus,YPS744 MATalpha ho::natMX4 ade2::hphNT1,YPS744 MATalpha ho natMX4 ade2 hphNT1
+GCA_918251765.1_yHAB60,Saccharomyces uvarum,Saccharomyces uvarum,"CRUB 1588,7",CRUB 1588-7
+GCF_000002945.2_ASM294v3,Schizosaccharomyces pombe,Schizosaccharomyces pombe,972h-,972h
+GCA_050705245.1_ASM5070524v1,Schizothecium sp. GE-2024g,Schizothecium sp. GE-2024g,IMI320477_mat+,IMI320477_mat
+GCA_050709075.1_ASM5070907v1,Schizothecium sp. GE-2024h,Schizothecium sp. GE-2024h,PSN350_mat-,PSN350_mat
+GCA_050709055.1_ASM5070905v1,Schizothecium sp. GE-2024h,Schizothecium sp. GE-2024h,PSN351_mat-,PSN351_mat
+GCA_050708135.1_ASM5070813v1,Schizothecium sp. GE-2024h,Schizothecium sp. GE-2024h,PSN682_mat-,PSN682_mat
+GCA_050707915.1_ASM5070791v1,Schizothecium sp. GE-2024h,Schizothecium sp. GE-2024h,PSN706_mat-,PSN706_mat
+GCA_050707655.1_ASM5070765v1,Schizothecium sp. GE-2024h,Schizothecium sp. GE-2024h,PSN711_mat-,PSN711_mat
+GCA_050708635.1_ASM5070863v1,Schizothecium sp. GE-2024i,Schizothecium sp. GE-2024i,PSN572_mat-,PSN572_mat
+GCA_050707155.1_ASM5070715v1,Schizothecium sp. GE-2024i,Schizothecium sp. GE-2024i,PSN831_mat+,PSN831_mat
+GCA_050707135.1_ASM5070713v1,Schizothecium sp. GE-2024i,Schizothecium sp. GE-2024i,PSN831_mat-,PSN831_mat
+GCA_050708255.1_ASM5070825v1,Schizothecium sp. GE-2024n,Schizothecium sp. GE-2024n,PSN663_mat-,PSN663_mat
+GCA_039834505.1_ASM3983450v1,Sclerotinia sclerotiorum,Sclerotinia sclerotiorum,#321,321
+GCA_006535965.1_ASM653596v1,Spizellomyces sp. 'palustris',Spizellomyces sp. palustris,CBS 455.65,CBS 455.65
+GCA_000230245.1_ASM23024v1,Sporisorium reilianum,Sporisorium reilianum,,SRZ2
+GCA_046114455.1_ASM4611445v1,Sporothrix sp. FH-2023a,Sporothrix sp. FH-2023a,CBS:147636,CBS 147636
+GCA_000812845.1_ASM81284v1,Stagonosporopsis tanaceti,Stagonosporopsis tanaceti,CBS 131484;CBS 131485;TAS 55503;DAR 70020,CBS 131484
+GCA_030563285.1_ASM3056328v1,Starmerella khaoyaiensis,Starmerella khaoyaiensis,NBRC 104213;DQ400367,NBRC 104213
+GCA_030566975.1_ASM3056697v1,Starmerella potacharoeniae,Starmerella potacharoeniae,NBRC 106439;AB537437,NBRC 106439
+GCA_030578495.1_ASM3057849v1,Starmerella sirachaensis,Starmerella sirachaensis,NBRC 108605;AB617909,NBRC 108605
+GCA_982258805.1_Tp_3378_genome,Talaromyces proteolyticus,Talaromyces proteolyticus,NRRL:3378,NRRL 3378
+GCA_020091625.1_ASM2009162v1,Termitomyces sp. 'cryptogamus',Termitomyces sp. cryptogamus,P5,P5
+GCA_018857285.1_ASM1885728v1,Termitomyces sp. Mi166#008,Termitomyces sp. Mi166-008,Mi166#008,Mi166-008
+GCF_000236905.1_ASM23690v1,Tetrapisispora phaffii,Tetrapisispora phaffii,type strain:CBS 4417,type strain CBS 4417
+GCF_000243375.1_ASM24337v1,Torulaspora delbrueckii,Torulaspora delbrueckii,type strain:CBS 1146,type strain CBS 1146
+GCA_048987705.1_ASM4898770v1,Trichophyton mentagrophytes,Trichophyton mentagrophytes,PG--10MUR,PG-10MUR
+GCA_048987915.1_ASM4898791v1,Trichophyton mentagrophytes,Trichophyton mentagrophytes,PG--11338,PG-11338
+GCA_048987745.1_ASM4898774v1,Trichophyton mentagrophytes,Trichophyton mentagrophytes,PG--9FER,PG-9FER
+GCA_030581495.1_ASM3058149v1,Wickerhamomyces xylosicus,Wickerhamomyces xylosicus,NBRC 108869;AB557867,NBRC 108869
+GCA_030572035.1_ASM3057203v1,Yamadazyma takamatsuzukensis,Yamadazyma takamatsuzukensis,NBRC 104391;AB365470,NBRC 104391
+GCA_030578535.1_ASM3057853v1,Yamadazyma tumulicola,Yamadazyma tumulicola,NBRC 104392;AB365463,NBRC 104392
+GCA_000442885.1_ZYBA0,Zygosaccharomyces bailii,Zygosaccharomyces bailii,CLIB 213 = CBS 680,CLIB 213
+GCA_900099495.1_ZT1A5_complete_assembly,Zymoseptoria tritici,Zymoseptoria tritici,,ST99CH_1A5
+GCA_900184115.1_ST99CH_1E4,Zymoseptoria tritici,Zymoseptoria tritici,,ST99CH_1E4
+GCA_900184105.1_ST99CH_3D1,Zymoseptoria tritici,Zymoseptoria tritici,,ST99CH_3D1
+GCA_900091695.1_Zt_ST99CH_3D7,Zymoseptoria tritici,Zymoseptoria tritici,,ST99CH_3D7
+GCA_000412225.2_ASM41222v2,_Ashbya_ aceris,Ashbya aceris,,
+GCA_947297635.1_2786_Candida_aaseri,_Candida_ aaseri,Candida aaseri,,
+GCA_023623315.1_ASM2362331v1,_Candida_ aaseri,Candida aaseri,B8007,B8007
+GCA_030582305.1_ASM3058230v1,_Candida_ aaseri,Candida aaseri,NRRL YB-3897,NRRL YB-3897
+GCA_002068075.1_cb02,_Candida_ aaseri,Candida aaseri,SH-14,SH-14
+GCA_030558135.1_ASM3055813v1,_Candida_ adriatica,Candida adriatica,CBS 12504,CBS 12504
+GCA_030572135.1_ASM3057213v1,_Candida_ alai,Candida alai,NRRL Y-27739,NRRL Y-27739
+GCA_030569055.1_ASM3056905v1,_Candida_ andamanensis,Candida andamanensis,CBS 10859,CBS 10859
+GCA_963924425.1_CAAN1,_Candida_ anglica,Candida anglica,28E1s-12,28E1s-12
+GCA_963924405.1_CAAN4,_Candida_ anglica,Candida anglica,29B2s-10,29B2s-10
+GCA_963924415.1_CAAN2,_Candida_ anglica,Candida anglica,29E1s-10,29E1s-10
+GCA_054123955.1_ASM5412395v1,_Candida_ anglica,Candida anglica,AOP28_C2_surf_bin_7,AOP28_C2_surf_bin_7
+GCA_030557785.1_ASM3055778v1,_Candida_ anglica,Candida anglica,NRRL Y-27079,NRRL Y-27079
+GCA_019775655.1_ASM1977565v1,_Candida_ anglica,Candida anglica,VS III C KN 3,VS III C KN 3
+GCA_963924395.1_CAAN3,_Candida_ anglica,Candida anglica,Y-27079,Y-27079
+GCA_030566955.1_ASM3056695v1,_Candida_ anutae,Candida anutae,NRRL Y-27374,NRRL Y-27374
+GCA_030567675.1_ASM3056767v1,_Candida_ arabinofermentans,Candida arabinofermentans,NRRL YB-2248,NRRL YB-2248
+GCA_001661425.1_Canar1,_Candida_ arabinofermentans,Candida arabinofermentans,NRRL YB-2248,NRRL YB-2248
+GCA_030581555.1_ASM3058155v1,_Candida_ argentea,Candida argentea,CBS 12358,CBS 12358
+GCA_030674335.1_ASM3067433v1,_Candida_ ascalaphidarum,Candida ascalaphidarum,NRRL Y-27908,NRRL Y-27908
+GCA_030566905.1_ASM3056690v1,_Candida_ aurita,Candida aurita,CBS 9724,CBS 9724
+GCA_975850065.1_BH_BASALT_bin502_ASM_v1,_Candida_ awuae,Candida awuae,,
+GCA_030563725.1_ASM3056372v1,_Candida_ awuae,Candida awuae,CBS 11011,CBS 11011
+GCA_030561725.1_ASM3056172v1,_Candida_ bentonensis,Candida bentonensis,NRRL YB-2364,NRRL YB-2364
+GCA_030564525.1_ASM3056452v1,_Candida_ berthetii,Candida berthetii,NRRL Y-17644,NRRL Y-17644
+GCA_024734315.1_ASM2473431v1,_Candida_ blankii,Candida blankii,ABL,ABL
+GCA_030573285.1_ASM3057328v1,_Candida_ blankii,Candida blankii,NRRL Y-17068,NRRL Y-17068
+GCA_030581595.1_ASM3058159v1,_Candida_ blattariae,Candida blattariae,NRRL Y-27703,NRRL Y-27703
+GCA_964186685.1_AIST350v1,_Candida_ boidinii,Candida boidinii,,
+GCA_037935595.1_ASM3793559v1,_Candida_ boidinii,Candida boidinii,CICC#33029,CICC-33029
+GCA_002007985.1_ASM200798v1,_Candida_ boidinii,Candida boidinii,Cb18,Cb18
+GCA_002008075.1_ASM200807v1,_Candida_ boidinii,Candida boidinii,DBVPG6799,DBVPG6799
+GCA_002008095.1_ASM200809v1,_Candida_ boidinii,Candida boidinii,DBVPG7578,DBVPG7578
+GCA_002008085.1_ASM200808v1,_Candida_ boidinii,Candida boidinii,DBVPG8035,DBVPG8035
+GCA_037041165.1_ASM3704116v1,_Candida_ boidinii,Candida boidinii,F119-09A,F119-09A
+GCA_001442605.1_ASM144260v1,_Candida_ boidinii,Candida boidinii,GF002,GF002
+GCA_001599335.1_JCM_9604_assembly_v001,_Candida_ boidinii,Candida boidinii,JCM 9604,JCM 9604
+GCA_023629675.1_ASM2362967v1,_Candida_ boidinii,Candida boidinii,M7017B,M7017B
+GCA_030267585.1_ASM3026758v1,_Candida_ boidinii,Candida boidinii,NBRC 10035,NBRC 10035
+GCA_030267865.1_ASM3026786v1,_Candida_ boidinii,Candida boidinii,NBRC 101490,NBRC 101490
+GCA_030267665.1_ASM3026766v1,_Candida_ boidinii,Candida boidinii,NBRC 10240,NBRC 10240
+GCA_030267845.1_ASM3026784v1,_Candida_ boidinii,Candida boidinii,NBRC 10329,NBRC 10329
+GCA_030267825.1_ASM3026782v1,_Candida_ boidinii,Candida boidinii,NBRC 10574,NBRC 10574
+GCA_030267685.1_ASM3026768v1,_Candida_ boidinii,Candida boidinii,NBRC 1967,NBRC 1967
+GCA_002008015.1_ASM200801v1,_Candida_ boidinii,Candida boidinii,NDK27A1,NDK27A1
+GCA_003243125.1_ASM324312v1,_Candida_ boidinii,Candida boidinii,NRRL Y-2332,NRRL Y-2332
+GCA_002007995.1_ASM200799v1,_Candida_ boidinii,Candida boidinii,TOMC-Y13,TOMC-Y13
+GCA_002008065.1_ASM200806v1,_Candida_ boidinii,Candida boidinii,TOMC-Y47,TOMC-Y47
+GCA_002008025.1_ASM200802v1,_Candida_ boidinii,Candida boidinii,UNISS-Cb60,UNISS-Cb60
+GCA_002864065.1_ASM286406v1,_Candida_ boidinii,Candida boidinii,Y01308,Y01308
+GCA_029581775.1_ASM2958177v1,_Candida_ boleticola,Candida boleticola,CBS 7847,CBS 7847
+GCA_030570215.1_ASM3057021v1,_Candida_ boleticola,Candida boleticola,NRRL Y-17080T,NRRL Y-17080T
+GCA_030563665.1_ASM3056366v1,_Candida_ broadrunensis,Candida broadrunensis,CBS 11838,CBS 11838
+GCA_030571035.1_ASM3057103v1,_Candida_ buinensis,Candida buinensis,NRRL Y-11706T,NRRL Y-11706T
+GCA_030568635.1_ASM3056863v1,_Candida_ caryicola,Candida caryicola,NRRL YB-1499,NRRL YB-1499
+GCA_030574835.1_ASM3057483v1,_Candida_ cerambycidarum,Candida cerambycidarum,NRRL Y-27706,NRRL Y-27706
+GCA_030573195.1_ASM3057319v1,_Candida_ chilensis,Candida chilensis,NRRL Y-17141,NRRL Y-17141
+GCA_030571295.1_ASM3057129v1,_Candida_ citri,Candida citri,CBS 11858,CBS 11858
+GCA_030572275.1_ASM3057227v1,_Candida_ conglobata,Candida conglobata,NRRL Y-1504,NRRL Y-1504
+GCA_030566895.1_ASM3056689v1,_Candida_ coquimbonensis,Candida coquimbonensis,CBS 12348,CBS 12348
+GCA_030579075.1_ASM3057907v1,_Candida_ dajiaensis,Candida dajiaensis,CBS 10590,CBS 10590
+GCA_030579135.1_ASM3057913v1,_Candida_ danieliae,Candida danieliae,CBS 8533,CBS 8533
+GCA_030570475.1_ASM3057047v1,_Candida_ dendrica,Candida dendrica,NRRL Y-7775,NRRL Y-7775
+GCA_030572355.1_ASM3057235v1,_Candida_ dendronema,Candida dendronema,NRRL Y-7781,NRRL Y-7781
+GCA_980652965.1_TUCC00000373,_Candida_ diddensiae,Candida diddensiae,,
+GCA_030563465.1_ASM3056346v1,_Candida_ diddensiae,Candida diddensiae,NRRL Y-7589T,NRRL Y-7589T
+GCA_030570855.1_ASM3057085v1,_Candida_ digboiensis,Candida digboiensis,CBS 9800,CBS 9800
+GCA_030579195.1_ASM3057919v1,_Candida_ diospyri,Candida diospyri,CBS 9769,CBS 9769
+GCA_030580135.1_ASM3058013v1,_Candida_ easanensis,Candida easanensis,JCM 12476,JCM 12476
+GCA_030582775.1_ASM3058277v1,_Candida_ endomychidarum,Candida endomychidarum,NRRL Y-27708,NRRL Y-27708
+GCA_030557985.1_ASM3055798v1,_Candida_ ficus,Candida ficus,CBS 12638,CBS 12638
+GCA_030560825.1_ASM3056082v1,_Candida_ fluviatilis,Candida fluviatilis,NRRL Y-7711,NRRL Y-7711
+GCA_003707735.2_ASM370773v2,_Candida_ freyschussii,Candida freyschussii,NRRL Y-7957A,NRRL Y-7957A
+GCA_030565865.1_ASM3056586v1,_Candida_ friedrichii,Candida friedrichii,NRRL Y-17653,NRRL Y-17653
+GCA_030574815.1_ASM3057481v1,_Candida_ germanica,Candida germanica,NRRL Y-27064,NRRL Y-27064
+GCA_030564305.1_ASM3056430v1,_Candida_ glaebosa,Candida glaebosa,NRRL Y-6949,NRRL Y-6949
+GCA_030572315.1_ASM3057231v1,_Candida_ glucosophila,Candida glucosophila,NRRL Y-17219,NRRL Y-17219
+GCA_030582695.1_ASM3058269v1,_Candida_ golubevii,Candida golubevii,NRRL Y-48707,NRRL Y-48707
+GCA_003708985.3_ASM370898v3,_Candida_ gorgasii,Candida gorgasii,NRRL Y-27707,NRRL Y-27707
+GCA_030561765.1_ASM3056176v1,_Candida_ hainanensis,Candida hainanensis,NRRL Y-48715,NRRL Y-48715
+GCA_900535975.1_OLHI0,_Candida_ hispaniensis,Candida hispaniensis,CBS 9996,CBS 9996
+GCA_003706965.1_ASM370696v1,_Candida_ hispaniensis,Candida hispaniensis,NRRL Y-5580,NRRL Y-5580
+GCA_030563225.1_ASM3056322v1,_Candida_ hungchunana,Candida hungchunana,CBS 12243,CBS 12243
+GCA_003706695.3_ASM370669v3,_Candida_ incommunis,Candida incommunis,NRRL Y-17085,NRRL Y-17085
+GCA_056507785.1_ASM5650778v1,_Candida_ incommunis,Candida incommunis,PYCC 4837,PYCC 4837
+GCA_030574155.1_ASM3057415v1,_Candida_ insectalens,Candida insectalens,NRRL Y-7778T,NRRL Y-7778T
+GCA_030578955.1_ASM3057895v1,_Candida_ insectamans,Candida insectamans,NRRL Y-7786T,NRRL Y-7786T
+GCA_030574895.1_ASM3057489v1,_Candida_ insectorum,Candida insectorum,NRRL Y-7787,NRRL Y-7787
+GCA_030566495.1_ASM3056649v1,_Candida_ ipomoeae,Candida ipomoeae,NRRL Y-27455T,NRRL Y-27455T
+GCA_002370145.1_ASM237014v1,_Candida_ ipomoeae,Candida ipomoeae,UWOPS 01-141c3,UWOPS 01-141c3
+GCA_002374715.1_ASM237471v1,_Candida_ ipomoeae,Candida ipomoeae,UWOPS 10-104.1,UWOPS 10-104.1
+GCA_002370905.1_ASM237090v1,_Candida_ ipomoeae,Candida ipomoeae,UWOPS 99-324.1,UWOPS 99-324.1
+GCA_943733655.1_CLIB1444v1,_Candida_ jaroonii,Candida jaroonii,CLIB 1444,CLIB 1444
+GCA_030556445.1_ASM3055644v1,_Candida_ jaroonii,Candida jaroonii,NBRC 103209,NBRC 103209
+GCA_030562945.1_ASM3056294v1,_Candida_ jianshihensis,Candida jianshihensis,CBS 10591,CBS 10591
+GCA_030555785.1_ASM3055578v1,_Candida_ kanchanaburiensis,Candida kanchanaburiensis,NBRC 104475,NBRC 104475
+GCA_030563265.1_ASM3056326v1,_Candida_ khao-thaluensis,Candida khao-thaluensis,CBS 8535,CBS 8535
+GCA_030572455.1_ASM3057245v1,_Candida_ koratica nom. ined.,Candida koratica nom. ined.,NBRC 103208,NBRC 103208
+GCA_030582815.1_ASM3058281v1,_Candida_ krabiensis,Candida krabiensis,NRRL Y-27965,NRRL Y-27965
+GCA_030563485.1_ASM3056348v1,_Candida_ lessepsii,Candida lessepsii,NRRL Y-27766 T,NRRL Y-27766 T
+GCA_030563775.1_ASM3056377v1,_Candida_ loeiensis,Candida loeiensis,CBS 11899,CBS 11899
+GCA_030563415.1_ASM3056341v1,_Candida_ lundiana,Candida lundiana,CBS 12271 T,CBS 12271 T
+GCA_030582855.1_ASM3058285v1,_Candida_ lyxosophila,Candida lyxosophila,NRRL Y-17539,NRRL Y-17539
+GCA_030563305.1_ASM3056330v1,_Candida_ maesae,Candida maesae,CBS 12240 T,CBS 12240 T
+GCA_030569175.1_ASM3056917v1,_Candida_ manassasensis,Candida manassasensis,CBS 12534,CBS 12534
+GCA_030557505.1_ASM3055750v1,_Candida_ maris,Candida maris,NRRL Y-6696T,NRRL Y-6696T
+GCA_030564055.1_ASM3056405v1,_Candida_ mattraensis,Candida mattraensis,CBS 12097,CBS 12097
+GCA_030572415.1_ASM3057241v1,_Candida_ membranifaciens,Candida membranifaciens,NRRL Y-2089,NRRL Y-2089
+GCA_022457055.1_Cmemb_IST626,_Candida_ membranifaciens,Candida membranifaciens,IST 626,IST 626
+GCA_030559045.1_ASM3055904v1,_Candida_ mesenterica,Candida mesenterica,NRRL Y-1494,NRRL Y-1494
+GCA_015708695.1_ASM1570869v1,_Candida_ mesenterica,Candida mesenterica,UWOPS91-121.2,UWOPS91-121.2
+GCA_030570755.1_ASM3057075v1,_Candida_ methanosorbosa,Candida methanosorbosa,NRRL Y-17320,NRRL Y-17320
+GCA_030572395.1_ASM3057239v1,_Candida_ michaelii,Candida michaelii,NRRL Y-27705,NRRL Y-27705
+GCA_003706615.3_ASM370661v3,_Candida_ montana,Candida montana,NRRL Y-17326,NRRL Y-17326
+GCA_030572295.1_ASM3057229v1,_Candida_ multigemmis,Candida multigemmis,NRRL Y-17659,NRRL Y-17659
+GCA_030563805.1_ASM3056380v1,_Candida_ namnaoensis,Candida namnaoensis,CBS 12175,CBS 12175
+GCA_030557475.1_ASM3055747v1,_Candida_ nanaspora,Candida nanaspora,NRRL Y-17679,NRRL Y-17679
+GCA_030567775.1_ASM3056777v1,_Candida_ nemodendra,Candida nemodendra,NRRL Y-7779,NRRL Y-7779
+GCA_030567875.1_ASM3056787v1,_Candida_ nitratophila,Candida nitratophila,NRRL YB-3654,NRRL YB-3654
+GCA_037951455.1_ASM3795145v1,_Candida_ nonsorbophila,Candida nonsorbophila,BP-1,BP-1
+GCA_037951465.1_ASM3795146v1,_Candida_ nonsorbophila,Candida nonsorbophila,BP-2,BP-2
+GCA_037951485.1_ASM3795148v1,_Candida_ nonsorbophila,Candida nonsorbophila,BP-3,BP-3
+GCA_037951445.1_ASM3795144v1,_Candida_ nonsorbophila,Candida nonsorbophila,BP-4,BP-4
+GCA_030578515.1_ASM3057851v1,_Candida_ nonsorbophila,Candida nonsorbophila,CBS 10862 T,CBS 10862 T
+GCA_037951475.1_ASM3795147v1,_Candida_ nonsorbophila,Candida nonsorbophila,RP-1,RP-1
+GCA_037951225.1_ASM3795122v1,_Candida_ nonsorbophila,Candida nonsorbophila,RP-2,RP-2
+GCA_037951215.1_ASM3795121v1,_Candida_ nonsorbophila,Candida nonsorbophila,RW-1,RW-1
+GCA_037951195.1_ASM3795119v1,_Candida_ nonsorbophila,Candida nonsorbophila,RW-2,RW-2
+GCA_030567455.1_ASM3056745v1,_Candida_ norvegica,Candida norvegica,NRRL Y-17660T,NRRL Y-17660T
+GCA_020281285.1_ASM2028128v1,_Candida_ oceani,Candida oceani,2020i151,2020i151
+GCA_030569555.1_ASM3056955v1,_Candida_ oceani,Candida oceani,CBS 11857,CBS 11857
+GCA_030557705.1_ASM3055770v1,_Candida_ odintsovae,Candida odintsovae,NRRL Y-17760,NRRL Y-17760
+GCA_030563865.1_ASM3056386v1,_Candida_ oleophila,Candida oleophila,NRRL Y-2317,NRRL Y-2317
+GCA_003708145.3_ASM370814v3,_Candida_ orba,Candida orba,NRRL Y-27336,NRRL Y-27336
+GCA_030561785.1_ASM3056178v1,_Candida_ ortonii,Candida ortonii,NRRL Y-48038,NRRL Y-48038
+GCA_030556425.1_ASM3055642v1,_Candida_ ovalis,Candida ovalis,NRRL Y-17662,NRRL Y-17662
+GCA_025602875.1_ASM2560287v1,_Candida_ palmioleophila,Candida palmioleophila,CBS 18098,CBS 18098
+GCA_030560805.1_ASM3056080v1,_Candida_ palmioleophila,Candida palmioleophila,NRRL Y-17323,NRRL Y-17323
+GCA_030558275.1_ASM3055827v1,_Candida_ palmyrensis,Candida palmyrensis,CBS 11546,CBS 11546
+GCA_030580475.1_ASM3058047v1,_Candida_ patagonica,Candida patagonica,CBS 10443,CBS 10443
+GCA_030574875.1_ASM3057487v1,_Candida_ peoriensis,Candida peoriensis,NRRL YB-1497,NRRL YB-1497
+GCA_030567815.1_ASM3056781v1,_Candida_ piceae,Candida piceae,NRRL YB-2107,NRRL YB-2107
+GCA_030567935.1_ASM3056793v1,_Candida_ pini,Candida pini,NRRL Y-2023,NRRL Y-2023
+GCA_030582235.1_ASM3058223v1,_Candida_ ponderosae,Candida ponderosae,NRRL YB-2307,NRRL YB-2307
+GCA_030674785.1_ASM3067478v1,_Candida_ pseudoaaseri,Candida pseudoaaseri,CBS 11170,CBS 11170
+GCA_030558265.1_ASM3055826v1,_Candida_ pseudocylindracea,Candida pseudocylindracea,CBS 10854T,CBS 10854T
+GCA_030556505.1_ASM3055650v1,_Candida_ pseudofarinosa,Candida pseudofarinosa,NCYC 386,NCYC 386
+GCA_030705115.1_ASM3070511v1,_Candida_ pseudoglaebosa,Candida pseudoglaebosa,NRRL Y-17911,NRRL Y-17911
+GCA_900186205.1_CANPSY1,_Candida_ psychrophila,Candida psychrophila,,
+GCA_030563005.1_ASM3056300v1,_Candida_ qinlingensis,Candida qinlingensis,CBS 9768,CBS 9768
+GCA_030556525.1_ASM3055652v1,_Candida_ quercuum,Candida quercuum,NRRL Y-12942,NRRL Y-12942
+GCA_935541525.1_CLIB1423v1,_Candida_ railenensis,Candida railenensis,CLIB 1423,CLIB 1423
+GCA_030570995.1_ASM3057099v1,_Candida_ railenensis,Candida railenensis,NRRL Y-17762T,NRRL Y-17762T
+GCA_030569615.1_ASM3056961v1,_Candida_ rishiriensis,Candida rishiriensis,NBRC 105027;AB462338,NBRC 105027
+GCA_030557765.1_ASM3055776v1,_Candida_ saitoana,Candida saitoana,NRRL Y-17316,NRRL Y-17316
+GCA_054123075.1_ASM5412307v1,_Candida_ sake,Candida sake,AOP5_A1_surf_bin_19,AOP5_A1_surf_bin_19
+GCA_054123035.1_ASM5412303v1,_Candida_ sake,Candida sake,AOP5_B1_surf_bin_4,AOP5_B1_surf_bin_4
+GCA_054123015.1_ASM5412301v1,_Candida_ sake,Candida sake,AOP5_B2_surf_bin_3,AOP5_B2_surf_bin_3
+GCA_054122995.1_ASM5412299v1,_Candida_ sake,Candida sake,AOP5_CZ1_surf_bin_10,AOP5_CZ1_surf_bin_10
+GCA_054122875.1_ASM5412287v1,_Candida_ sake,Candida sake,AOP5_FY1_surf_bin_8,AOP5_FY1_surf_bin_8
+GCA_054122885.1_ASM5412288v1,_Candida_ sake,Candida sake,AOP5_GZ1_surf_bin_13,AOP5_GZ1_surf_bin_13
+GCA_003243815.1_ASM324381v1,_Candida_ sake,Candida sake,CBA6005,CBA6005
+GCA_017654755.1_ASM1765475v1,_Candida_ sake,Candida sake,H14_1_4C,H14_1_4C
+GCA_030572495.1_ASM3057249v1,_Candida_ sake,Candida sake,NRRL Y-1622,NRRL Y-1622
+GCA_977014415.1_UCD2293_Can,_Candida_ sake,Candida sake,UCD2293,UCD2293
+GCA_030578175.1_ASM3057817v1,_Candida_ santamariae,Candida santamariae,NRRL Y-6656,NRRL Y-6656
+GCA_030569275.1_ASM3056927v1,_Candida_ sanyiensis,Candida sanyiensis,CBS 10592,CBS 10592
+GCA_003707405.2_ASM370740v2,_Candida_ schatavii,Candida schatavii,NRRL Y-17078,NRRL Y-17078
+GCA_018344475.1_ASM1834447v1,_Candida_ silvatica,Candida silvatica,NRRL Y-7777,NRRL Y-7777
+GCA_030574755.1_ASM3057475v1,_Candida_ silvicultrix,Candida silvicultrix,NRRL Y-7789,NRRL Y-7789
+GCA_039762375.1_Csinolaborantium_LESF1467_1.0,_Candida_ sinolaborantium,Candida sinolaborantium,LESF1467,LESF1467
+GCA_030564825.1_ASM3056482v1,_Candida_ sithepensis,Candida sithepensis,JCM 12265,JCM 12265
+GCA_030566775.1_ASM3056677v1,_Candida_ smagusa,Candida smagusa,CBS 11430,CBS 11430
+GCA_030462955.1_ASM3046295v1,_Candida_ solani,Candida solani,NRRL Y-2224,NRRL Y-2224
+GCA_964273545.1_UCD1087_Cansol,_Candida_ solani,Candida solani,UCD1087,UCD1087
+GCA_977014385.1_UCD2211_Cansol,_Candida_ solani,Candida solani,UCD2211,UCD2211
+GCA_030570975.1_ASM3057097v1,_Candida_ songkhlaensis,Candida songkhlaensis,NBRC 103214;DQ404499,NBRC 103214
+GCA_037951595.1_ASM3795159v1,_Candida_ sonorensis,Candida sonorensis,BW-1,BW-1
+GCA_037951315.1_ASM3795131v1,_Candida_ sonorensis,Candida sonorensis,BW-2,BW-2
+GCA_037951295.1_ASM3795129v1,_Candida_ sonorensis,Candida sonorensis,BW-3,BW-3
+GCA_037951305.1_ASM3795130v1,_Candida_ sonorensis,Candida sonorensis,BW-4,BW-4
+GCA_030567855.1_ASM3056785v1,_Candida_ sonorensis,Candida sonorensis,NRRL Y-7800,NRRL Y-7800
+GCA_030564725.1_ASM3056472v1,_Candida_ sophiae-reginae,Candida sophiae-reginae,NRRL Y-17668,NRRL Y-17668
+GCA_001599115.1_JCM_1536_assembly_v001,_Candida_ sorboxylosa,Candida sorboxylosa,JCM 1536,JCM 1536
+GCA_030564865.1_ASM3056486v1,_Candida_ sorboxylosa,Candida sorboxylosa,NRRL Y-17669,NRRL Y-17669
+GCA_030579995.1_ASM3057999v1,_Candida_ sp.,Candida sp.,NRRL Y-12764,NRRL Y-12764
+GCA_030570575.1_ASM3057057v1,_Candida_ sp.,Candida sp.,NRRL Y-17713,NRRL Y-17713
+GCA_030567185.1_ASM3056718v1,_Candida_ sp.,Candida sp.,NRRL Y-27103,NRRL Y-27103
+GCA_030574675.1_ASM3057467v1,_Candida_ sp.,Candida sp.,NRRL Y-27127,NRRL Y-27127
+GCA_030563385.1_ASM3056338v1,_Candida_ sp.,Candida sp.,NRRL Y-27166,NRRL Y-27166
+GCA_030567915.1_ASM3056791v1,_Candida_ sp.,Candida sp.,NRRL Y-27170,NRRL Y-27170
+GCA_030572555.1_ASM3057255v1,_Candida_ sp.,Candida sp.,NRRL Y-27267,NRRL Y-27267
+GCA_030580075.1_ASM3058007v1,_Candida_ sp.,Candida sp.,NRRL Y-7574,NRRL Y-7574
+GCA_030557335.1_ASM3055733v1,_Candida_ sp.,Candida sp.,NRRL Y-7615,NRRL Y-7615
+GCA_030567895.1_ASM3056789v1,_Candida_ sp.,Candida sp.,NRRL YB-1238,NRRL YB-1238
+GCA_030567955.1_ASM3056795v1,_Candida_ sp.,Candida sp.,NRRL YB-2442,NRRL YB-2442
+GCA_030564165.1_ASM3056416v1,_Candida_ sp.,Candida sp.,NRRL YB-3031,NRRL YB-3031
+GCA_030567155.1_ASM3056715v1,_Candida_ sp.,Candida sp.,NRRL YB-4088,NRRL YB-4088
+GCA_030705185.1_ASM3070518v1,_Candida_ sp.,Candida sp.,UFMG-CM-Y605,UFMG-CM-Y605
+GCA_030571215.1_ASM3057121v1,_Candida_ sp.,Candida sp.,yHMH407,yHMH407
+GCA_030582355.1_ASM3058235v1,_Candida_ spencermartinsiae,Candida spencermartinsiae,NRRL Y-48663,NRRL Y-48663
+GCA_030569075.1_ASM3056907v1,_Candida_ sphagnicola,Candida sphagnicola,CBS 11774 T,CBS 11774 T
+GCA_030558335.1_ASM3055833v1,_Candida_ stauntonica,Candida stauntonica,CBS 12241,CBS 12241
+GCF_019202705.1_ASM1920270v1,_Candida_ subhashii,Candida subhashii,CBS 10753,CBS 10753
+GCA_001599255.1_JCM_9445_assembly_v001,_Candida_ succiphila,Candida succiphila,JCM 9445,JCM 9445
+GCA_030557525.1_ASM3055752v1,_Candida_ succiphila,Candida succiphila,NRRL Y-11998,NRRL Y-11998
+GCA_030568895.1_ASM3056889v1,_Candida_ suthepensis,Candida suthepensis,CBS 12270 T,CBS 12270 T
+GCA_030568155.1_ASM3056815v1,_Candida_ suzukii,Candida suzukii,NRRL Y-27593,NRRL Y-27593
+GCA_030564145.1_ASM3056414v1,_Candida_ takata,Candida takata,CBS 12244,CBS 12244
+GCA_030569655.1_ASM3056965v1,_Candida_ tallmaniae,Candida tallmaniae,CBS 8575 T,CBS 8575 T
+GCA_030566005.1_ASM3056600v1,_Candida_ tammaniensis,Candida tammaniensis,NRRL Y-8257,NRRL Y-8257
+GCA_030567055.1_ASM3056705v1,_Candida_ taoyuanica,Candida taoyuanica,CBS 12242,CBS 12242
+GCA_030583035.1_ASM3058303v1,_Candida_ taylorii,Candida taylorii,NRRL Y-27213,NRRL Y-27213
+GCA_030570835.1_ASM3057083v1,_Candida_ tibetensis,Candida tibetensis,CBS 10298,CBS 10298
+GCA_030572515.1_ASM3057251v1,_Candida_ trypodendri,Candida trypodendri,NRRL Y-6488,NRRL Y-6488
+GCA_030407195.1_ASM3040719v1,_Candida_ tunisiensis,Candida tunisiensis,CBS 12513,CBS 12513
+GCA_030569675.1_ASM3056967v1,_Candida_ ulmi,Candida ulmi,CBS 8670,CBS 8670
+GCA_900465365.1_CvDDNA1.1,_Candida_ vartiovaarae,Candida vartiovaarae,,
+GCA_003708265.3_ASM370826v3,_Candida_ vartiovaarae,Candida vartiovaarae,NRRL Y-6701,NRRL Y-6701
+GCA_030569695.1_ASM3056969v1,_Candida_ vaughaniae,Candida vaughaniae,CBS 8583,CBS 8583
+GCA_003708715.3_ASM370871v3,_Candida_ wancherniae,Candida wancherniae,NRRL Y-48709,NRRL Y-48709
+GCA_030563365.1_ASM3056336v1,_Candida_ xylanilytica,Candida xylanilytica,NBRC 106499;AB523752,NBRC 106499
+GCA_030573155.1_ASM3057315v1,_Candida_ xyloterini,Candida xyloterini,CBS 11547,CBS 11547
+GCA_030569295.1_ASM3056929v1,_Candida_ yuanshanica,Candida yuanshanica,CBS 10589,CBS 10589
+GCA_032774475.1_ASM3277447v1,_Candida_ zeylanoides,Candida zeylanoides,AWD,AWD
+GCA_051530125.1_ASM5153012v1,_Candida_ zeylanoides,Candida zeylanoides,DSM 70185,DSM 70185
+GCA_030564465.1_ASM3056446v1,_Candida_ zeylanoides,Candida zeylanoides,NRRL Y-1774,NRRL Y-1774
+GCA_031851675.1_ASM3185167v1,_Candida_ zeylanoides,Candida zeylanoides,UCD849,UCD849
+GCA_001008285.1_ASM100828v1,_Emmonsia_ crescens,Emmonsia crescens,UAMH 3008,UAMH 3008
+GCA_002572855.1_Emmon_cres_4076_V1,_Emmonsia_ crescens,Emmonsia crescens,UAMH4076,UAMH4076
+GCA_043643485.1_Neocos,_Neocosmospora_ mangrovei,Neocosmospora mangrovei,MFLUCC 17-0253,MFLUCC 17-0253
+GCA_018873225.1_ASM1887322v1,_Phialemoniopsis_ sp. UDSM-2020,Phialemoniopsis sp. UDSM-2020,UDSM-2020,UDSM-2020
+GCA_000825705.1_Allpaths-LG,_Torrubiella_ hemipterigena,Torrubiella hemipterigena,,

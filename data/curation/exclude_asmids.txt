@@ -1,0 +1,149 @@
+# Candidate exclusion list bootstrapped from misc/samples.csv.prechange vs samples.csv
+# Format: <ASMID>\t<reason>   (lines starting with # are comments)
+# 128 true removals + 14 dedup removals = 142 total
+
+## --- dedup: another assembly with the same GCA/GCF accession is kept ---
+GCA_000401615.1_K1_trimmed_clc_assembly_flt.fa	dedup: accession GCA_000401615.1 kept under another ASMID	# Blumeria hordei K1 | K1
+GCA_000401675.1_A6_trimmed_clc_assembly_flt.fa	dedup: accession GCA_000401675.1 kept under another ASMID	# Blumeria hordei A6 | A6
+GCA_001179765.1_Mycena-l100.fa	dedup: accession GCA_001179765.1 kept under another ASMID	# Crepidotus sp. BD-2015 | 
+GCA_003547095.1_Glomus_Soap2_v3.1.nr.fa	dedup: accession GCA_003547095.1 kept under another ASMID	# Diversispora epigaea | IT104
+GCA_026260285.1_Colsa1.clean.fa	dedup: accession GCA_026260285.1 kept under another ASMID	# Colletotrichum sansevieriae | FPH2021-6
+GCA_032881745.1_JA119_contigs_nh.fasta	dedup: accession GCA_032881745.1 kept under another ASMID	# Pyricularia oryzae | UFVPY119
+GCA_046862025.1_E5301_clcbio_scaffolds.fasta	dedup: accession GCA_046862025.1 kept under another ASMID	# Epichloe typhina | E5301Bp
+GCA_046863585.1_NFe7.Masurca.scaffolds.renamed.fasta	dedup: accession GCA_046863585.1 kept under another ASMID	# Epichloe bromicola | NFe7
+GCA_047301935.1_E6358Bt-2_Denovo_Mas339_Scaffolds.fasta	dedup: accession GCA_047301935.1 kept under another ASMID	# Epichloe festucae | E6358-2
+GCA_047301975.1_E6359Mp-2_Denovo_Mas339_Scaffolds.fasta	dedup: accession GCA_047301975.1 kept under another ASMID	# Epichloe bromicola | E6359-2
+GCA_050656755.1_HCTi.v1.0.fasta	dedup: accession GCA_050656755.1 kept under another ASMID	# Pyricularia oryzae | 95085 HCT
+GCA_051397355.1_GA10_6-scaf.final.scaffolds.fasta	dedup: accession GCA_051397355.1 kept under another ASMID	# Aspergillus parasiticus | GA10_6_ap24
+GCA_056747115.1_Psh_NP85002_hap2_assembly.fasta	dedup: accession GCA_056747115.1 kept under another ASMID	# Puccinia striiformis f. sp. hordei | NP85002
+GCA_900069095.1_Tubaria_l100.fa	dedup: accession GCA_900069095.1 kept under another ASMID	# Tubaria furfuracea | 
+
+## --- true removals: accession dropped entirely (curation) ---
+GCA_000091065.2_ASM9106v2	curation	# Saccharomyces cerevisiae | strain=S288C
+GCA_000149365.1_ASM14936v1	curation	# Saccharomyces cerevisiae RM11-1a | strain=RM11-1a
+GCA_000149865.1_BD_JEL423	curation	# Batrachochytrium dendrobatidis JEL423 | strain=JEL423
+GCA_000166915.1_ASM16691v1	curation	# Aspergillus terreus ATCC 20542 | strain=ATCC 20542
+GCA_000166975.1_ASM16697v1	curation	# Saccharomyces mikatae IFO 1815 | strain=IFO 1815
+GCA_000169275.1_ASM16927v1	curation	# Malassezia restricta CBS 7877 | strain=CBS 7877
+GCA_000174375.1_ASM17437v1	curation	# Alternaria brassicicola ATCC 96836 | strain=ATCC 96836
+GCA_000182075.2_ASM18207v2	curation	# Saccharomyces cerevisiae M22 | strain=M22
+GCA_000192375.1_Saccharomyces_cerevisiae_Y10-2.0	curation	# Saccharomyces cerevisiae Y10 | strain=Y10
+GCA_000192455.1_Saccharomyces_cerevisiae_CBS7960-2.0	curation	# Saccharomyces cerevisiae CBS 7960 | strain=CBS 7960
+GCA_000192495.1_Saccharomyces_cerevisiae_CLIB324-2.0	curation	# Saccharomyces cerevisiae CLIB324 | strain=CLIB324
+GCA_000192515.1_Saccharomyces_cerevisiae_YJM269-2.0	curation	# Saccharomyces cerevisiae YJM269 | strain=YJM269
+GCA_000192535.1_Saccharomyces_cerevisiae_FL100-1.0	curation	# Saccharomyces cerevisiae FL100 | strain=FL100
+GCA_000192555.1_Saccharomyces_cerevisiae_CLIB215-2.0	curation	# Saccharomyces cerevisiae CLIB215 | strain=CLIB215
+GCA_000209345.1_Saccharomyces_cerevisiae_CLIB382-1.0	curation	# Saccharomyces cerevisiae CLIB382 | strain=CLIB382
+GCA_000222805.1_FOB1	curation	# Fusarium oxysporum f. sp. conglutinans Fo5176 | strain=Fo5176
+GCA_000230395.2_ASPNI_v3.0	curation	# Aspergillus niger ATCC 1015 | strain=ATCC 1015
+GCA_000240685.2_ASM24068v2	curation	# Mortierella alpina ATCC 32222 | strain=ATCC 32222
+GCA_000259595.1_AWRI1499_v1.0	curation	# Brettanomyces bruxellensis AWRI1499 | strain=AWRI1499
+GCA_000269785.2_AspOry3042	curation	# Aspergillus oryzae 3.042 | strain=3.042
+GCA_000313795.2_ASM31379v2	curation	# Colletotrichum higginsianum | strain=IMI 349063
+GCA_000315255.1_B14_02	curation	# Fusarium fujikuroi B14 | strain=B14
+GCA_000338975.1_CocheC5_3	curation	# Bipolaris maydis C5 | strain=C5
+GCA_000498135.1_FJ81278_genome_assembly	curation	# Pyricularia oryzae FJ81278 | strain=FJ81278
+GCA_000591435.1_MR2010_11_27	curation	# Metarhizium robertsii | strain=ARSEF 2575
+GCA_000766175.2_ASM76617v2	curation	# Saccharomyces cerevisiae | strain=YPS163
+GCA_000766475.2_ASM76647v2	curation	# Saccharomyces cerevisiae | strain=W303
+GCA_000775455.1_Cand_albi_L26_V2	curation	# Candida albicans L26 | strain=L26
+GCA_000775525.1_Cand_albi_P75063_V1	curation	# Candida albicans P75063 | strain=P75063
+GCA_000786445.1_R265.1	curation	# Cryptococcus deuterogattii | strain=R265
+GCA_000827275.1_Pisolithus_microcarpus_441_v1.0	curation	# Pisolithus microcarpus 441 | strain=441
+GCA_000827335.1_Pisolithus_tinctorius_Marx_270_v1.0	curation	# Pisolithus tinctorius Marx 270 | strain=Marx 270
+GCA_000835765.1_Cryp_gatt_CBS10090_V1	curation	# Cryptococcus deuterogattii CBS 10090 | strain=CBS 10090
+GCA_000952835.1_ASM95283v1	curation	# Aspergillus flavus AF70 | strain=AF70
+GCA_001046915.1_ASM104691v1	curation	# Nakaseomyces nivariensis CBS 9983 | strain=CBS 9983
+GCA_001264925.1_ASM126492v1	curation	# Malassezia sympodialis | strain=ATCC 42132
+GCA_001638945.1_Mucci2	curation	# Mucor lusitanicus CBS 277.49 | strain=CBS 277.49
+GCA_001691765.1_ASM169176v1	curation	# Amanita muscaria var. guessowii Koide BX008 | strain=Koide BX008
+GCA_001702495.1_Foc013	curation	# Fusarium oxysporum f. sp. cucumerinum | strain=Foc013
+GCA_001702555.1_Foc021	curation	# Fusarium oxysporum f. sp. cucumerinum | strain=Foc021
+GCA_001702575.1_Foc015	curation	# Fusarium oxysporum f. sp. cucumerinum | strain=Foc015
+GCA_001702715.1_Fon019	curation	# Fusarium oxysporum f. sp. niveum | strain=Fon019
+GCA_001702805.1_Fon020	curation	# Fusarium oxysporum f. sp. niveum | strain=Fon020
+GCA_001703305.1_Fom010	curation	# Fusarium oxysporum f. sp. melonis | strain=Fom010
+GCA_002215705.1_Cryp_neof_Bt1_V1	curation	# Cryptococcus neoformans Bt1 | strain=Bt1
+GCA_002215825.1_Cryp_neof_C23_V1	curation	# Cryptococcus neoformans C23 | strain=C23
+GCA_002215885.1_Cryp_neof_125_91_V1	curation	# Cryptococcus neoformans 125.91 | strain=125.91
+GCA_002220445.1_Cryp_neof_AD1_7a_V1	curation	# Cryptococcus neoformans AD1-7a | strain=AD1-7a
+GCA_002222215.1_Cryp_neof_grubii_A5-35-17_V1	curation	# Cryptococcus neoformans A5-35-17 | strain=A5-35-17
+GCA_002222385.1_Cryp_neof_Ze90_1_V1	curation	# Cryptococcus neoformans Ze90-1 | strain=Ze90-1
+GCA_002234625.1_Cryp_neof_Bt63_V1	curation	# Cryptococcus neoformans Bt63 | strain=Bt63
+GCA_002885995.1_ASM288599v1	curation	# Saccharomyces cerevisiae | strain=CEN.PK113-7D
+GCA_002920065.1_ASM292006v1	curation	# Puccinia striiformis | strain=93-210
+GCA_003011985.1_ASM301198v1	curation	# Cryptococcus neoformans | strain=H99
+GCA_003675505.1_ATCC42720_1	curation	# Clavispora lusitaniae | strain=ATCC 42720
+GCA_003708635.2_ASM370863v2	curation	# Magnusiomyces tetraspermus NRRL Y-7288 | strain=NRRL Y-7288
+GCA_009372015.1_YarliW29	curation	# Yarrowia lipolytica | strain=PO1f
+GCA_011393195.1_ASM1139319v1	curation	# Saccharomyces cerevisiae I14 | strain=I14
+GCA_011393275.1_ASM1139327v1	curation	# Saccharomyces cerevisiae Y12 | strain=Y12
+GCA_013180785.1_ASM1318078v1	curation	# Saccharomyces pastorianus | strain=CBS 1513
+GCA_013368665.1_ASM1336866v1	curation	# Saccharomyces cerevisiae NC-02 | strain=NC-02
+GCA_014154955.1_SMRT_HiC_Fo5176	curation	# Fusarium oxysporum f. sp. conglutinans | strain=Fo5176
+GCA_014324445.1_ASM1432444v1	curation	# Fusarium oxysporum | strain=Fo47
+GCA_015251875.1_ASM1525187v1	curation	# Saccharomyces cerevisiae | strain=YPS1009
+GCA_015251915.1_ASM1525191v1	curation	# Saccharomyces cerevisiae | strain=PW5
+GCA_015251945.1_ASM1525194v1	curation	# Saccharomyces cerevisiae | strain=UC5
+GCA_018343885.1_ASM1834388v1	curation	# Hyphopichia burtonii | strain=NRRL Y-1933
+GCA_018344375.1_ASM1834437v1	curation	# Wickerhamomyces anomalus | strain=NRRL Y-366
+GCA_018344385.1_ASM1834438v1	curation	# Babjeviella inositovora | strain=NRRL Y-12698
+GCA_018344435.1_ASM1834443v1	curation	# Cyberlindnera jadinii | strain=NRRL Y-1542
+GCA_019393615.1_ASM1939361v1	curation	# Saccharomyces cerevisiae | strain=YJM975
+GCA_019393625.1_ASM1939362v1	curation	# Saccharomyces cerevisiae | strain=YJM978
+GCA_019394065.1_ASM1939406v1	curation	# Saccharomyces cerevisiae | strain=T73
+GCA_019394095.1_ASM1939409v1	curation	# Saccharomyces cerevisiae | strain=T7
+GCA_024678945.1_ASM2467894v1	curation	# Aspergillus flavus | strain=NRRL3357
+GCA_025434895.1_ASM2543489v1	curation	# Saccharomyces cerevisiae | strain=YJM981
+GCA_026119975.1_ASM2611997v1	curation	# Didymella exigua | strain=CBS 183.55
+GCA_029230485.1_Zt10	curation	# Zymoseptoria tritici | strain=Zt10
+GCA_030544465.1_ASM3054446v1	curation	# Suhomyces tanzawaensis | strain=NRRL Y-17324
+GCA_030556305.1_ASM3055630v1	curation	# Lipomyces starkeyi | strain=NRRL Y-11557
+GCA_030567675.1_ASM3056767v1	curation	# Candida arabinofermentans | strain=NRRL YB-2248
+GCA_030569935.1_ASM3056993v1	curation	# Lachancea kluyveri | strain=NRRL Y-12651
+GCA_030570515.1_ASM3057051v1	curation	# Metschnikowia bicuspidata var. bicuspidata | strain=NRRL YB-4993
+GCA_030573675.1_ASM3057367v1	curation	# Pachysolen tannophilus | strain=NRRL Y-2460
+GCA_030573715.1_ASM3057371v1	curation	# Pichia membranifaciens | strain=NRRL Y-2026
+GCA_030579515.1_ASM3057951v1	curation	# Spathaspora passalidarum | strain=NRRL Y-27907
+GCA_030579835.1_ASM3057983v1	curation	# Tortispora caseinolytica | strain=NRRL Y-17796
+GCA_035927225.1_ASM3592722v1	curation	# Cryomyces antarcticus | strain=CCFEE 534
+GCA_040167635.1_ASM4016763v1	curation	# Saccharomyces cerevisiae | strain=VL3
+GCA_051943505.2_ASM5194350v2	curation	# Microsporum canis | strain=CBS 113480
+GCA_051943795.2_ASM5194379v2	curation	# Trichophyton rubrum | strain=CBS 735.88
+GCA_051943815.2_ASM5194381v2	curation	# Trichophyton rubrum | strain=CBS 289.86
+GCA_900091695.1_Zt_ST99CH_3D7	curation	# Zymoseptoria tritici ST99CH_3D7 | strain=
+GCA_900099495.1_ZT1A5_complete_assembly	curation	# Zymoseptoria tritici ST99CH_1A5 | strain=
+GCA_900184105.1_ST99CH_3D1	curation	# Zymoseptoria tritici ST99CH_3D1 | strain=
+GCA_900184115.1_ST99CH_1E4	curation	# Zymoseptoria tritici ST99CH_1E4 | strain=
+GCA_900234805.1_PP2_HC	curation	# Komagataella phaffii | strain=
+GCA_900465115.1_NZT4_Genome_assembly	curation	# Plenodomus lingam-Leptosphaeria maculans 'brassicae' group | strain=
+GCA_902085965.1_CLO192961	curation	# Clonostachys rosea | strain=
+GCA_905220315.1_ScPE_H4_f	curation	# Saccharomyces cerevisiae PE-2 | strain=
+GCA_937900895.1_SRR4028141_bin.99_CONCOCT_v1.1_MAG	curation	# Thermochaetoides thermophila | strain=
+GCA_977071145.1_KE493_assembly	curation	# Pyricularia oryzae 70-15 | strain=
+GCA_980650995.1_TUCC00000381	curation	# Debaryomyces hansenii | strain=
+GCA_982319345.1_MCF_Y1	curation	# Saccharomyces cerevisiae S288C | strain=
+GCF_000002495.2_MG8	curation	# Pyricularia oryzae 70-15 | strain=70-15
+GCF_000006335.3_ASM633v3	curation	# Candida tropicalis MYA-3404 | strain=MYA-3404
+GCF_000145635.1_Gae_graminis_V2	curation	# Gaeumannomyces tritici R3-111a-1 | strain=R3-111a-1
+GCF_000146465.1_ASM14646v1	curation	# Encephalitozoon intestinalis ATCC 50506 | strain=ATCC 50506
+GCF_000146915.1_ASM14691v2	curation	# Parastagonospora nodorum SN15 | strain=SN15
+GCF_000149035.1_C_graminicola_M1_001_V1	curation	# Colletotrichum graminicola M1.001 | strain=M1.001
+GCF_000149425.1_ASM14942v1	curation	# Meyerozyma guilliermondii ATCC 6260 | strain=ATCC 6260
+GCF_000149555.1_ASM14955v1	curation	# Fusarium verticillioides 7600 | strain=7600
+GCF_000149685.1_ASM14968v1	curation	# Lodderomyces elongisporus NRRL YB-4239 | strain=NRRL YB-4239
+GCF_000149845.2_SJ5	curation	# Schizosaccharomyces japonicus yFS275 | strain=yFS275
+GCF_000150705.2_Paracocci_br_Pb01_V2	curation	# Paracoccidioides lutzii Pb01 | strain=Pb01
+GCF_000150735.1_Paracocci_br_Pb18_V2	curation	# Paracoccidioides brasiliensis Pb18 | strain=Pb18
+GCF_000167675.1_v2.0	curation	# Trichoderma reesei QM6a | strain=QM6a
+GCF_000170995.1_TRIVI_v2.0	curation	# Trichoderma virens Gv29-8 | strain=Gv29-8
+GCF_000171015.1_TRIAT_v2.0	curation	# Trichoderma atroviride IMI 206040 | strain=IMI 206040
+GCF_000181695.2_ASM18169v2	curation	# Malassezia globosa CBS 7966 | strain=CBS 7966
+GCF_000182965.3_ASM18296v3	curation	# Candida albicans SC5314 | strain=SC5314
+GCF_000184105.1_Geom_destructans_V1	curation	# Pseudogymnoascus destructans 20631-21 | strain=20631-21
+GCF_000185945.1_ASM18594v1	curation	# Cryptococcus gattii WM276 | strain=WM276
+GCF_000221225.1_CTHT_3.0	curation	# Thermochaetoides thermophila DSM 1495 | strain=DSM 1495
+GCF_000223465.1_Candida_tenuis_v1.0	curation	# Yamadazyma tenuis ATCC 10573 | strain=ATCC 10573
+GCF_000293215.1_Trichosporon_asahii_1	curation	# Trichosporon asahii var. asahii CBS 2479 | strain=CBS 2479
+GCF_001417885.1_Kmar_1.0	curation	# Kluyveromyces marxianus DMKU3-1042 | strain=DMKU3-1042
+GCF_947241705.1_Smik-IFO1815	curation	# Saccharomyces mikatae IFO 1815 | strain=IFO1815
