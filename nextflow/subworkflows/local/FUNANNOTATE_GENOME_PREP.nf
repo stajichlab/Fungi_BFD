@@ -48,7 +48,7 @@ workflow FUNANNOTATE_GENOME_PREP {
         // batch's rows into the tuple (which broke GENOME_CLEAN_BATCH's `tuple val(items),
         // val(taxondb)` declaration).
         def clean_batches = jobs_to_clean.collate(clean_batch_size).map { batch -> [ batch ] }
-        GENOME_CLEAN_BATCH(clean_batches.combine(taxondb_ch))
+        GENOME_CLEAN_BATCH(clean_batches.combine(taxondb_ch), file(params.samples))
         clean_done_ch = GENOME_CLEAN_BATCH.out.manifest.collect().ifEmpty([])
     } else {
         GENOME_CLEAN(jobs_to_clean.combine(taxondb_ch))

@@ -16,6 +16,7 @@ process GENOME_CLEAN_BATCH {
 
     input:
     tuple val(items), val(taxondb)
+    path samples_csv
 
     output:
     path "clean_batch_*.manifest.tsv", emit: manifest
@@ -73,13 +74,25 @@ BATCH_EOF
             continue
         fi
 
-        module load taxonkit
-        phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+        # samples.csv already carries a curated PHYLUM column (ASMID=col1, PHYLUM=col7);
+        # prefer it over a live taxonkit lookup, which silently comes back empty for
+        # brand-new taxids that haven't propagated into the local NCBI taxdump yet
+        # (e.g. provisional taxids for freshly-deposited 'sp.' assemblies).
+        phylum=\$(awk -F',' -v id="\$asmid" '\$1==id{print \$7; exit}' ${samples_csv})
         if [ -z "\$phylum" ]; then
-            phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
+            module load taxonkit
+            phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            if [ -z "\$phylum" ]; then
+                phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
+            fi
+            module unload taxonkit
+            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum=\$phylum (from taxonkit, samples.csv PHYLUM was blank)"
+        else
+            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum=\$phylum (from samples.csv)"
         fi
-        module unload taxonkit
-        echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum=\$phylum"
+        if [ -z "\$phylum" ]; then
+            echo "[\$i/\$n_total][WARN] no phylum found for \$asmid (taxonid=\$taxonid) in samples.csv or taxonkit; fcs_gx_purge will likely fail" >&2
+        fi
 
         module load AAFTF
         pigz -dc "\$gz" > \$SCRATCH/\${asmid}.raw.fa
