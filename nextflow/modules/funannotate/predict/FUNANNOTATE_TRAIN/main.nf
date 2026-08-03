@@ -49,6 +49,9 @@ process FUNANNOTATE_TRAIN {
         fi
         if [ \$RETRAIN -eq 0 ]; then
             echo "[INFO] Training already complete for ${out}; skipping"
+            # Still repoint any absolute cross-project symlinks left by an older run.
+            relink_training_symlinks.py --apply --quiet \\
+                "${params.training_target}/${out}/training" || true
             exit 0
         fi
     fi
@@ -162,6 +165,14 @@ process FUNANNOTATE_TRAIN {
     echo "[INFO] Removing large training intermediates in \$TRAINDIR"
     rm -rf "\$TRAINDIR/hisat2"
     rm -rf "\$TRAINDIR/trinity_gg"
+
+    # ── Make funannotate's convenience symlinks local ──────────────────────────
+    # funannotate writes funannotate_train.{coordSorted.bam,transcripts.gff3,
+    # trinity-GG.fasta} and transcript.alignments.bam as absolute paths into
+    # whatever tree it ran under, which breaks the moment the directory is moved
+    # or the source project is retired. Repoint them at the sibling files.
+    relink_training_symlinks.py --apply --quiet "\$TRAINDIR" || true
+
     echo "[INFO] Training cleanup complete for ${out}"
     echo "mysql is ${params.pasa_mysql}"
     if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi
