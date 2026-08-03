@@ -158,6 +158,169 @@
                 "run_busco_pep":   { "type": "boolean", "default": false },
                 "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" }
             }
+        },
+        "ani_options": {
+            "title": "ANI (average nucleotide identity) comparison options",
+            "type": "object",
+            "description": "Parameters for compare_ANI.nf and query_ANI.nf workflows.",
+            "properties": {
+                "compare": {
+                    "type": "string",
+                    "enum": ["KINGDOM", "PHYLUM", "CLASS", "ORDER", "FAMILY", "GENUS", "SPECIES"],
+                    "description": "Taxonomic rank to group genomes for comparison.",
+                    "default": "GENUS"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "ANI results output directory.",
+                    "default": "${launchDir}/results/ANI"
+                },
+                "ani_method": {
+                    "type": "string",
+                    "enum": ["skani", "mash", "sourmash", "fastani"],
+                    "description": "ANI comparison tool.",
+                    "default": "skani"
+                },
+                "sketch_cache": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory to cache per-genome sketches.",
+                    "default": "${launchDir}/work/ANI/sketch_cache"
+                },
+                "phylo_outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Phylogenetic output directory."
+                },
+                "min_group_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Minimum genomes to form a comparison group.",
+                    "default": 2
+                },
+                "ani_cluster_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "ANI % threshold for clustering.",
+                    "default": 95.0
+                },
+                "ani_outlier_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "ANI % threshold for outlier detection.",
+                    "default": 90.0
+                },
+                "skani_preset": {
+                    "type": "string",
+                    "enum": ["fast", "medium", "slow"],
+                    "description": "skani sketch preset.",
+                    "default": "medium"
+                },
+                "skani_min_af": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "skani minimum aligned fraction (%).",
+                    "default": 15
+                },
+                "skani_compression": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "skani compression level (0 = use preset default).",
+                    "default": 0
+                },
+                "skani_sketch_chunk": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Genomes sketched per skani job.",
+                    "default": 50
+                },
+                "mash_kmer": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Mash k-mer size.",
+                    "default": 21
+                },
+                "mash_sketch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Mash sketch size.",
+                    "default": 10000
+                },
+                "sourmash_kmer": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Sourmash k-mer size.",
+                    "default": 21
+                },
+                "sourmash_scaled": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Sourmash scaled factor.",
+                    "default": 1000
+                },
+                "fastani_fraglen": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "FastANI fragment length.",
+                    "default": 3000
+                },
+                "fastani_kmer": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "FastANI k-mer size.",
+                    "default": 16
+                },
+                "ani_batch_size": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Upper-triangle batch size (0 = single job per group).",
+                    "default": 0
+                },
+                "fastani_prefilter": {
+                    "type": "boolean",
+                    "description": "Use mash pre-clustering for fastANI.",
+                    "default": false
+                },
+                "prefilter_ani": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Mash ANI % floor for prefilter cascade.",
+                    "default": 80.0
+                },
+                "query_rank": {
+                    "type": "string",
+                    "enum": ["KINGDOM", "PHYLUM", "CLASS", "ORDER", "FAMILY", "GENUS", "SPECIES"],
+                    "description": "Taxonomic rank for query_ANI grouping.",
+                    "default": "GENUS"
+                },
+                "query_top_n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Keep top N reference hits per query.",
+                    "default": 10
+                },
+                "fallback": {
+                    "type": "boolean",
+                    "description": "Group orphans by next rank above query_rank.",
+                    "default": false
+                },
+                "run_ani_reuse": {
+                    "type": "boolean",
+                    "description": "Compute ANI-driven representative strain assignments.",
+                    "default": false
+                },
+                "ani_reuse_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "ANI % threshold for strain reuse eligibility.",
+                    "default": 99.0
+                }
+            }
         }
     },
     "allOf": [
@@ -165,6 +328,7 @@
         { "$ref": "#/$defs/run_scope_filters" },
         { "$ref": "#/$defs/generic_options" },
         { "$ref": "#/$defs/funannotate_options" },
-        { "$ref": "#/$defs/bfd_functional_options" }
+        { "$ref": "#/$defs/bfd_functional_options" },
+        { "$ref": "#/$defs/ani_options" }
     ]
 }
