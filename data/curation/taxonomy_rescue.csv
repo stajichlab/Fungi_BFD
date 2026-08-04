@@ -1,0 +1,19 @@
+ASMID,SPECIES,NCBI_TAXONID,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES
+GCA_057978885.1_Crustfungi10_Chaeto,Chaetomiaceae sp. 537B,3688274,Ascomycota,Pezizomycotina,Sordariomycetes,Sordariomycetidae,Sordariales,Chaetomiaceae,,Chaetomiaceae sp. 537B
+GCA_057978615.1_Crustfungi3_Clador,Cladorrhinum sp. 445A,3688267,Ascomycota,Pezizomycotina,Sordariomycetes,Sordariomycetidae,Sordariales,Podosporaceae,Cladorrhinum,Cladorrhinum sp. 445A
+GCA_057978505.1_Crustfungi5_Clados,Cladosporium sp. 447A,3688269,Ascomycota,Pezizomycotina,Dothideomycetes,Dothideomycetidae,Cladosporiales,Cladosporiaceae,Cladosporium,Cladosporium sp. 447A
+GCA_057978835.1_Crustfungi8_Clados,Cladosporium sp. 450A,3688272,Ascomycota,Pezizomycotina,Dothideomycetes,Dothideomycetidae,Cladosporiales,Cladosporiaceae,Cladosporium,Cladosporium sp. 450A
+GCA_057978275.1_Crustfungi11_Didyme,Didymellaceae sp. 537F,3688275,Ascomycota,Pezizomycotina,Dothideomycetes,Pleosporomycetidae,Pleosporales,Didymellaceae,,Didymellaceae sp. 537F
+GCA_057978465.1_Crustfungi9_Epicoc,Epicoccum sp. 537A,3688273,Ascomycota,Pezizomycotina,Dothideomycetes,Pleosporomycetidae,Pleosporales,Didymellaceae,Epicoccum,Epicoccum sp. 537A
+GCA_057978455.1_Crustfungi6_Exophi,Exophiala sp. 448A,3688270,Ascomycota,Pezizomycotina,Eurotiomycetes,Chaetothyriomycetidae,Chaetothyriales,Herpotrichiellaceae,Exophiala,Exophiala sp. 448A
+GCA_057978415.1_Crustfungi7_Exophi,Exophiala sp. 449A,3688271,Ascomycota,Pezizomycotina,Eurotiomycetes,Chaetothyriomycetidae,Chaetothyriales,Herpotrichiellaceae,Exophiala,Exophiala sp. 449A
+GCA_023347065.1_ASM2334706v1,fungal sp.,1709941,,,,,,,,fungal sp.
+GCA_054392365.1_ASM5439236v1,fungal sp. IPV F-433,2496832,,,,,,,,fungal sp. IPV F-433
+GCA_057978575.1_Crustfungi2_Fusar,Fusarium sp. 444B,3688266,Ascomycota,Pezizomycotina,Sordariomycetes,Hypocreomycetidae,Hypocreales,Nectriaceae,Fusarium,Fusarium sp. 444B
+GCA_057814495.1_ASM5781449v1,Metarhizium sp. ILB167,3435393,Ascomycota,Pezizomycotina,Sordariomycetes,Hypocreomycetidae,Hypocreales,Clavicipitaceae,Metarhizium,Metarhizium sp. ILB167
+GCA_057662235.1_ASM5766223v1,Metarhizium sp. ILB182,3435394,Ascomycota,Pezizomycotina,Sordariomycetes,Hypocreomycetidae,Hypocreales,Clavicipitaceae,Metarhizium,Metarhizium sp. ILB182
+GCA_057978915.1_Crustfungi12_Pleosp,Pleosporales sp. 538A,3688276,Ascomycota,Pezizomycotina,Dothideomycetes,Pleosporomycetidae,Pleosporales,,,Pleosporales sp. 538A
+GCA_024196135.1_ASM2419613v1,Pleurotus ostreatus-Saccharomyces cerevisiae fusant,2899117,,,,,,,,Pleurotus ostreatus_Saccharomyces cerevisiae fusant
+GCA_058130715.1_ASM5813071v1,Tremella sp. sinensis,3700007,Basidiomycota,Agaricomycotina,Tremellomycetes,,Tremellales,Tremellaceae,Tremella,Tremella sp. sinensis
+GCA_057978675.1_Crustfungi1_Tricho,Trichoderma sp. 444A,3688265,Ascomycota,Pezizomycotina,Sordariomycetes,Hypocreomycetidae,Hypocreales,Hypocreaceae,Trichoderma,Trichoderma sp. 444A
+GCA_057978495.1_Crustfungi4_Tricho,Trichoderma sp. 446A,3688268,Ascomycota,Pezizomycotina,Sordariomycetes,Hypocreomycetidae,Hypocreales,Hypocreaceae,Trichoderma,Trichoderma sp. 446A

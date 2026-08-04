@@ -1,0 +1,21 @@
+ASMID,REASON,DATE_REMOVED,SPECIES,STRAIN,REPLACEMENT_ASMID,NOTES
+GCA_036244875.1_ASM3624487v1,version_update,2026-08-03,Rhodotorula paludigena,,GCA_036244875.1_Rhopal_B15_v1.0,New assembly name format
+GCA_036245355.1_ASM3624535v1,version_update,2026-08-03,Berkeleyomyces rouxiae,,GCA_036245355.1_LT1_01,New assembly name format
+GCA_036986815.1_ASM3698681v1,version_update,2026-08-03,Saccharomyces cerevisiae,,GCA_036986815.1_AH465_1.0,Improved assembly name
+GCA_036986855.1_ASM3698685v1,version_update,2026-08-03,Diaporthe destruens,,GCA_036986855.1_Dds_r1.0,New assembly name format
+GCA_037102815.1_ASM3710281v1,version_update,2026-08-03,Neurospora intermedia,,GCA_037102815.1_Nin_assembly01,Cleaner assembly name
+GCA_050403025.1_Rs_odoratus_JCM11641v1,version_update,2026-08-03,Rhodosporidiobolus poonsookiae,,GCA_050403025.1_Rs_poonsookiae_JCM10207v1,Strain name correction
+GCA_050403045.1_Rs_poonsookiae_JCM10207v1,version_update,2026-08-03,Rhodosporidiobolus ruineniae,,GCA_050403045.1_Rs_ruineniae_JCM8097v1,Strain name correction
+GCA_050403065.1_Rs_ruineniae_JCM8097v1,version_update,2026-08-03,Rhodosporidiobolus odoratus,,GCA_050403065.1_Rs_odoratus_JCM11641v1,Strain name correction
+GCA_000316135.1_ASM31613v1,superseded,2026-08-03,Cryptococcus gattii,,GCA_000316135.2_ASM31613v2,Newer version available
+GCA_000410955.1_Hw1.0,superseded,2026-08-03,Hortaea werneckii,,GCA_982436675.1_hwer_EXF-2000,Newer version in NCBI
+GCA_000474925.1_Spor_sche_ATCC58251_V1,superseded,2026-08-03,Sporothrix schenckii,,GCA_059338595.1_ASM5933859v1,Newer version available
+GCA_000827195.1_Laccaria_amethystina_LaAM-08-1_v1.0,superseded,2026-08-03,Laccaria amethystina,,GCA_000827195.2_ASM82719v2,v2 available
+GCA_002759435.3_Cand_auris_B8441_V3,superseded,2026-08-03,Candida auris,,GCA_002759435.3_Cand_auris_B8441_V3,Removed from upstream NCBI
+GCA_003704675.1_ASM370467v1,superseded,2026-08-03,Unknown,,,Removed from upstream NCBI
+GCA_004335155.1_ASM433515v1,superseded,2026-08-03,Ascochyta viciae,,GCA_004335155.2_ASM433515v2,v2 available
+GCA_004335205.1_ASM433520v1,superseded,2026-08-03,Ascochyta viciae-villosae,,GCA_004335205.2_ASM433520v2,v2 available
+GCA_032173475.1_ASM3217347v1,superseded,2026-08-03,Unknown,,,Removed from upstream NCBI
+GCA_040285355.1_ASM4028535v1,superseded,2026-08-03,Aspergillus ustus,,GCA_040285355.2_ASM4028535v2,v2 available
+GCA_054999315.1_ASM5499931v1,superseded,2026-08-03,Verticillium zaregamsianum,,GCA_054999315.2_ASM5499931v2,v2 available
+GCA_056632675.1_ASM5663267v1,superseded,2026-08-03,Graphis lineola,,GCA_056632675.2_ASM5663267v2,v2 available
