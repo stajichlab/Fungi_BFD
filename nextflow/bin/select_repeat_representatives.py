@@ -68,6 +68,32 @@ def rep_sort_key(entry):
     return (is_refseq, n50, -contigs)
 
 
+def load_suppress_list(suppress_path):
+    """Return set of suppressed ASMIDs from suppress.txt (CSV format).
+
+    Expected format (with header):
+        ASMID,REASON
+        GCA_000149305.1_RO3,quality_issue
+        GCA_020081605.1_ASM2008160v1,in_progress
+    """
+    suppressed = set()
+    if not suppress_path or not os.path.isfile(suppress_path):
+        return suppressed
+    try:
+        with open(suppress_path, newline='') as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print(f"[warn] suppress list {suppress_path} is empty", file=sys.stderr)
+                return suppressed
+            for row in reader:
+                asmid = (row.get('ASMID') or '').strip()
+                if asmid:
+                    suppressed.add(asmid)
+    except Exception as e:
+        print(f"[warn] Could not read suppress list {suppress_path}: {e}", file=sys.stderr)
+    return suppressed
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Pick per-species representative genomes (>cutoff) for EarlGrey masking",
@@ -81,6 +107,8 @@ def main():
                         help="clean genome filename suffix [.fa]")
     parser.add_argument("--cutoff-mb", type=float, default=200.0,
                         help="representative size cutoff in Mb [200]")
+    parser.add_argument("--suppress-list", default="",
+                        help="path to file listing ASMIDs to suppress (optional)")
     parser.add_argument("-o", "--output", default="misc/repeat_representatives.csv",
                         help="output CSV [misc/repeat_representatives.csv]")
     parser.add_argument("-v", "--debug", action="store_true", help="verbose stderr logging")
@@ -90,15 +118,28 @@ def main():
 
     species_of = load_species_map(args.samples)
     stats = load_asm_stats(args.asm_stats)
+    suppressed = load_suppress_list(args.suppress_list)
+
+    if suppressed:
+        print(f"[info] Loaded {len(suppressed)} suppressed ASMIDs from {args.suppress_list}", file=sys.stderr)
 
     # Group assemblies (with stats) by species.
     by_species = defaultdict(list)
+    n_suppressed = 0
     for asmid, species in species_of.items():
+        if asmid in suppressed:
+            n_suppressed += 1
+            if args.debug:
+                print(f"[suppress] {asmid}: in suppress list", file=sys.stderr)
+            continue
         if asmid in stats:
             size, n50, contigs = stats[asmid]
             by_species[species].append((asmid, size, n50, contigs))
         elif args.debug:
             print(f"[skip] {asmid}: no entry in {args.asm_stats}", file=sys.stderr)
+
+    if n_suppressed > 0:
+        print(f"[suppress] Excluded {n_suppressed} ASMIDs from processing", file=sys.stderr)
 
     def clean_exists(asmid):
         # Clean genomes may be stored gzip-compressed (.fa.gz) to save space; accept
