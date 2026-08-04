@@ -23,6 +23,8 @@ include { MERGE_CODON_FREQ } from '../../modules/BFD/MERGE_CODON_FREQ/main.nf'
 include { MERGE_INTERGENIC } from '../../modules/BFD/MERGE_INTERGENIC/main.nf'
 include { MERGE_GENE_STATS } from '../../modules/BFD/MERGE_GENE_STATS/main.nf'
 include { MERGE_ASM_STATS  } from '../../modules/BFD/MERGE_ASM_STATS/main.nf'
+include { MERGE_BUSCO_GENOME } from '../../modules/BFD/MERGE_BUSCO_GENOME/main.nf'
+include { MERGE_TELOMERES  } from '../../modules/BFD/MERGE_TELOMERES/main.nf'
 include { MERGE_SAMPLES    } from '../../modules/BFD/MERGE_SAMPLES/main.nf'
 
 include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
@@ -44,6 +46,8 @@ workflow BFD_MERGE {
     intergenic_csv
     gene_stats
     asm_stats
+    telomeres
+    busco_genome
     use_glob
 
     main:
@@ -78,6 +82,14 @@ workflow BFD_MERGE {
             params.run_asm_stats.toBoolean() ? asm_stats.collect() : Channel.of(true),
             "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'), file(params.samples))
 
+        MERGE_TELOMERES(toManifest(gatedGlobStats(
+            params.run_telomeres.toBoolean() ? telomeres.collect() : Channel.of(true),
+            "telomeres/**/*.telomeres.tsv.gz"), 'telomeres.manifest.txt'), file(params.samples))
+
+        MERGE_BUSCO_GENOME(toManifest(gatedGlobStats(
+            params.run_busco_genome.toBoolean() ? busco_genome.collect() : Channel.of(true),
+            "BUSCO_genome/**/*.BUSCO_summary.*.txt"), 'busco_genome.manifest.txt'))
+
     } else {
         // Run mode: the frequency merges take the union of genomes already cached
         // before the run and genomes this run produced — both resolved without any
@@ -96,5 +108,11 @@ workflow BFD_MERGE {
 
         if (params.run_asm_stats.toBoolean())
             MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'), file(params.samples))
+
+        if (params.run_telomeres.toBoolean())
+            MERGE_TELOMERES(toManifest(telomeres, 'telomeres.manifest.txt'), file(params.samples))
+
+        if (params.run_busco_genome.toBoolean())
+            MERGE_BUSCO_GENOME(toManifest(busco_genome, 'busco_genome.manifest.txt'))
     }
 }
