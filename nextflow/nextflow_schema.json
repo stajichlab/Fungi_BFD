@@ -61,6 +61,12 @@
                     "type": "string",
                     "description": "Suffix appended to the trace/report/timeline filenames so runs do not clobber each other. Defaults to the launch timestamp in yyyy-MM-dd_HH_mm_ss format.",
                     "hidden": true
+                },
+                "pipeline": {
+                    "type": "string",
+                    "enum": ["BFD", "compare_ani", "query_ani", "funannotate", "earlgrey_mask", "comparative", "phyling", "backfill_abinitio"],
+                    "description": "Selects which pipeline main.nf includes/runs (case-insensitive; see main.nf).",
+                    "default": "BFD"
                 }
             }
         },
@@ -117,7 +123,9 @@
                 "share_abinitio_params":    { "type": "boolean", "description": "Reuse trained AUGUSTUS/SNAP/GeneMark-ES parameters from a species' ANI-qualified representative instead of retraining per strain. See todo/species_level_abinitio_reuse.md.", "default": false },
                 "abinitio_reuse_csv":       { "type": "string", "format": "file-path", "description": "species_reuse_clusters.py output CSV (species,out,is_representative,representative_out,ani_to_representative,reuse_eligible)." },
                 "gene_prediction_shared_abinitio": { "type": "string", "format": "directory-path", "description": "Root of the species_reuse_clusters.py-backfilled shared ab-initio parameter stores (top-level, not nested under target)." },
-                "force_independent_species":{ "type": "string", "description": "Comma-separated SPECIES values to always train independently, overriding reuse_eligible.", "default": "" }
+                "force_independent_species":{ "type": "string", "description": "Comma-separated SPECIES values to always train independently, overriding reuse_eligible.", "default": "" },
+                "predict_scope":     { "type": "string", "enum": ["all", "representative_only"], "description": "FUNANNOTATE_PREDICTION scope: 'all' predicts every strain (representatives first, no waiting); 'representative_only' predicts only representative strains.", "default": "all" },
+                "busco_genome_dir":  { "type": "string", "format": "directory-path", "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection." }
             }
         },
         "bfd_functional_options": {
