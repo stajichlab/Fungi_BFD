@@ -67,7 +67,7 @@ def get_transl_table(family, genus):
 def busco_lineage(phylum):
     if phylum in ('Ascomycota', 'Basidiomycota'):
         return 'dikarya'
-    if phylum == 'Mucoromycota':
+    if phylum == 'Mucoromycota' or phylum == "Glomeromyocta" or phylum == "Calcarisporiellomycota":
         return 'mucoromycota'
     if phylum == 'Microsporidia':
         return 'microsporidia'
