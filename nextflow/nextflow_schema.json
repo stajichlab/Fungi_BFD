@@ -175,7 +175,8 @@
                 "telomere_allow_internal": { "type": "boolean", "default": false, "description": "Report non-terminal tracts inside the search window." },
                 "run_busco_genome":{ "type": "boolean", "default": false },
                 "run_busco_pep":   { "type": "boolean", "default": false },
-                "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" }
+                "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" },
+                "bfd_debug":       { "type": "boolean", "description": "Emit warnings when input files are missing (e.g. 'Skipping protein file'). Useful for debugging; set to false to suppress noisy skips during routine runs.", "default": false }
             }
         },
         "ani_options": {
