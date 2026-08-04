@@ -7,7 +7,8 @@
 //   ani_tsv         — merged all-pairs TSV (from CONCAT_ANI_TSVS or /dev/null)
 //   predict_input   — predict_input written to TSV for strain metadata
 //   samples_csv     — samples.csv for phylum/order/family column lookup
-//   busco_dir       — results/genome_stats/BUSCO_genome/ for representative scoring
+//   tables_dir      — tables/ (busco_genome.parquet + asm_stats.parquet) for
+//                     representative scoring (BUSCO_GENOME completeness + N50)
 //   reuse_out_dir   — ${params.target}/_reuse_assignments/ for CSV output
 //
 // Output:
@@ -38,7 +39,7 @@ process PICK_REPRESENTATIVE_STRAIN {
         path ani_tsv
         path predict_input_tsv
         path samples_csv
-        path busco_dir
+        path tables_dir
 
     output:
         path("abinitio_reuse_assignments.csv"),  emit: outCSV
@@ -55,7 +56,7 @@ process PICK_REPRESENTATIVE_STRAIN {
         --ani-tsv "${ani_tsv}" \
         --predict-input "${predict_input_tsv}" \
         --samples "${samples_csv}" \
-        --busco-dir "${busco_dir}" \
+        --tables-dir "${tables_dir}" \
         --out-dir "_reuse_assignments" \
         --ani-threshold "${threshold}" \
         ${shared_root ? "--shared-root ${shared_root}" : ''} \
