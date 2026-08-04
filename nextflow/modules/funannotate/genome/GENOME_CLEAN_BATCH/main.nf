@@ -20,6 +20,7 @@ process GENOME_CLEAN_BATCH {
 
     output:
     path "clean_batch_*.manifest.tsv", emit: manifest
+    path "TO_ADD_TO_SUPRESS.csv", emit: suppress
 
     script:
     def batch_tsv = items.collect { row -> "${row[1]}\t${row[8]}\t${row[9]}" }.join('\n')
@@ -36,6 +37,27 @@ process GENOME_CLEAN_BATCH {
 
     MANIFEST=clean_batch_${task.index}.manifest.tsv
     : > \$MANIFEST
+
+    SUPPRESS=TO_ADD_TO_SUPRESS.csv
+    : > \$SUPPRESS
+
+    # Appends "asmid,Assembly too short <N> bp in length" to \$SUPPRESS when the
+    # cleaned assembly at \$1 (gzipped or plain fasta) totals fewer than
+    # params.min_assembly_len bp -- almost certainly junk/contamination-only or a
+    # failed FCS-GX purge, not a usable genome.
+    check_min_length() {
+        local id="\$1" fa="\$2"
+        local total_len
+        if [[ "\$fa" == *.gz ]]; then
+            total_len=\$(pigz -dc "\$fa" | grep -v '^>' | tr -d '\\n\\r' | wc -c)
+        else
+            total_len=\$(grep -v '^>' "\$fa" | tr -d '\\n\\r' | wc -c)
+        fi
+        if [ "\$total_len" -lt "${params.min_assembly_len}" ]; then
+            echo "[WARN] \$id cleaned assembly is only \$total_len bp (< ${params.min_assembly_len}); flagging for suppression" >&2
+            printf '%s,Assembly too short %s bp in length\\n' "\$id" "\$total_len" >> \$SUPPRESS
+        fi
+    }
 
     cat > batch.tsv <<'BATCH_EOF'
 ${batch_tsv}
@@ -62,10 +84,12 @@ BATCH_EOF
         # Accept a prior uncompressed .fa as already-cleaned too (back-compat).
         if [ -s "\$target" ]; then
             echo "[\$i/\$n_total][SKIP] \$asmid already cleaned"
+            check_min_length "\$asmid" "\$target"
             printf '%s\\t%s\\n' "\$asmid" "\$target" >> \$MANIFEST
             continue
         elif [ -s "\$DEST/\${asmid}.fa" ]; then
             echo "[\$i/\$n_total][SKIP] \$asmid already cleaned (uncompressed)"
+            check_min_length "\$asmid" "\$DEST/\${asmid}.fa"
             printf '%s\\t%s\\n' "\$asmid" "\$DEST/\${asmid}.fa" >> \$MANIFEST
             continue
         fi
@@ -75,23 +99,28 @@ BATCH_EOF
         fi
 
         # samples.csv already carries a curated PHYLUM column (ASMID=col1, PHYLUM=col7);
-        # prefer it over a live taxonkit lookup, which silently comes back empty for
-        # brand-new taxids that haven't propagated into the local NCBI taxdump yet
-        # (e.g. provisional taxids for freshly-deposited 'sp.' assemblies).
-        phylum=\$(awk -F',' -v id="\$asmid" '\$1==id{print \$7; exit}' ${samples_csv})
+        # prefer it over a live taxonkit lineage lookup, which silently comes back empty
+        # for brand-new taxids that haven't propagated into the local NCBI taxdump yet
+        # (e.g. provisional taxids for freshly-deposited 'sp.' assemblies). PHYLUM is a
+        # NAME (e.g. "Ascomycota"), not a taxid, so it still has to go through
+        # taxonkit name2taxid -- AAFTF fcs_gx_purge -t requires a numeric NCBI taxid.
+        phylum_name=\$(awk -F',' -v id="\$asmid" '\$1==id{print \$7; exit}' ${samples_csv})
+        phylum=""
+        module load taxonkit
+        if [ -n "\$phylum_name" ]; then
+            phylum=\$(echo "\$phylum_name" | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_name=\$phylum_name -> phylum_taxid=\$phylum (from samples.csv PHYLUM)"
+        fi
         if [ -z "\$phylum" ]; then
-            module load taxonkit
             phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
             if [ -z "\$phylum" ]; then
                 phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
             fi
-            module unload taxonkit
-            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum=\$phylum (from taxonkit, samples.csv PHYLUM was blank)"
-        else
-            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum=\$phylum (from samples.csv)"
+            echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_taxid=\$phylum (from taxonkit lineage, samples.csv PHYLUM was blank or unresolvable)"
         fi
-        if [ -z "\$phylum" ]; then
-            echo "[\$i/\$n_total][WARN] no phylum found for \$asmid (taxonid=\$taxonid) in samples.csv or taxonkit; fcs_gx_purge will likely fail" >&2
+        module unload taxonkit
+        if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
+            echo "[\$i/\$n_total][WARN] could not resolve a numeric phylum taxid for \$asmid (taxonid=\$taxonid, samples.csv PHYLUM=\$phylum_name); got '\$phylum'. fcs_gx_purge will likely fail" >&2
             echo "[\$i/\$n_total][WARN] if this taxonid is recent/newly-deposited, TAXONKIT_DB=\$TAXONKIT_DB may be stale; try refreshing it (rm -rf \$TAXONKIT_DB && rerun SETUP_TAXONDB) before assuming the lookup itself is broken" >&2
         fi
 
@@ -106,6 +135,7 @@ BATCH_EOF
                 && mv \${target}.tmp \$target
             rm -f \$SCRATCH/\${asmid}.clean.fa
             echo "[\$i/\$n_total][OK] \$asmid -> \$target (\$(du -sh \$target | cut -f1))"
+            check_min_length "\$asmid" "\$target"
             pigz -f \$SCRATCH/\${asmid}.purge.fasta
             [ -f \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv ] && pigz -f \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv
             mv \$SCRATCH/\${asmid}.purge.fasta.gz \$DEST/clean/ 2>/dev/null || true
@@ -127,6 +157,7 @@ BATCH_EOF
     mkdir -p \$DEST/clean
     MANIFEST=clean_batch_${task.index}.manifest.tsv
     : > \$MANIFEST
+    : > TO_ADD_TO_SUPRESS.csv
     cat > batch.tsv <<'BATCH_EOF'
 ${batch_tsv}
 BATCH_EOF

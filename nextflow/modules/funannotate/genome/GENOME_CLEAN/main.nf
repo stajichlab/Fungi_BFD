@@ -19,6 +19,7 @@ process GENOME_CLEAN {
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
           path("${asmid}.fa.gz"), val(taxonid), emit: genome
+    path "TO_ADD_TO_SUPRESS.csv", emit: suppress
 
     script:
     """
@@ -66,6 +67,16 @@ process GENOME_CLEAN {
     echo "[INFO] Clean genome written: ${asmid}.fa (\$(du -sh \$SCRATCH/${asmid}.clean.fa | cut -f1)); compressing to ${asmid}.fa.gz"
     pigz -c \$SCRATCH/${asmid}.clean.fa > ${asmid}.fa.gz
     rm -f \$SCRATCH/${asmid}.clean.fa
+
+    # Assemblies below params.min_assembly_len bp are almost certainly junk/
+    # contamination-only or a failed FCS-GX purge, not a usable genome; flag for suppression.
+    : > TO_ADD_TO_SUPRESS.csv
+    total_len=\$(pigz -dc ${asmid}.fa.gz | grep -v '^>' | tr -d '\\n\\r' | wc -c)
+    if [ "\$total_len" -lt "${params.min_assembly_len}" ]; then
+        echo "[WARN] ${asmid} cleaned assembly is only \$total_len bp (< ${params.min_assembly_len}); flagging for suppression" >&2
+        printf '%s,Assembly too short %s bp in length\\n' "${asmid}" "\$total_len" >> TO_ADD_TO_SUPRESS.csv
+    fi
+
     pigz \$SCRATCH/${asmid}.purge.fasta
     [ -f \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv ] && pigz \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv
     mv \$SCRATCH/${asmid}.purge.fasta.gz ${launchDir}/input_clean_genomes/clean/
@@ -76,6 +87,7 @@ process GENOME_CLEAN {
     stub:
     """
     echo ">stub_${asmid}" | pigz -c > ${asmid}.fa.gz
+    : > TO_ADD_TO_SUPRESS.csv
     mkdir -p ${launchDir}/input_clean_genomes/clean
     touch ${launchDir}/input_clean_genomes/clean/${asmid}.purge.fasta
     touch ${launchDir}/input_clean_genomes/clean/${asmid}.purge.fcs_gx-taxonomy.tsv
