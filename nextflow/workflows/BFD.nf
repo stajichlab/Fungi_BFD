@@ -151,6 +151,15 @@ workflow BFD {
         }
         .filter { it != null }
 
+    // Telomere finder reuses the same assembly input as asm_stats.
+    def telomeres_ch = ready_with_asmid_ch
+        .map { meta ->
+            def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
+            if (!f) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+            f ? tuple(meta, f) : null
+        }
+        .filter { it != null }
+
     // BUSCO lineage: params.busco_lineage (default fungi_odb12) globally. The
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
@@ -176,7 +185,7 @@ workflow BFD {
 
     BFD_GENOME_STATS(
         aa_freq_ch, codon_freq_ch, intergenic_ch, gene_stats_ch,
-        asm_stats_ch, busco_genome_ch, busco_pep_ch
+        asm_stats_ch, telomeres_ch, busco_genome_ch, busco_pep_ch
     )
 
     if (!skip_merge) {
@@ -190,6 +199,8 @@ workflow BFD {
             BFD_GENOME_STATS.out.intergenic_csv,
             BFD_GENOME_STATS.out.gene_stats,
             BFD_GENOME_STATS.out.asm_stats,
+            BFD_GENOME_STATS.out.telomeres,
+            BFD_GENOME_STATS.out.busco_genome,
             use_glob
         )
     }
