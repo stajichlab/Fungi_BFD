@@ -12,6 +12,7 @@ process SELECT_REPS {
         path 'repeat_representatives.csv'
 
     script:
+    def suppress_arg = params.suppress_list ? "--suppress-list ${params.suppress_list}" : ""
     """
     python ${projectDir}/bin/select_repeat_representatives.py \
         --samples ${samples} \
@@ -19,6 +20,7 @@ process SELECT_REPS {
         --genome-dir ${params.genome_dir} \
         --genome-suffix ${params.genome_suffix} \
         --cutoff-mb ${params.cutoff_mb} \
+        ${suppress_arg} \
         --output repeat_representatives.csv
     """
 
