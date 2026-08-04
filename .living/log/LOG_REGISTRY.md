@@ -53,3 +53,10 @@
 | 2026-07-31 | 2026-07-31-001 | fungi-bfd | genome-stats-reorg-10-symlink-by-name | 0m | 0 |  | | complete | | [log](2026-07-31-001-fungi-bfd.md) |
 | 2026-08-01 | 2026-08-01-001 | fungi-bfd | main | 1m | 0 |  | | complete | | [log](2026-08-01-001-fungi-bfd.md) |
 | 2026-08-01 | 2026-08-01-002 | fungi-bfd | main | 10m | 3 | utils.nf,ANI_SAMPLES.nf,reorg_fungi_bfd.sh | | complete | | [log](2026-08-01-002-fungi-bfd.md) |
+| 2026-08-01 | 2026-08-01-003 | fungi-bfd | main | 2m | 2 |  | | complete | | [log](2026-08-01-003-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-001 | fungi-bfd | main | 2m | 18 |  | | complete | | [log](2026-08-03-001-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-002 | fungi-bfd | main | 7m | 18 |  | | complete | | [log](2026-08-03-002-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-003 | fungi-bfd | main | 8m | 6 | Add nextflow_schema.json validation rule to development conventions.; add additional fields to schema | | complete | | [log](2026-08-03-003-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-004 | fungi-bfd | main | 17m | 6 | profile_BFD.config,main.nf,main.nf (+2 more) | | complete | | [log](2026-08-03-004-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-005 | fungi-bfd | main | 3m | 7 | rescue_taxonomy_from_backup.py | | complete | | [log](2026-08-03-005-fungi-bfd.md) |
+| 2026-08-03 | 2026-08-03-006 | fungi-bfd | main | 58m | 142 | CLEAN_MASK_PARAMS_GUIDE.md,CLEAN_MASK_QUICK_START.md,suppress.txt (+9 more) | | complete | | [log](2026-08-03-006-fungi-bfd.md) |

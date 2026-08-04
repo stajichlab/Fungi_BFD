@@ -18,3 +18,26 @@ Overrides to mycelium defaults or convention pack conventions.
 5. A schema validation error will surface as a runtime error; treat it as a blocker to merge.
 
 **Related**: `nextflow/nextflow_schema.json`, [[project_nfschema_validation]].
+
+### CSV and TSV Writers Must Use Unix Line Endings
+
+**Rule**: All Python scripts that write CSV or TSV files must explicitly specify `lineterminator='\n'` when creating `csv.writer()` or `csv.DictWriter()` objects.
+
+**Why**: Line ending inconsistencies cause merge conflicts, diffs that show every line as changed even when content is identical, and platform-specific behavior that breaks portability. Unix line endings (`\n`) are the repository standard and required for clean git history.
+
+**How to apply**:
+1. When using `csv.writer()`, pass `lineterminator='\n'`:
+   ```python
+   writer = csv.writer(f, lineterminator='\n')
+   ```
+2. When using `csv.DictWriter()`, pass `lineterminator='\n'`:
+   ```python
+   writer = csv.DictWriter(f, fieldnames=header, lineterminator='\n')
+   ```
+3. For pandas, use `line_terminator='\n'`:
+   ```python
+   df.to_csv(path, line_terminator='\n', index=False)
+   ```
+4. Do NOT rely on OS defaults or Python's cross-platform `newline=''` parameter alone — explicitly set the terminator.
+
+**Related**: Data curation scripts, rescue scripts in `scripts/`.

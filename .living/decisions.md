@@ -424,3 +424,30 @@ than a pipeline-time artifact. Full detail in `todo/genome_stats_storage_reorg.m
 **Alternatives considered**: (a) Making extraction a Nextflow process — rejected per the original decision's reasoning (pure SQL filtering over already-materialized data, no per-genome parallelism to gain). (b) Duplicating the view SQL inline rather than reading it from `duckdb_views()` — rejected in favor of reading it live from master, since duplicating it would be a second copy to keep in sync with `build_BFD_duckDB.sh` forever.
 
 **Tags**: genome_stats, extract_bfd_taxonomic_subset, duckdb, taxon-filter, T-014, decision
+
+## E: Route BUSCO_GENOME/BUSCO_PEP intermediates through `$SCRATCH` (2026-08-03)
+
+**Context**: `BUSCO_GENOME` and `BUSCO_PEP` (`nextflow/modules/BFD/BUSCO_GENOME/main.nf`, `nextflow/modules/BFD/BUSCO_PEP/main.nf`, invoked from `subworkflows/local/BFD_GENOME_STATS.nf`) already `storeDir`-publish only a single small `short_summary*.txt` per run and `rm -rf` the full BUSCO run directory afterward — but BUSCO itself writes thousands of small intermediate files (HMMER/tblastn/Augustus/metaeuk) into that run directory while it executes, and that directory previously lived in the NFS-backed Nextflow work dir for the whole run.
+
+**Decision**: Point BUSCO's `--out_path` at `$SCRATCH` (node-local fast storage) instead of the process's default (NFS) work dir, `cp` only the final summary file back out, then `rm -rf` the scratch run dir. Added `module load workspace/scratch` to the `busco_genome`/`busco_pep` `beforeScript` blocks in `nextflow/conf/profile_BFD.config` (same pattern already used by `GENOME_CLEAN_BATCH`, `pfam`, `SIGNALP_RUN`, `RNASEQ_PREPARE`), with `SCRATCH=${SCRATCH:-/tmp}` fallback if the module isn't loaded.
+
+**Not yet verified**: whether this actually improves wall-clock — motivation is to test the hypothesis that BUSCO's many-small-file I/O pattern is NFS-metadata-bound. Needs a real before/after timing comparison (`sacct`/`seff`) on a representative genome before treating this as validated.
+
+**Tags**: busco, scratch, io-performance, nextflow-hpcc, decision
+
+## F: Route representative-strain selection through tables/busco_genome.parquet + asm_stats.parquet (2026-08-03)
+
+**Context**: Follow-up to decision E. `nextflow/bin/pick_representative_strain.py` (invoked via `PICK_REPRESENTATIVE_STRAIN` from `workflows/compare_ANI.nf` under `--run_ani_reuse`) picked representative strains by BUSCO completeness + N50, but was regex-parsing both values directly out of raw `results/genome_stats/BUSCO_genome/**/*.BUSCO_summary.*.txt` files — including re-deriving N50 from BUSCO's own free-text output, duplicating (and being more fragile than) the authoritative `N50_bp` already computed in `tables/asm_stats.parquet`. There was also no merged BUSCO table in `tables/` at all — `BUSCO_GENOME`/`BUSCO_PEP` outputs weren't wired into any `MERGE_*` step.
+
+**Decision**: Added `tables/busco_genome.parquet` as a first-class merged table, assembly-level only:
+- `BFD_GENOME_STATS.nf` now emits `busco_genome` (from `BUSCO_GENOME.out.summary`).
+- New `nextflow/bin/summarize_busco_stats.py` (mirrors `summarize_asm_stats.py`'s manifest-driven pattern) parses `*.BUSCO_summary.*.txt` into a TSV keyed by `ASMID` (no samples.csv join needed — BUSCO_genome is assembly-level, same as asm_stats).
+- New `MERGE_BUSCO_GENOME` module (mirrors `MERGE_ASM_STATS`) converts that TSV to `tables/busco_genome.parquet`, wired into `BFD_MERGE.nf` (both glob and run-mode branches) and `BFD.nf`.
+- `scripts/build_BFD_duckDB.sh` gained a `busco_genome` table (guarded on the parquet file existing, since `run_busco_genome` defaults false) joined to `species` for `LOCUSTAG`.
+- `pick_representative_strain.py`'s `load_busco_by_asmid()` now runs a DuckDB query (`LEFT JOIN` `busco_genome.parquet` with `asm_stats.parquet` on `ASMID`) instead of glob+regex-parsing text files. CLI flag renamed `--busco-dir` → `--tables-dir` (default `tables/`); `PICK_REPRESENTATIVE_STRAIN/main.nf` and its `compare_ANI.nf` caller updated to pass `params.tables` instead of `${genome_stats_outdir}/BUSCO_genome`. Added `tables = "${launchDir}/tables"` to `nextflow.config`'s shared params block so `-profile ani` alone (without `BFD`) still resolves it.
+
+**Explicitly out of scope**: `BUSCO_PEP` (annotation-level, protein-set completeness — only exists *after* gene prediction) was NOT wired into this merge or into representative selection. Representative-strain picking is a pre-annotation decision; conflating it with a post-prediction QC metric would be a category error. `MERGE_BUSCO_PEP` → `tables/busco_protein.parquet` is a separate, independent follow-up for annotation QC reporting (`.living/log/2026-08-03`, alongside `pfam`/`cazy` counts), not for strain selection.
+
+**Verified**: `nextflow config -profile BFD` and `-profile ani` both parse; a full `-profile test -stub-run` of the BFD pipeline completed successfully (`completed=15 failed=0`) and produced `tests/output/tables/busco_genome.parquet` via `MERGE_BUSCO_GENOME`. `summarize_busco_stats.py` correctly parses a real (stub-format) `*.BUSCO_summary.*.txt` into the expected TSV row. `load_busco_by_asmid()` correctly LEFT-JOINs synthetic busco_genome/asm_stats parquet fixtures (including the case where an ASMID has BUSCO but no asm_stats match → N50 falls back to 0).
+
+**Tags**: busco, tables, parquet, representative-strain, pick_representative_strain, merge, T-014, decision
