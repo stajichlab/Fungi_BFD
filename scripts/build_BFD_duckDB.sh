@@ -79,6 +79,35 @@ CREATE UNIQUE INDEX idx_asm_locustag ON asm_stats(LOCUSTAG);
 CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
 " "$DB"
 
+# ─── busco_genome ───────────────────────────────────────────────────────────────
+# Assembly-level BUSCO completeness (BUSCO_GENOME), keyed by ASMID -- joined to
+# species for LOCUSTAG, same pattern as asm_stats. Not to be confused with
+# BUSCO_PEP (annotation-level, protein-set completeness), which is a separate
+# downstream QC metric and is not merged here.
+# run_busco_genome defaults false (cost at 5K+ species scale), so this table is
+# skipped -- not created empty -- when the parquet hasn't been produced yet.
+if [ -f "$SRC/busco_genome.parquet" ]; then
+    duckdb -c "
+CREATE TABLE busco_genome AS
+SELECT
+    sp.LOCUSTAG,
+    b.ASMID,
+    b.complete_pct,
+    b.single_pct,
+    b.duplicated_pct,
+    b.fragmented_pct,
+    b.missing_pct,
+    b.n_markers,
+    b.lineage
+FROM read_parquet('$SRC/busco_genome.parquet') AS b
+JOIN species AS sp USING(ASMID);
+CREATE UNIQUE INDEX idx_busco_genome_locustag ON busco_genome(LOCUSTAG);
+CREATE UNIQUE INDEX idx_busco_genome_asmid    ON busco_genome(ASMID);
+" "$DB"
+else
+    echo "SKIP: $SRC/busco_genome.parquet not found (run_busco_genome likely false); busco_genome table omitted."
+fi
+
 # ─── gene tables ──────────────────────────────────────────────────────────────
 duckdb -c "
 CREATE TABLE gene_info AS
