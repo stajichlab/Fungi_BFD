@@ -473,7 +473,9 @@ def gatedGlobIn(sync_ch, String baseDir, String glob) {
 // manifest is byte-identical and the task is a cache hit.
 def toManifest(ch, String name) {
     ch.map { f -> "${f}\t${file(f).lastModified()}\t${file(f).size()}" }
-      .collectFile(name: name, newLine: true, sort: true)
+      .toSortedList()
+      .flatMap { it }
+      .collectFile(name: name, newLine: true)
 }
 
 // ── genome_stats/function hash-bucket fan-out ───────────────────────────────
