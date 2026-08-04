@@ -1,0 +1,81 @@
+# params_unified_funannotate.yaml — Phase 3 of unified pipeline
+# funannotate: CLEAN → MASK → RNASEQ → TRAIN → PREDICT → ANNOTATE
+# Produces: annotated genomes in genome_annotation/
+#
+# Prerequisites:
+#   Phase 1 (BFD genome stats) must have completed, producing:
+#     - tables/asm_stats.parquet
+#     - tables/busco_genome.parquet
+#   Phase 2 (compare_ANI) must have completed, producing:
+#     - genome_annotation/_reuse_assignments/abinitio_reuse_assignments.csv
+#
+# Usage:
+#   nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+#       -profile funannotate -params-file nextflow/params_unified_funannotate.yaml -resume
+
+pipeline: "funannotate"
+samples: "samples.csv"
+
+# ── Genome source ──────────────────────────────────────────────────────────
+# Directory containing <asmid>/<asmid>_genomic.fna.gz from NCBI.
+# Override this to point at your actual source directory.
+source: "/bigdata/stajichlab/shared/projects/1KFG/2026/NCBI_fungi/source/NCBI_ASM"
+
+# ── Output targets ─────────────────────────────────────────────────────────
+target:          "genome_annotation"
+training_target: "genome_annotation"
+
+# This stops the pipeline after this step
+only_clean: false
+
+# ── ANI reuse ──────────────────────────────────────────────────────────────
+# run_ani_reuse=true loads abinitio_reuse_assignments.csv (from Phase 2)
+# to decide which strain is the representative per species.
+# share_abinitio_params=true enables ab-initio parameter reuse.
+run_ani_reuse:         false
+share_abinitio_params: false
+
+# ── Genome cleaning ────────────────────────────────────────────────────────
+# clean_batch_size groups this many genomes per SLURM job for FCS-GX cleaning.
+# Set to 0 for one SLURM job per genome (GENOME_CLEAN).
+clean_batch_size: 1000
+
+# ── Repeat masking ─────────────────────────────────────────────────────────
+# run_repeatmasker=true applies tantan soft-masking after cleaning.
+run_repeatmasker: false
+
+# ── RNA-seq acquisition ────────────────────────────────────────────────────
+# run_sra_fetch=true downloads RNA-seq reads from SRA.
+# max_rnaseq_runs limits the number of SRA runs per species.
+# stop_after_sra_fetch=true stops after SRA fetch (skip TRAIN/PREDICT).
+run_sra_fetch:      false
+max_rnaseq_runs:    2
+stop_after_sra_fetch: true
+
+# ── Gene prediction ────────────────────────────────────────────────────────
+# predict_scope controls which strains to predict:
+#   "all" (default) — everyone, gated by representative availability
+#   "representative_only" — predict only is_representative strains
+predict_scope:               "all"
+allow_independent_fallback:  false
+
+# ── Annotation ─────────────────────────────────────────────────────────────
+# run_annotate=true runs funannotate annotate after prediction.
+# run_update=true runs funannotate update (RNA-seq evidence integration).
+run_annotate: false
+run_update:   false
+
+# ── Optional pre-annotation steps ──────────────────────────────────────────
+# run_antismash=true runs antiSMASH secondary metabolite prediction.
+# run_interpro=true runs InterProScan protein domain annotation.
+# run_signalp=true runs SignalP signal peptide prediction.
+run_antismash: false
+run_interpro:  false
+run_signalp:   false
+
+# ── Testing ────────────────────────────────────────────────────────────────
+# Set n_test > 0 to limit to first N samples (0 = all).
+n_test: 0
+
+# ── Debugging ──────────────────────────────────────────────────────────────
+debug: false
