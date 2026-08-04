@@ -59,6 +59,7 @@ mkdir -p logs/nextflow
 # below) rather than a separate yaml — CLEAN and MASK live in the same
 # FUNANNOTATE_GENOME_PREP subworkflow, so one params file keeps both phases'
 # clean_batch_size/source/etc settings in sync.
+CLEAN_PARAMS="nextflow/params_unified_clean.yaml"
 BFD_PARAMS="nextflow/params_unified_bfd.yaml"
 ANI_PARAMS="nextflow/params_unified_ani.yaml"
 FUN_PARAMS="nextflow/params_unified_funannotate.yaml"
@@ -138,8 +139,7 @@ if [ "$SKIP_PHASE0" = false ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  UNIFIED PIPELINE: samples.csv → annotated genomes"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    run_phase "0: Genome cleaning (GENOME_CLEAN/GENOME_CLEAN_BATCH)" "funannotate" "$FUN_PARAMS" "funannotate" \
-        --only_clean true
+    run_phase "0: Genome cleaning (GENOME_CLEAN/GENOME_CLEAN_BATCH)" "funannotate" "$CLEAN_PARAMS" "funannotate" 
 else
     echo "Skipping Phase 0 (genome cleaning)"
 fi
