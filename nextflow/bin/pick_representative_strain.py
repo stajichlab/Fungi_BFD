@@ -8,12 +8,20 @@ produced by ANI_REPRESENTATIVE_SELECT (instead of DuckDB). Writes the same
 abinitio_reuse_assignments.csv format so FUNANNOTATE_PREDICTION's loadAbinitioReuseMap
 consumes it without modification.
 
+BUSCO completeness and N50 (used to rank candidates in pick_representative()) are
+read from tables/busco_genome.parquet and tables/asm_stats.parquet -- the same
+merged, authoritative tables the rest of the pipeline queries -- rather than
+re-parsing the raw BUSCO_GENOME *.BUSCO_summary.*.txt reports. Both tables are
+keyed by ASMID. Note this is BUSCO_GENOME (assembly-level completeness) only;
+BUSCO_PEP (annotation-level, computed after gene prediction) is a separate
+downstream QC metric and is intentionally not used here.
+
 Usage:
     pick_representative_strain.py \
         --ani-tsv all_pairs_merged.tsv \
         --predict-input predict_input_for_ani.tsv \
         --samples samples.csv \
-        --busco-dir results/genome_stats/BUSCO_genome \
+        --tables-dir tables \
         --out-dir genome_annotation/_reuse_assignments \
         --ani-threshold 99.0 \
         [--shared-root gene_prediction_shared_abinitio] \
@@ -30,6 +38,8 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+import duckdb
 
 from backfill_abinitio_params import BackfillOutcome, backfill_species_store
 
@@ -73,42 +83,36 @@ def load_samples(samples_path: Path) -> dict:
     return rows
 
 
-_COMPLETE_RE = re.compile(r"C:(\d+\.\d+)%\[S:(\d+\.\d+)%,D:(\d+\.\d+)%\],F:(\d+\.\d+)%,M:(\d+\.\d+)%,n:(\d+)")
-_N50_RE = re.compile(r"([\d.]+)\s*(Mbp|kbp|bp)\s*Scaffold N50", re.IGNORECASE)
-_UNIT_MULT = {"bp": 1, "kbp": 1_000, "Mbp": 1_000_000}
+def load_busco_by_asmid(tables_dir: Path) -> dict:
+    """Return {asmid: {complete_pct, n50_bp}} from the merged Parquet tables.
 
-
-def parse_busco_genome_summary(path: Path):
-    text = path.read_text(errors="replace")
-    m = _COMPLETE_RE.search(text)
-    if not m:
-        return None
-    n50_bp = 0
-    mn = _N50_RE.search(text)
-    if mn:
-        n50_bp = int(float(mn.group(1)) * _UNIT_MULT[mn.group(2)])
-    return {"complete_pct": float(m[1]), "n50_bp": n50_bp}
-
-
-def load_busco_by_asmid(busco_dir: Path) -> dict:
-    """Return {asmid: {complete_pct, n50_bp}} from results/genome_stats/BUSCO_genome/.
-
-    BUSCO_genome is ASMID-keyed (assembly-level statistic) and hash-bucketed
-    (nextflow/modules/BFD/BUSCO_GENOME/main.nf writes
-    <bucket>/<asmid>.BUSCO_summary.<lineage>.txt) -- the `*/*` glob covers the
-    one bucket-subdirectory level; the ASMID is still the filename's own
-    prefix before ".BUSCO_summary.", same extraction as before the reorg, just
-    keyed by ASMID now instead of the old Genus_species_strain basename.
+    complete_pct comes from tables/busco_genome.parquet (assembly-level BUSCO
+    completeness, written by MERGE_BUSCO_GENOME from BUSCO_GENOME's per-genome
+    *.BUSCO_summary.*.txt reports). n50_bp comes from tables/asm_stats.parquet
+    (N50_bp, written by MERGE_ASM_STATS from AAFTF assess reports) rather than
+    being re-parsed out of BUSCO's own free-text "Scaffold N50" line -- asm_stats
+    is the authoritative assembly-stats table the rest of the pipeline uses.
+    Both tables are keyed by ASMID. Missing/empty tables (e.g. run_busco_genome
+    was false) yield an empty result, same as the old missing-directory case.
     """
-    result = {}
-    if not busco_dir.is_dir():
-        return result
-    for p in busco_dir.glob("*/*.BUSCO_summary.*.txt"):
-        asmid = p.name.split(".BUSCO_summary.")[0]
-        parsed = parse_busco_genome_summary(p)
-        if parsed:
-            result[asmid] = parsed
-    return result
+    busco_path = tables_dir / "busco_genome.parquet"
+    asm_stats_path = tables_dir / "asm_stats.parquet"
+    if not busco_path.exists() or not asm_stats_path.exists():
+        return {}
+    con = duckdb.connect()
+    rows = con.execute(
+        """
+        SELECT b.ASMID,
+               CAST(b.complete_pct AS DOUBLE) AS complete_pct,
+               CAST(COALESCE(a.N50_bp, 0) AS BIGINT) AS n50_bp
+        FROM read_parquet(?) AS b
+        LEFT JOIN read_parquet(?) AS a USING (ASMID)
+        """,
+        [str(busco_path), str(asm_stats_path)],
+    ).fetchall()
+    con.close()
+    return {asmid: {"complete_pct": complete_pct, "n50_bp": n50_bp}
+            for asmid, complete_pct, n50_bp in rows}
 
 
 def load_predict_input(path: Path) -> dict:
@@ -320,8 +324,9 @@ def main():
     ap.add_argument("--predict-input", required=True,
                     help="predict_input_for_ani.tsv written by ANI_REPRESENTATIVE_SELECT")
     ap.add_argument("--samples", required=True, help="samples.csv")
-    ap.add_argument("--busco-dir", required=True,
-                    help="results/genome_stats/BUSCO_genome/")
+    ap.add_argument("--tables-dir", required=True,
+                    help="tables/ directory containing busco_genome.parquet and "
+                         "asm_stats.parquet (MERGE_BUSCO_GENOME / MERGE_ASM_STATS output)")
     ap.add_argument("--out-dir", required=True,
                     help="Output directory for abinitio_reuse_assignments.csv")
     ap.add_argument("--ani-threshold", type=float, default=99.0)
@@ -330,26 +335,28 @@ def main():
     ap.add_argument("--augustus-config", default="")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-missing-busco", action="store_true",
-                    help="Proceed even if --busco-dir is missing or has no parseable "
-                         "summaries (representative picking then falls back to "
+                    help="Proceed even if busco_genome.parquet/asm_stats.parquet are "
+                         "missing or empty (representative picking then falls back to "
                          "alphabetical order for every species). Default: fail fast, "
-                         "since an empty/missing dir almost always means genome_stats "
-                         "(--pipeline BFD --run_busco_genome) hasn't been run yet.")
+                         "since missing tables almost always means genome_stats "
+                         "(--pipeline BFD --run_busco_genome true) hasn't been merged yet.")
     args = ap.parse_args()
 
     predict_input = load_predict_input(Path(args.predict_input))
     samples = load_samples(Path(args.samples))
-    busco_dir = Path(args.busco_dir)
-    busco_by_asmid = load_busco_by_asmid(busco_dir)
+    tables_dir = Path(args.tables_dir)
+    busco_by_asmid = load_busco_by_asmid(tables_dir)
     if not busco_by_asmid and not args.allow_missing_busco:
         sys.exit(
-            f"[ERROR] No BUSCO summaries found in {busco_dir} "
-            f"(exists: {busco_dir.is_dir()}). Representative selection picks by BUSCO "
-            "completeness + N50 parsed from these files, so it must run after "
-            "genome_stats (--pipeline BFD --run_busco_genome true) has published its "
-            "output here — otherwise every species silently falls back to picking "
-            "the alphabetically-last strain. Run genome_stats first, or pass "
-            "--allow-missing-busco to proceed with alphabetical-only selection anyway."
+            f"[ERROR] No BUSCO/asm_stats data found in {tables_dir} "
+            f"(busco_genome.parquet exists: {(tables_dir / 'busco_genome.parquet').exists()}, "
+            f"asm_stats.parquet exists: {(tables_dir / 'asm_stats.parquet').exists()}). "
+            "Representative selection picks by BUSCO completeness + N50 from these "
+            "tables, so it must run after genome_stats (--pipeline BFD "
+            "--run_busco_genome true) has been merged into tables/ — otherwise every "
+            "species silently falls back to picking the alphabetically-last strain. "
+            "Run genome_stats first, or pass --allow-missing-busco to proceed with "
+            "alphabetical-only selection anyway."
         )
     ani_pairs = load_ani_pairs(Path(args.ani_tsv))
 
