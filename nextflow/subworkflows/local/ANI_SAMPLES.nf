@@ -55,7 +55,7 @@ workflow ANI_SAMPLES {
     // treats the symlink as "not a directory" and returns a 1-element list
     // containing just the symlink, silently dropping every genome in it. Use
     // toFile().listFiles(), which follows the symlink like a normal directory.
-    def genomeIndex = genomeDirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString())] }
+    def genomeIndex = genomeDirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString(), glob: false)] }
 
     samples_ch = channel
         .fromPath(samples_csv)

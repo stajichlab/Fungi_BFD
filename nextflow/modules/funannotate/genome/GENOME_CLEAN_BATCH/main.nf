@@ -69,6 +69,8 @@ BATCH_EOF
     # Stage the FCS-GX DB into /dev/shm ONCE for the whole batch (~30 min). Keep it
     # across the loop; remove the RAM copy ourselves when the batch finishes.
     export FCS_GX_KEEP_SHM=1
+    # Persist per-task FCS-GX /dev/shm sync timing outside work/ (cleanup=true).
+    export FCS_GX_TIMING_LOG="${launchDir}/logs/nextflow/fcs_gx_shm_timing.tsv"
     source ${projectDir}/bin/setup_fcs_shm.sh
     trap 'rm -rf /dev/shm/gxdb 2>/dev/null || true' EXIT
     if [ ! -f /dev/shm/gxdb/all.gxi ]; then

@@ -32,6 +32,8 @@ process GENOME_CLEAN {
     module load miniconda3
     eval "\$(conda shell.bash hook)"
     # Ensure /dev/shm/gxdb is present on this node; register for cleanup when done.
+    # Persist per-task FCS-GX /dev/shm sync timing outside work/ (cleanup=true).
+    export FCS_GX_TIMING_LOG="${launchDir}/logs/nextflow/fcs_gx_shm_timing.tsv"
     source ${projectDir}/bin/setup_fcs_shm.sh
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     TAXONKIT_DB=${taxondb}

@@ -417,7 +417,7 @@ def dirIndex(String dir) {
     // Path extension and does not follow a symlinked directory (treats it as
     // "not a directory" and returns a 1-element list containing just the
     // symlink). See ANI_SAMPLES.nf's genomeIndex, same fix.
-    dirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString())] }
+    dirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString(), glob: false)] }
 }
 
 // Resolve a genome FASTA for BFD's genome-stats channels, which need to work
