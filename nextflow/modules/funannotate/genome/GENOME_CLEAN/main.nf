@@ -40,6 +40,17 @@ process GENOME_CLEAN {
     	phylum=\$(echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
 	# weird we are getting 2 lines from name2taxid when input is Fungi add the uniq/head -n 1 to ensure only one line
     fi
+    if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
+        echo "ERROR: could not resolve a numeric taxid for ${asmid} (input taxonid=${taxonid}); got '\$phylum' instead." >&2
+        echo "[DEBUG] taxonkit lineage output:" >&2
+        echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage >&2
+        echo "[DEBUG] taxonkit reformat -f {p} output:" >&2
+        echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result >&2
+        echo "[DEBUG] TAXONKIT_DB=\$TAXONKIT_DB" >&2
+        echo "This usually means the phylum/kingdom name is missing from the taxonkit names.dmp in TAXONKIT_DB (outdated or mismatched taxonomy dump). Update TAXONKIT_DB and retry." >&2
+        module unload taxonkit
+        exit 1
+    fi
     module unload taxonkit
     echo "[INFO] Phylum for ${asmid} (taxonid=${taxonid}): \$phylum"
     echo "[INFO] Decompressing and cleaning genome for ${asmid}..."
