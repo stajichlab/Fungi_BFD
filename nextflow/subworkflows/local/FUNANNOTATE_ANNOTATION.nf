@@ -28,16 +28,9 @@ workflow FUNANNOTATE_ANNOTATION {
     reads_ch               // tuple(species_tag, r1, r2, se) from FUNANNOTATE_RNASEQ
     taxonFilter            // row closures, shared with the caller's sample parsing
     asmidFilter
+    suppressFilter         // suppressRowFilter(loadSuppressSet()), same instance as the caller's
 
     main:
-    // suppressSet: ASMIDs to skip (loaded once from params.suppress).
-    def suppressSet = (params.suppress && file(params.suppress).exists())
-        ? file(params.suppress).readLines()
-              .collect { it.trim().split(',')[0].trim() }
-              .findAll { it && !it.startsWith('#') }
-              .toSet()
-        : ([] as Set)
-
     // postpredict: all samples with a completed predict_results/*.gbk, whether
     // produced in this run or a prior one. This is the source for all optional
     // pre-annotate steps and for FUNANNOTATE_ANNOTATE itself.
@@ -45,6 +38,7 @@ workflow FUNANNOTATE_ANNOTATION {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .filter(asmidFilter)
+        .filter(suppressFilter)
         .map { row ->
             def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
             def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
@@ -58,7 +52,6 @@ workflow FUNANNOTATE_ANNOTATION {
         }
         .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt -> out && asmid }
         .take((params.n_test as int) > 0 ? params.n_test as int : -1)
-        .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt -> !suppressSet.contains(asmid) }
         // Only genomes whose prediction was already complete AND current in a PRIOR run.
         // This is the exact logical complement of the predict_ch filter, so this set is
         // disjoint from the genomes (re)predicted in THIS run (which arrive via

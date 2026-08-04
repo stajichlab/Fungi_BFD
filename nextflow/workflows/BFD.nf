@@ -22,7 +22,7 @@ include { INPUT_SETUP       } from '../subworkflows/local/INPUT_SETUP.nf'
 include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
-include { taxonRowFilter; asmidRowFilter } from '../modules/common/utils.nf'
+include { taxonRowFilter; asmidRowFilter; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
 include { cleanStrain; makeSampleTag; resolveGenomeFile; dirIndex } from '../modules/common/utils.nf'
 
 workflow BFD {
@@ -38,8 +38,9 @@ workflow BFD {
     log.info paramsSummaryLog(workflow)
     samplesheetToList(params.samples, "${projectDir}/assets/schema_input.json")
 
-    def taxonFilter = taxonRowFilter()
-    def asmidFilter = asmidRowFilter()
+    def taxonFilter    = taxonRowFilter()
+    def asmidFilter    = asmidRowFilter()
+    def suppressFilter = suppressRowFilter(loadSuppressSet())
 
     // ── Base sample channel ──────────────────────────────────────────────────
     // Emits one meta map per row.
@@ -49,6 +50,7 @@ workflow BFD {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .filter(asmidFilter)
+        .filter(suppressFilter)
         .map { row ->
             // meta.id is the filesystem-safe SPECIES_STRAIN tag and the primary key
             // every module names its outputs after (plan section 2.4).
@@ -89,11 +91,12 @@ workflow BFD {
     def gffIndex    = dirIndex(params.gff_dir)
     def genomeIndex = dirIndex(params.genome_dir)
 
+    def bfd_debug = params.bfd_debug.toBoolean()
     def proteins_ch = ready_ch
         .map { meta ->
             def prot = pepIndex["${meta.id}.proteins.fa"]
             if (!prot) {
-                log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
+                if (bfd_debug) log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
                 return null
             }
             return tuple(meta, prot)
@@ -132,6 +135,7 @@ workflow BFD {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .filter(asmidFilter)
+        .filter(suppressFilter)
         .map { row ->
             def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             tuple(basename, row.ASMID?.trim() ?: '')
@@ -146,7 +150,7 @@ workflow BFD {
     def asm_stats_ch = ready_with_asmid_ch
         .map { meta ->
             def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
-            if (!f) log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+            if (!f) { log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
             f ? tuple(meta, f) : null
         }
         .filter { it != null }
@@ -155,7 +159,7 @@ workflow BFD {
     def telomeres_ch = ready_with_asmid_ch
         .map { meta ->
             def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
-            if (!f) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+            if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
             f ? tuple(meta, f) : null
         }
         .filter { it != null }
@@ -165,7 +169,7 @@ workflow BFD {
     // here later (e.g. from row.BUSCO_LINEAGE).
     def busco_genome_ch = ready_with_asmid_ch.map { meta ->
         def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
-        if (!f) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}"
+        if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 

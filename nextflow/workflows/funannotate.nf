@@ -12,7 +12,7 @@
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
-include { makeSampleTag }       from '../modules/common/utils.nf'
+include { makeSampleTag; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
 include { loadAbinitioReuseMap } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
@@ -44,15 +44,8 @@ workflow FUNANNOTATE {
     params.target          = file(params.target as String).toAbsolutePath().toString()
     params.training_target = file(params.training_target as String).toAbsolutePath().toString()
 
-    def suppressSet = (params.suppress && file(params.suppress).exists())
-        ? file(params.suppress).readLines()
-              .collect { it.trim().split(',')[0].trim() }
-              .findAll { it && !it.startsWith('#') }
-              .toSet()
-        : ([] as Set)
-    if (suppressSet) {
-        log.info "Suppress list loaded: ${suppressSet.size()} ASMIDs will be skipped"
-    }
+    def suppressSet    = loadSuppressSet()
+    def suppressFilter = suppressRowFilter(suppressSet)
 
     def forceIndependentSet = (params.force_independent_species as String)
         .split(',')
@@ -91,6 +84,7 @@ workflow FUNANNOTATE {
         .splitCsv(header: true)
         .filter(taxonFilter)
         .filter(asmidFilter)
+        .filter(suppressFilter)
         .map { row ->
             def species       = (row.SPECIES?.trim() ?: '').replaceAll(/['"]/, '')
             def strain        = (row.STRAIN?.trim() ?: '').replaceAll(/['"]/, '').replaceAll(/;.*$/, '').trim().replace(':', ' ')
@@ -105,13 +99,6 @@ workflow FUNANNOTATE {
         }
         .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt, _tid -> out && asmid }
         .take((params.n_test as int) > 0 ? params.n_test as int : -1)
-        .filter { out, asmid, _sp, _st, _lt, _bl, _hl, _tt, _tid ->
-            if (suppressSet.contains(asmid)) {
-                log.info "Suppressing ${out} (asmid=${asmid})"
-                return false
-            }
-            return true
-        }
         .map { out, asmid, species, strain, locustag, busco, header_length, transl_table, taxonid ->
             def gz = file("${params.source}/${asmid}/${asmid}_genomic.fna.gz")
             tuple(out, asmid, species, strain, locustag, busco, header_length, transl_table, gz, taxonid)
@@ -151,5 +138,5 @@ workflow FUNANNOTATE {
 
     FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
 
-    FUNANNOTATE_ANNOTATION(FUNANNOTATE_PREDICTION.out.metadata, FUNANNOTATE_RNASEQ.out.reads, taxonFilter, asmidFilter)
+    FUNANNOTATE_ANNOTATION(FUNANNOTATE_PREDICTION.out.metadata, FUNANNOTATE_RNASEQ.out.reads, taxonFilter, asmidFilter, suppressFilter)
 }

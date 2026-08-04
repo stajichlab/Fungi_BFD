@@ -22,7 +22,7 @@
 //
 
 include { assertRank; taxonRowFilter; asmidRowFilter } from '../../modules/common/utils.nf'
-include { sanitizeTag } from '../../modules/common/utils.nf'
+include { sanitizeTag; loadSuppressSet; suppressRowFilter } from '../../modules/common/utils.nf'
 
 workflow ANI_SAMPLES {
     take:
@@ -32,7 +32,8 @@ workflow ANI_SAMPLES {
     asmid_filter    // row filter closure (see asmidRowFilter()); pass { row -> true } for none
 
     main:
-    def rowFilter = taxonRowFilter()
+    def rowFilter      = taxonRowFilter()
+    def suppressFilter = suppressRowFilter(loadSuppressSet())
 
     // One directory listing instead of up to two file-existence checks per
     // genome. Verified live (2026-07-30): each check is a real network round
@@ -61,6 +62,7 @@ workflow ANI_SAMPLES {
         .splitCsv(header: true)
         .filter(rowFilter)
         .filter(asmid_filter)
+        .filter(suppressFilter)
         .map { row ->
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def asmid    = row.ASMID?.trim() ?: ''

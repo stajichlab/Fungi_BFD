@@ -247,6 +247,46 @@ def asmidRowFilter() {
     return { row -> row.ASMID?.trim() == asmidValue }
 }
 
+// Load params.suppress once into a Set of ASMIDs. One ASMID per line; blank
+// lines and '#'-prefixed comments are ignored, and only the first
+// comma-separated field is used so annotated lines (e.g. "GCA_000,reason")
+// still parse. Returns an empty Set (never null) when params.suppress is
+// unset or the file doesn't exist, so callers can use the result unconditionally.
+def loadSuppressSet() {
+    if (!params.suppress) {
+        return ([] as Set)
+    }
+    def f = file(params.suppress as String)
+    if (!f.exists()) {
+        return ([] as Set)
+    }
+    def suppressSet = f.readLines()
+        .collect { it.trim().split(',')[0].trim() }
+        .findAll { it && !it.startsWith('#') }
+        .toSet()
+    if (suppressSet) {
+        log.info "Suppress list loaded: ${suppressSet.size()} ASMIDs will be skipped"
+    }
+    return suppressSet
+}
+
+// Build the samples.csv row filter for the suppress list produced by
+// loadSuppressSet(). Mirrors taxonRowFilter()/asmidRowFilter() above: pass
+// its result straight to .filter() and it's a no-op when the set is empty.
+def suppressRowFilter(Set suppressSet) {
+    if (!suppressSet) {
+        return { _row -> true }
+    }
+    return { row ->
+        def asmid = row.ASMID?.trim()
+        if (asmid && suppressSet.contains(asmid)) {
+            log.info "Suppressing ASMID ${asmid} (suppress list)"
+            return false
+        }
+        return true
+    }
+}
+
 // ── ANI ─────────────────────────────────────────────────────────────────────
 
 // Clamp cpus/memory(GB) to the k8s admission-webhook ceiling, when one is
