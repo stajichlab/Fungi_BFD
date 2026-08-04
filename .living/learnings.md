@@ -896,3 +896,35 @@ Domain-count sanity check (`grep -vc '^#' *.tblout`) confirmed identical output 
 **mitigation_type**: structural
 
 **structural_mitigation_candidate**: Shipped in `nextflow/modules/BFD/PFAM/main.nf` (branch `pfam-mpi-cpu-bind-fix`). Both fixes (`--cpu-bind=none` + conditional `--cpu` flag) now validated through the real Nextflow-launched pipeline against a real, production-representative genome, not just a hand-built reproduction.
+
+## `GENOME_CLEAN_BATCH` passed the samples.csv PHYLUM *name* string straight to `AAFTF fcs_gx_purge -t`, which requires a numeric NCBI taxid (2026-08-03)
+
+**Category**: bug
+
+**What happened**: `nextflow/modules/funannotate/genome/GENOME_CLEAN_BATCH/main.nf` had a "prefer the curated PHYLUM column from samples.csv over a live taxonkit lookup" fast path (added to dodge stale/incomplete taxdump lookups for brand-new taxids). It read `samples.csv` column 7 (`PHYLUM`) via `awk` and passed the result directly to `fcs_gx_purge -t "$phylum"`. That column holds a taxonomic **name** (e.g. `Ascomycota`), confirmed by inspecting `samples.csv` directly — but `AAFTF fcs_gx_purge -t/--taxid` requires a **numeric** NCBI taxid (its own `--help` text: "NCBI Taxonomy ID for contamination matches, i.e. 4890 for Ascomycota"). The sibling non-batch module, `GENOME_CLEAN/main.nf`, never had this bug — it only ever resolves phylum via `taxonkit lineage | reformat -f "{p}" | name2taxid`, which already lands on a numeric taxid, and it validates the result against `^[0-9]+$` before use. The batch variant's fast path bypassed that conversion+validation entirely.
+
+**Why it matters**: `taxonid` (NCBI_TAXONID) and the phylum's own taxid are different numbers — one identifies the organism, the other identifies its phylum. AAFTF's `-t` flag wants the latter, resolved to a number. Passing a name string like `Ascomycota` would either error out inside `fcs_gx_purge` or silently be misinterpreted, and there was no format check on this fast path to catch it (unlike the numeric-regex check already present in `GENOME_CLEAN/main.nf`).
+
+**Resolution**: `GENOME_CLEAN_BATCH/main.nf` now takes the samples.csv PHYLUM value as `phylum_name`, resolves it through `taxonkit name2taxid` to get the numeric taxid, and falls back to the existing taxonid→lineage resolution if that comes back empty. Added the same `^[0-9]+$` validation-and-warn as `GENOME_CLEAN/main.nf` has, so a failed resolution is visible in logs rather than silently mis-feeding `fcs_gx_purge`. Verified the fix against real data: `samples.csv` row for `GCF_010015735.1_Aaoar1` has `PHYLUM=Ascomycota`; `echo Ascomycota | taxonkit name2taxid` → `4890`, matching AAFTF's own documented example.
+
+**How to apply**: Any time a pipeline stage reads a taxonomy column out of `samples.csv` (PHYLUM, CLASS, ORDER, etc.) and feeds it to a tool expecting a **numeric NCBI taxid** rather than a name, run it through `taxonkit name2taxid` first — don't assume a "curated" spreadsheet column is already in the format the downstream tool wants. Check both/either of the two `GENOME_CLEAN*` modules if adding a third variant, since they can drift out of sync (this bug existed only in the batch variant, not the original).
+
+**Tags**: funannotate, GENOME_CLEAN, GENOME_CLEAN_BATCH, taxonkit, taxid, phylum, fcs_gx_purge, AAFTF, samples.csv, bug
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: Fixed in `nextflow/modules/funannotate/genome/GENOME_CLEAN_BATCH/main.nf` — PHYLUM name is now resolved to a numeric taxid via `taxonkit name2taxid` with fallback to lineage-based resolution and numeric-format validation, matching `GENOME_CLEAN/main.nf`'s existing behavior.
+
+## `file()` with a glob pattern triggers a Nextflow deprecation warning; current code uses `files()` for globs (2026-08-03)
+
+**Category**: gotcha
+
+**What happened**: User reported seeing a Nextflow warning about using `file*()` (i.e., `file()` with a glob/asterisk) instead of `files()`. A full search of the current `nextflow/` tree found no `file("...*...")` calls with glob patterns; the only globbing helper, `gatedGlobIn()` in `nextflow/modules/common/utils.nf`, already uses `files("${baseDir}/${glob}")`. A clean `-profile test -stub-run --pipeline BFD` completed without emitting the warning, and `.nextflow.log` contained no `file()`/\`files()` deprecation message.
+
+**Why it matters**: The warning is real in Nextflow 26.x — `file()` returns a single path and warns when the pattern matches multiple files; `files()` is the correct factory for glob multi-file collections. If it appears in future runs, it means some code path is passing a glob to `file()` (possibly via a variable that contains `*`), not that the current telomere modules are at fault.
+
+**Resolution**: No code change was required for the current tree. Confirmed the telomere merge (`MERGE_TELOMERES`) and finder (`FIND_TELOMERES`) modules do not use `file()` with globs.
+
+**How to apply**: When you see this warning, grep for `file(` calls whose argument contains `*`, `?`, or `**` (including dynamically built strings). Replace those with `files()` or, if a single path is required, ensure the pattern is unambiguous. If the warning is observed on code that currently looks clean, capture the exact `.nextflow.log` snippet — Nextflow sometimes reports the originating script line.
+
+**Tags**: nextflow, file-vs-files, glob, deprecation-warning, telomeres, gotcha

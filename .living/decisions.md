@@ -451,3 +451,13 @@ than a pipeline-time artifact. Full detail in `todo/genome_stats_storage_reorg.m
 **Verified**: `nextflow config -profile BFD` and `-profile ani` both parse; a full `-profile test -stub-run` of the BFD pipeline completed successfully (`completed=15 failed=0`) and produced `tests/output/tables/busco_genome.parquet` via `MERGE_BUSCO_GENOME`. `summarize_busco_stats.py` correctly parses a real (stub-format) `*.BUSCO_summary.*.txt` into the expected TSV row. `load_busco_by_asmid()` correctly LEFT-JOINs synthetic busco_genome/asm_stats parquet fixtures (including the case where an ASMID has BUSCO but no asm_stats match → N50 falls back to 0).
 
 **Tags**: busco, tables, parquet, representative-strain, pick_representative_strain, merge, T-014, decision
+
+## G: Place telomere-finder defaults in base `nextflow.config` and enable them in `test.config` (2026-08-03)
+
+**Context**: The new `FIND_TELOMERES` step is wired into `BFD_GENOME_STATS.nf` and consumes `params.run_telomeres` plus a handful of `telomere_*` parameters. These values were initially added only to `conf/profile_BFD.config`, which is loaded by `-profile BFD`. A `-profile test -stub-run` immediately failed with `Cannot invoke method toBoolean() on null object` because `run_telomeres` was undefined.
+
+**Decision**: Add safe base defaults for all `telomere_*` parameters (with `run_telomeres = false`) to the shared `params {}` block in `nextflow/nextflow.config`, and explicitly set `run_telomeres = true` in `nextflow/conf/test.config` so the test profile exercises the new step. Also add `withLabel: 'telomeres'` to `test.config`'s process section so stub runs stay local and module-free.
+
+**Verified**: `-profile test -stub-run --pipeline BFD` completed successfully (16 tasks, 0 failed) and `BFD:BFD_GENOME_STATS:FIND_TELOMERES` and `BFD:BFD_MERGE:MERGE_TELOMERES` both appear in the DAG/execution.
+
+**Tags**: telomeres, nextflow, config, defaults, test-profile, decision
