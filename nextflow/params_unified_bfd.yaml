@@ -1,0 +1,63 @@
+# params_unified_bfd.yaml — Phase 1 of unified pipeline
+# BFD genome stats: ASM_STATS + BUSCO_genome + TELOMERES + BFD_MERGE
+# Produces: tables/asm_stats.parquet, tables/busco_genome.parquet
+#
+# Usage:
+#   nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+#       -profile BFD -params-file nextflow/params_unified_bfd.yaml -resume
+
+pipeline: "BFD"
+samples: "samples.csv"
+
+# ── Genome input ────────────────────────────────────────────────────────────
+# conf/profile_BFD.config defaults genome_dir to input/dna, which is only
+# populated post-annotation (INPUT_SETUP symlinks genome_annotation/predict_results
+# there). Phase 0 (--only_clean) writes to input_clean_genomes/<asmid>.fa.gz
+# instead, so point BUSCO/asm_stats/telomeres there — resolveGenomeFile() still
+# checks input_clean_genomes/<id>.scaffolds.fa first, then falls back to
+# <asmid>.fa.gz / <asmid>.masked.fasta.gz, so already-annotated genomes with a
+# matching id-named scaffold still resolve correctly too.
+genome_dir: "input_clean_genomes"
+
+# ── Genome stats switches ──────────────────────────────────────────────────
+run_asm_stats:    true
+run_busco_genome: true
+run_telomeres:    true
+run_aa_freq:      true
+run_codon_freq:   true
+run_intergenic:   true
+run_gene_stats:   true
+
+# ── Merge controls ─────────────────────────────────────────────────────────
+# skip_merge=false ensures BFD_MERGE runs and produces parquet tables.
+# merge_all=false means only merge files from the current run.
+skip_merge: false
+merge_all:  false
+
+# ── BUSCO lineage ──────────────────────────────────────────────────────────
+# Default lineage is fungi_odb12; override for finer-grained clade analysis.
+busco_lineage: "fungi_odb12"
+
+# ── Functional annotation switches ─────────────────────────────────────────
+# These are OFF by default in the unified pipeline because Phase 1 is
+# focused on genome stats. If you want functional annotation too, set
+# these to true. The funannotate pipeline (Phase 3) handles its own
+# functional annotation steps.
+run_pfam:      false
+run_cazy:      false
+run_merops:    false
+run_signalp:   false
+run_tmhmm:     false
+run_targetp:   false
+run_idp:       false
+run_wolfpsort: false
+run_predgpi:   false
+
+# ── Setup ──────────────────────────────────────────────────────────────────
+# run_setup=true symlinks predict_results files into input/ subdirs.
+# Set to false if input/ is already populated from a prior run.
+run_setup: true
+
+# ── Testing ────────────────────────────────────────────────────────────────
+# Set n_test > 0 to limit to first N samples (0 = all).
+n_test: 0

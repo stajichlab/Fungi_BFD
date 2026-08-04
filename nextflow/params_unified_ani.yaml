@@ -1,0 +1,61 @@
+# params_unified_ani.yaml — Phase 2 of unified pipeline
+# compare_ANI: all-vs-all ANI within taxonomic groups + representative selection
+# Produces: genome_annotation/_reuse_assignments/abinitio_reuse_assignments.csv
+#
+# Prerequisites:
+#   Phase 1 (BFD genome stats) must have completed, producing:
+#     - tables/asm_stats.parquet (N50 for representative ranking)
+#     - tables/busco_genome.parquet (BUSCO completeness for representative ranking)
+#
+# Usage:
+#   nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+#       -profile ani -params-file nextflow/params_unified_ani.yaml -resume
+
+pipeline: "compare_ani"
+samples: "samples.csv"
+
+# ── ANI method ─────────────────────────────────────────────────────────────
+# skani (default) | mash | sourmash | fastani
+ani_method: "skani"
+
+# ── Comparison scope ───────────────────────────────────────────────────────
+# Taxonomic level to group genomes for comparison.
+# Options: PHYLUM, SUBPHYLUM, CLASS, SUBCLASS, ORDER, FAMILY, GENUS, SPECIES
+# SPECIES = within-species ANI for representative selection
+compare: "SPECIES"
+
+# ── Genome input ───────────────────────────────────────────────────────────
+# The current compare_ANI workflow (subworkflows/local/ANI_SAMPLES.nf) looks up
+# genomes by ASMID only — <asmid>.fa.gz, falling back to <asmid>.masked.fasta.gz
+# — so genome_name_style/genome_suffix below are dead for this pipeline (kept
+# only because earlgrey_mask.nf reads genome_suffix under the same profile).
+# Phase 0 (--only_clean) writes the unmasked, filtered+purged genome to
+# input_clean_genomes/<asmid>.fa.gz, so point genome_dir there.
+genome_name_style: "species"
+genome_dir:        "input_clean_genomes"
+genome_suffix:     ".scaffolds.fa"
+
+# ── Representative selection ───────────────────────────────────────────────
+# run_ani_reuse=true triggers PICK_REPRESENTATIVE_STRAIN after ANI compute,
+# producing abinitio_reuse_assignments.csv for the funannotate pipeline.
+run_ani_reuse: true
+
+# ── ANI thresholds ─────────────────────────────────────────────────────────
+ani_cluster_threshold: 95.0
+ani_outlier_threshold: 90.0
+
+# ── Group filtering ────────────────────────────────────────────────────────
+# Skip groups with fewer than this many genomes.
+min_group_size: 2
+
+# ── Output directory ───────────────────────────────────────────────────────
+outdir: "results/ANI"
+
+# ── Restrict to a taxonomic subset ─────────────────────────────────────────
+# Format: RANK:VALUE (e.g. "PHYLUM:Ascomycota")
+# Leave empty string to process all taxa.
+taxon: ""
+
+# ── Testing ────────────────────────────────────────────────────────────────
+# Set n_test > 0 to limit groups processed (0 = all).
+n_test: 0
