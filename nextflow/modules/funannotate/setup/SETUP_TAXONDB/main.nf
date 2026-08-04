@@ -1,5 +1,9 @@
-// Download and extract NCBI taxdump once; storeDir caches it at params.taxondb so
-// subsequent runs skip this entirely.
+// Download, checksum, and extract NCBI taxdump once; storeDir caches it at
+// params.taxondb (a local persistent directory, e.g. lib/taxdump/) so
+// subsequent runs skip this entirely. This is the classic taxdump (not
+// new_taxdump) -- taxonkit's lineage/reformat/name2taxid only need
+// names.dmp/nodes.dmp/merged.dmp/delnodes.dmp, all present here; new_taxdump
+// only adds extras (host.dmp, images.dmp, etc.) taxonkit doesn't use.
 process SETUP_TAXONDB {
     storeDir params.taxondb
 
@@ -19,9 +23,11 @@ process SETUP_TAXONDB {
     script:
     """
     set -euo pipefail
-    wget --no-verbose https://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz
+    wget --no-verbose https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz
+    wget --no-verbose https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz.md5
+    md5sum -c taxdump.tar.gz.md5
     tar zxf taxdump.tar.gz
-    rm taxdump.tar.gz
+    rm taxdump.tar.gz taxdump.tar.gz.md5
     """
 
     stub:

@@ -92,6 +92,7 @@ BATCH_EOF
         fi
         if [ -z "\$phylum" ]; then
             echo "[\$i/\$n_total][WARN] no phylum found for \$asmid (taxonid=\$taxonid) in samples.csv or taxonkit; fcs_gx_purge will likely fail" >&2
+            echo "[\$i/\$n_total][WARN] if this taxonid is recent/newly-deposited, TAXONKIT_DB=\$TAXONKIT_DB may be stale; try refreshing it (rm -rf \$TAXONKIT_DB && rerun SETUP_TAXONDB) before assuming the lookup itself is broken" >&2
         fi
 
         module load AAFTF
