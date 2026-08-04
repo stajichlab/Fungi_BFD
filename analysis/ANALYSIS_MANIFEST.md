@@ -208,3 +208,30 @@ previously-undiscovered bug in `RUN_PFAM`'s MPI launch (`--cpu-bind=none` missin
 The `--cpu-bind` finding is a general HPCC/MPI mechanism, not PFAM-specific, and is
 also logged in `.living/learnings.md` and the personal `nextflow-hpcc` Claude Code
 skill for reuse beyond this repo.
+
+### telomere_finder
+
+```yaml
+name: telomere-finder
+type: pipeline-feature
+status: complete
+created: 2026-08-03
+last_updated: 2026-08-03
+datasets: [genome_annotation/*/predict_results/*.scaffolds.fa, samples.csv]
+algorithms: [nextflow/bin/find_telomeres.py, nextflow/bin/summarize_telomeres.py]
+parent_analysis: null
+key_findings:
+  - "Implemented a flexible telomere finder supporting multiple fungal monomer patterns, exact and fuzzy matching, per-tract repeat count, total telomeric length, and ~500 bp inward flanking sequence."
+  - "Integrated into BFD.nf: FIND_TELOMERES per-genome step + MERGE_TELOMERES aggregate table (tables/telomeres.parquet)."
+  - "Validated on Neurospora crassa OR74A: 2 terminal CCCTAA tracts, 342 bp total, 57 repeats across 2 scaffolds."
+report: analysis/telomere_finder/TELOMERE_FINDER.md
+tags: [telomeres, genome-statistics, nextflow, bfd-pipeline, fungi]
+```
+
+Pipeline feature adding telomere detection to the BFD genome-statistics stage.
+Replaces the single-pattern reference script with a configurable multi-pattern
+finder (regex + fuzzy modes, IUPAC support, canonical and --both-ends
+orientation), per-genome TSV outputs with sequences, and a merged per-genome
+summary table reporting total telomeric length and repeat counts. Tested on a
+Neurospora crassa OR74A assembly via local Nextflow execution. Reproduce:
+`bash analysis/telomere_finder/run.sh`.
