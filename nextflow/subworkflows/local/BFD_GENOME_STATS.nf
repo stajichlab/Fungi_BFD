@@ -17,6 +17,7 @@ include { BATCH_CODON_FREQ } from '../../modules/BFD/BATCH_CODON_FREQ/main.nf'
 include { CALC_INTERGENIC  } from '../../modules/BFD/CALC_INTERGENIC/main.nf'
 include { CALC_GENE_STATS  } from '../../modules/BFD/CALC_GENE_STATS/main.nf'
 include { CALC_ASM_STATS   } from '../../modules/BFD/CALC_ASM_STATS/main.nf'
+include { FIND_TELOMERES   } from '../../modules/BFD/FIND_TELOMERES/main.nf'
 include { BUSCO_GENOME     } from '../../modules/BFD/BUSCO_GENOME/main.nf'
 include { BUSCO_PEP        } from '../../modules/BFD/BUSCO_PEP/main.nf'
 
@@ -65,6 +66,7 @@ workflow BFD_GENOME_STATS {
     intergenic_ch    // tuple(meta, gff)
     gene_stats_ch    // tuple(meta, gff, genome)
     asm_stats_ch     // tuple(meta, genome)  (meta.asmid set)
+    telomeres_ch     // tuple(meta, genome)  (meta.asmid set)
     busco_genome_ch  // tuple(meta, genome)  (meta.lineage set)
     busco_pep_ch     // tuple(meta, proteins)  (meta.lineage set)
 
@@ -111,6 +113,13 @@ workflow BFD_GENOME_STATS {
             tuple(meta, genome)
         })
 
+    if (params.run_telomeres.toBoolean())
+        FIND_TELOMERES(telomeres_ch.map { meta, genome ->
+            def bucket = hashBucketForType('telomeres', meta.asmid)
+            clearIfStale(genome, [file("${stats}/telomeres/${bucket}/${meta.asmid}.telomeres.tsv.gz")])
+            tuple(meta, genome)
+        })
+
     if (params.run_busco_genome.toBoolean())
         BUSCO_GENOME(busco_genome_ch.map { meta, genome ->
             def bucket = hashBucketForType('BUSCO_genome', meta.asmid)
@@ -134,6 +143,8 @@ workflow BFD_GENOME_STATS {
     codon_csv      = params.run_codon_freq.toBoolean()   ? BATCH_CODON_FREQ.out.csv : Channel.empty()
     intergenic_csv = params.run_intergenic.toBoolean()   ? CALC_INTERGENIC.out.csv  : Channel.empty()
     asm_stats      = params.run_asm_stats.toBoolean()    ? CALC_ASM_STATS.out.stats : Channel.empty()
+    telomeres      = params.run_telomeres.toBoolean()    ? FIND_TELOMERES.out.tsv   : Channel.empty()
+    busco_genome   = params.run_busco_genome.toBoolean() ? BUSCO_GENOME.out.summary : Channel.empty()
     gene_stats     = params.run_gene_stats.toBoolean()
         ? CALC_GENE_STATS.out.gene_info
               .mix(CALC_GENE_STATS.out.gene_exons)
