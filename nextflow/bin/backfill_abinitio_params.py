@@ -152,6 +152,16 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
             "augustus": [{}], "genemark": [{}], "snap": [{}],
             "codingquarry": [{}], "glimmerhmm": [{}], "table": 1,
         }
+        # Paths are written RELATIVE to the store dir that holds parameters.json.
+        # Every component already lives beside the JSON, so a bare filename is
+        # enough, and the whole store becomes relocatable: copy or move it and it
+        # keeps working with no rewrite. funannotate predict resolves a relative
+        # path against the directory holding the -p parameters.json (see
+        # resolveTrainingPaths() in funannotate/predict.py) and warns loudly if a
+        # component is missing. NOTE: this requires the patched funannotate --
+        # stock funannotate resolves a relative path against the process CWD, which
+        # will not find these. Use rewrite_abinitio_param_paths.py --mode absolute
+        # to convert a store back if you need to run against a stock install.
 
         if "augustus" in components:
             dest = staging_dir / augustus_name
@@ -167,7 +177,7 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
                     shutil.copyfile(f, dest_f)
             params_json["augustus"] = [{
                 "source": "ab-initio-reuse", "representative": rep_out,
-                "path": str((store_dir / augustus_name).resolve()),
+                "path": augustus_name,
             }]
 
         if "genemark" in components:
@@ -175,7 +185,7 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
             shutil.copyfile(components["genemark"], dest)
             params_json["genemark"] = [{
                 "source": "ab-initio-reuse", "representative": rep_out,
-                "path": str((store_dir / f"{species_tag}.genemark.mod").resolve()),
+                "path": f"{species_tag}.genemark.mod",
             }]
 
         if "snap" in components:
@@ -183,14 +193,14 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
             shutil.copyfile(components["snap"], dest)
             params_json["snap"] = [{
                 "source": "ab-initio-reuse", "representative": rep_out,
-                "path": str((store_dir / f"{species_tag}.snap.hmm").resolve()),
+                "path": f"{species_tag}.snap.hmm",
             }]
 
         glimmerhmm_stub = staging_dir / "glimmerhmm_stub"
         glimmerhmm_stub.mkdir(exist_ok=True)
         params_json["glimmerhmm"] = [{
             "source": "suppressed-empty-stub",
-            "path": str((store_dir / "glimmerhmm_stub").resolve()),
+            "path": "glimmerhmm_stub",
         }]
 
         # ── Idempotency: skip the swap entirely if content hasn't changed ─────
