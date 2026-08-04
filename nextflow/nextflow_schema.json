@@ -173,6 +173,7 @@
                 "telomere_max_indel":      { "type": "integer", "minimum": 0, "description": "Max indels per monomer in fuzzy mode.", "default": 0 },
                 "telomere_both_ends":      { "type": "boolean", "default": false, "description": "Search every pattern at both 5' and 3' ends (default: canonical orientation only)." },
                 "telomere_allow_internal": { "type": "boolean", "default": false, "description": "Report non-terminal tracts inside the search window." },
+                "telomere_terminal_tolerance": { "type": "integer", "minimum": 0, "description": "A tract is 'terminal' if within this many bp of the literal scaffold edge (assemblies often carry a few non-canonical bases before the repeat locks into register).", "default": 10 },
                 "run_busco_genome":{ "type": "boolean", "default": false },
                 "run_busco_pep":   { "type": "boolean", "default": false },
                 "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" },

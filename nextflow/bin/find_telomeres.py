@@ -81,7 +81,9 @@ class TelomereHit:
     end_coord: int        # 0-based exclusive
     tract_seq: str
     flank_seq: str        # Sequence inward from the telomere tract
-    terminal: bool        # True if tract reaches the scaffold terminus
+    terminal: bool        # True if tract is within --terminal-tolerance of the
+                          # scaffold end
+    distance_to_end: int  # bp between the tract and the literal scaffold edge
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -113,6 +115,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--allow-internal", action="store_true",
                    help="Also report telomere-like tracts that do not reach "
                         "the scaffold terminus (default: terminal-only).")
+    p.add_argument("--terminal-tolerance", type=int, default=10,
+                   help="A tract is considered terminal if it starts (5') or "
+                        "ends (3') within this many bp of the literal "
+                        "scaffold edge, rather than requiring an exact "
+                        "match at position 0/scaffold_len [10]. Assemblies "
+                        "commonly carry a few non-canonical or ambiguous "
+                        "bases before the repeat locks into clean register.")
     p.add_argument("--both-ends", action="store_true",
                    help="Search both monomer orientations at both scaffold "
                         "ends (default: canonical orientation only).")
@@ -288,14 +297,26 @@ def fuzzy_find_telomere(seq: str, monomer: str,
 
 
 def regex_terminal_hits(scaffold: str, seq: str, pattern: re.Pattern,
-                        monomer: str, strand: str, end: str,
+                        canonical: str, search_monomer: str,
+                        strand: str, end: str,
                         min_repeats: int, min_length: int,
                         flank_window: int, allow_internal: bool,
                         scaffold_len: int, search_window: int,
+                        terminal_tolerance: int,
                         ) -> Iterable[TelomereHit]:
-    """Yield regex-based TelomereHit objects for one scaffold end/strand."""
+    """Yield regex-based TelomereHit objects for one scaffold end/strand.
+
+    Both ends are searched in the scaffold's native forward orientation:
+    ``search_monomer`` already encodes the correct pattern for this end
+    (the canonical monomer at the 5' end, its reverse complement at the 3'
+    end), so no sequence reversal is needed or performed.
+    """
     is_3prime = end == "3prime"
-    search_seq = seq[::-1][:search_window] if is_3prime else seq[:search_window]
+    if is_3prime:
+        offset = max(0, scaffold_len - search_window)
+    else:
+        offset = 0
+    search_seq = seq[offset:offset + search_window]
 
     for m in pattern.finditer(search_seq):
         tract_len = m.end() - m.start()
@@ -303,50 +324,58 @@ def regex_terminal_hits(scaffold: str, seq: str, pattern: re.Pattern,
             continue
 
         tract_seq = search_seq[m.start():m.end()]
-        repeat_count, inferred_unit = extract_monomer_unit(tract_seq, monomer)
+        repeat_count, inferred_unit = extract_monomer_unit(tract_seq, search_monomer)
         if repeat_count < min_repeats:
             continue
 
+        start_coord = offset + m.start()
+        end_coord = offset + m.end()
+
         if is_3prime:
-            start_coord = scaffold_len - m.end()
-            end_coord = scaffold_len - m.start()
-            tract_seq_orig = tract_seq[::-1]
             flank_start = max(0, start_coord - flank_window)
             flank_seq = seq[flank_start:start_coord]
-            terminal = end_coord == scaffold_len
+            distance_to_end = scaffold_len - end_coord
         else:
-            start_coord = m.start()
-            end_coord = m.end()
-            tract_seq_orig = tract_seq
             flank_end = min(scaffold_len, end_coord + flank_window)
             flank_seq = seq[end_coord:flank_end]
-            terminal = start_coord == 0
+            distance_to_end = start_coord
+        terminal = distance_to_end <= terminal_tolerance
 
         if not terminal and not allow_internal:
             continue
 
         yield TelomereHit(
             scaffold=scaffold, end=end, strand=strand,
-            monomer=monomer, repeat_count=repeat_count,
+            monomer=canonical, repeat_count=repeat_count,
             tract_length=tract_len, start=start_coord,
-            end_coord=end_coord, tract_seq=tract_seq_orig,
+            end_coord=end_coord, tract_seq=tract_seq,
             flank_seq=flank_seq, terminal=terminal,
+            distance_to_end=distance_to_end,
         )
 
 
-def fuzzy_terminal_hits(scaffold: str, seq: str, monomer: str,
+def fuzzy_terminal_hits(scaffold: str, seq: str, canonical: str, search_monomer: str,
                         strand: str, end: str,
                         min_repeats: int, min_length: int,
                         flank_window: int, allow_internal: bool,
                         scaffold_len: int, search_window: int,
                         max_mismatch: int, max_indel: int,
+                        terminal_tolerance: int,
                         ) -> Iterable[TelomereHit]:
-    """Yield fuzzy-alignment TelomereHit objects for one scaffold end/strand."""
+    """Yield fuzzy-alignment TelomereHit objects for one scaffold end/strand.
+
+    Both ends are searched in the scaffold's native forward orientation; see
+    ``regex_terminal_hits`` for why no sequence reversal is needed.
+    """
     is_3prime = end == "3prime"
-    search_seq = seq[::-1][:search_window] if is_3prime else seq[:search_window]
+    if is_3prime:
+        offset = max(0, scaffold_len - search_window)
+    else:
+        offset = 0
+    search_seq = seq[offset:offset + search_window]
 
     matches = fuzzy_find_telomere(
-        search_seq, monomer, min_repeats, max_mismatch, max_indel
+        search_seq, search_monomer, min_repeats, max_mismatch, max_indel
     )
 
     for start, end_pos, tract_seq in matches:
@@ -354,36 +383,35 @@ def fuzzy_terminal_hits(scaffold: str, seq: str, monomer: str,
         if tract_len < min_length:
             continue
         repeat_count, inferred_unit = extract_monomer_unit(
-            tract_seq, monomer, fuzzy=True,
+            tract_seq, search_monomer, fuzzy=True,
             max_mismatch=max_mismatch, max_indel=max_indel
         )
         if repeat_count < min_repeats:
             continue
 
+        start_coord = offset + start
+        end_coord = offset + end_pos
+
         if is_3prime:
-            start_coord = scaffold_len - end_pos
-            end_coord = scaffold_len - start
-            tract_seq_orig = tract_seq[::-1]
             flank_start = max(0, start_coord - flank_window)
             flank_seq = seq[flank_start:start_coord]
-            terminal = end_coord == scaffold_len
+            distance_to_end = scaffold_len - end_coord
         else:
-            start_coord = start
-            end_coord = end_pos
-            tract_seq_orig = tract_seq
             flank_end = min(scaffold_len, end_coord + flank_window)
             flank_seq = seq[end_coord:flank_end]
-            terminal = start_coord == 0
+            distance_to_end = start_coord
+        terminal = distance_to_end <= terminal_tolerance
 
         if not terminal and not allow_internal:
             continue
 
         yield TelomereHit(
             scaffold=scaffold, end=end, strand=strand,
-            monomer=monomer, repeat_count=repeat_count,
+            monomer=canonical, repeat_count=repeat_count,
             tract_length=tract_len, start=start_coord,
-            end_coord=end_coord, tract_seq=tract_seq_orig,
+            end_coord=end_coord, tract_seq=tract_seq,
             flank_seq=flank_seq, terminal=terminal,
+            distance_to_end=distance_to_end,
         )
 
 
@@ -454,7 +482,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     writer = csv.writer(out_fh, delimiter="\t", lineterminator="\n")
     columns = [
         "scaffold", "end", "strand", "monomer", "repeat_count",
-        "tract_length", "start", "end_coord", "terminal",
+        "tract_length", "start", "end_coord", "terminal", "distance_to_end",
     ]
     if args.tsv_sequence:
         columns += ["tract_seq", "flank_seq"]
@@ -474,7 +502,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 end = "5prime" if strand == "+" else "3prime"
                 if args.fuzzy:
                     hits.extend(fuzzy_terminal_hits(
-                        scaffold_id, seq, search_monomer,
+                        scaffold_id, seq, canonical, search_monomer,
                         strand, end,
                         min_repeats=args.min_repeats,
                         min_length=args.min_length,
@@ -484,18 +512,20 @@ def main(argv: Optional[List[str]] = None) -> int:
                         search_window=args.search_window,
                         max_mismatch=args.max_mismatch,
                         max_indel=args.max_indel,
+                        terminal_tolerance=args.terminal_tolerance,
                     ))
                 else:
                     pattern = regexes[search_monomer]
                     hits.extend(regex_terminal_hits(
                         scaffold_id, seq, pattern,
-                        canonical, strand, end,
+                        canonical, search_monomer, strand, end,
                         min_repeats=args.min_repeats,
                         min_length=args.min_length,
                         flank_window=args.flank_window,
                         allow_internal=args.allow_internal,
                         scaffold_len=slen,
                         search_window=args.search_window,
+                        terminal_tolerance=args.terminal_tolerance,
                     ))
 
             for hit in hits:
@@ -503,6 +533,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     hit.scaffold, hit.end, hit.strand, hit.monomer,
                     hit.repeat_count, hit.tract_length,
                     hit.start, hit.end_coord, hit.terminal,
+                    hit.distance_to_end,
                 ]
                 if args.tsv_sequence:
                     row += [hit.tract_seq, hit.flank_seq]
