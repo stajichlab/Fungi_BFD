@@ -50,9 +50,13 @@ workflow FUNANNOTATE_GENOME_PREP {
         def clean_batches = jobs_to_clean.collate(clean_batch_size).map { batch -> [ batch ] }
         GENOME_CLEAN_BATCH(clean_batches.combine(taxondb_ch), file(params.samples))
         clean_done_ch = GENOME_CLEAN_BATCH.out.manifest.collect().ifEmpty([])
+        GENOME_CLEAN_BATCH.out.suppress
+            .collectFile(name: 'TO_ADD_TO_SUPRESS.csv', storeDir: launchDir)
     } else {
         GENOME_CLEAN(jobs_to_clean.combine(taxondb_ch))
         clean_done_ch = GENOME_CLEAN.out.genome.map { it[8] }.collect().ifEmpty([])
+        GENOME_CLEAN.out.suppress
+            .collectFile(name: 'TO_ADD_TO_SUPRESS.csv', storeDir: launchDir)
     }
 
     // Re-attach the cleaned genome to its full per-sample metadata. The cleaned .fa
