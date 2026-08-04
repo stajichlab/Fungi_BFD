@@ -111,8 +111,9 @@ workflow COMPARE_ANI {
     // ── Representative strain selection (ANI-driven ab-initio reuse) ──────────
     // Runs after ANI compute when --run_ani_reuse=true.
     // Produces abinitio_reuse_assignments.csv consumed by --pipeline funannotate.
-    // BUSCO_genome results (results/genome_stats/BUSCO_genome/) must exist from
-    // a prior --pipeline busco_genome run; pick_representative_strain.py reads
+    // tables/busco_genome.parquet and tables/asm_stats.parquet must exist from a
+    // prior --pipeline BFD --run_busco_genome true run (merged via
+    // MERGE_BUSCO_GENOME/MERGE_ASM_STATS); pick_representative_strain.py reads
     // them from disk and does not require a separate Nextflow channel.
     if (params.run_ani_reuse.toBoolean()) {
         log.info "ani_reuse: computing representative strain assignments"
@@ -174,11 +175,7 @@ workflow COMPARE_ANI {
             CONCAT_ANI_TSVS.out.out.ifEmpty(file('/dev/null')),
             WRITE_ANI_PREDICT_INPUT.out.tsv,
             file(params.samples),
-            // Derive BUSCO dir from genome_stats_outdir rather than requiring an
-            // explicit busco_genome_dir param.  This is consistent with how
-            // --pipeline busco_genome names its output and prevents silent
-            // misalignment when the two pipelines use different outdir names.
-            file(params.genome_stats_outdir as String + "/BUSCO_genome")
+            file(params.tables)
         )
     }
 }
