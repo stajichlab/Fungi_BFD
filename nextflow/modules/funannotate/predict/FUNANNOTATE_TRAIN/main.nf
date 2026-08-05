@@ -35,6 +35,14 @@ process FUNANNOTATE_TRAIN {
     [ -f "\$PREDICT_GBK" ] || PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk.gz"
     if [ -f "\$TRAIN_GFF3" ]; then
         RETRAIN=0
+        # Re-train if the genome assembly itself is newer than the existing PASA training
+        # output -- otherwise a swapped-in new assembly version silently keeps stale
+        # training coordinates forever, since RETRAIN below only ever looks at rnaseq reads.
+        if [ -s "${genome_fa}" ] && [ "${genome_fa}" -nt "\$TRAIN_GFF3" ]; then
+            echo "[INFO] Genome assembly newer than training GFF3 for ${out}; retraining"
+            rm -rf "${params.training_target}/${out}/training"
+            RETRAIN=1
+        fi
         if [ -f "\$PREDICT_GBK" ]; then
             # Re-train if the rnaseq reads are newer than the existing prediction GBK.
             if [ -s "${r1}" ] && [ "${r1}" -nt "\$PREDICT_GBK" ]; then

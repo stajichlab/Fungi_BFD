@@ -47,6 +47,30 @@ def staleRnaseq(String out, String species) {
     return false
 }
 
+// Absolute path to a genome's source assembly archive, e.g.
+// ${params.source}/GCA_000000000.1/GCA_000000000.1_genomic.fna.gz -- mirrors the
+// construction in workflows/funannotate.nf's jobs channel so staleGenome() checks
+// the same file that FUNANNOTATE_TRAIN/FUNANNOTATE_PREDICT actually consume.
+def genomeSourceFile(String asmid) {
+    file("${params.source}/${asmid}/${asmid}_genomic.fna.gz")
+}
+
+// A genome whose source assembly has been swapped/updated (e.g. a new assembly
+// version dropped into the same asmid path) needs both retraining and repredicting --
+// otherwise a re-assembled genome silently keeps a GBK annotated against stale
+// coordinates. Mirrors staleRnaseq's shape/purpose but keys off the assembly file
+// itself rather than the rnaseq inputs.
+def staleGenome(String out, String asmid) {
+    def gbk = gbkResult("${params.target}/${out}/predict_results", out)
+    if (gbk == null) return false  // predict hasn't run yet; normal path handles it
+    def gfa = genomeSourceFile(asmid)
+    if (gfa.exists() && gfa.size() > 0 && gfa.lastModified() > gbk.lastModified()) {
+        log.info "stale prediction for ${out}: genome assembly newer than GBK — scheduling retrain+repredict"
+        return true
+    }
+    return false
+}
+
 // ── Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md) ──
 // Backfilled/refreshed out-of-band by nextflow/bin/species_reuse_clusters.py, which
 // writes both abinitio_reuse_csv and the per-species

@@ -33,7 +33,7 @@ include { FUNANNOTATE_PREDICT }                           from '../../modules/fu
 include { FUNANNOTATE_PREDICT as FUNANNOTATE_PREDICT_SIB } from '../../modules/funannotate/predict/FUNANNOTATE_PREDICT/main.nf'
 include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/funannotate/predict/BACKFILL_ABINITIO_PARAMS/main.nf'
 
-include { gbkResult; staleRnaseq; sharedParamsJsonFor; staleSharedParams } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_PREDICTION {
     take:
@@ -66,9 +66,10 @@ workflow FUNANNOTATE_PREDICTION {
         .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _is_rep, _elig ->
             tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, '')
         }
-        .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
+        .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
             gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
-                staleRnaseq(out as String, sp as String)
+                staleRnaseq(out as String, sp as String) ||
+                staleGenome(out as String, a as String)
         }
 
     def metadataOut
@@ -89,9 +90,10 @@ workflow FUNANNOTATE_PREDICTION {
             .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _is_rep, _elig ->
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, '')
             }
-            .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
+            .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
                 gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
-                    staleRnaseq(out as String, sp as String)
+                    staleRnaseq(out as String, sp as String) ||
+                    staleGenome(out as String, a as String)
             }
 
         FUNANNOTATE_PREDICT(rep_todo.mix(indep_todo))
@@ -183,9 +185,10 @@ workflow FUNANNOTATE_PREDICTION {
         }
 
         def sibling_predict_todo = sibling_todo
-            .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, shared_params_json ->
+            .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, shared_params_json ->
                 gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
                     staleRnaseq(out as String, sp as String) ||
+                    staleGenome(out as String, a as String) ||
                     staleSharedParams(out as String, shared_params_json ? file(shared_params_json as String) : null)
             }
 

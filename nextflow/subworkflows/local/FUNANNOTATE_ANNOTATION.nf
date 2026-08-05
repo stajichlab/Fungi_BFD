@@ -20,7 +20,7 @@ include { FUNANNOTATE_ANNOTATE } from '../../modules/funannotate/function/FUNANN
 include { FUNANNOTATE_UPDATE   } from '../../modules/funannotate/predict/FUNANNOTATE_UPDATE/main.nf'
 
 include { makeSampleTag } from '../../modules/common/utils.nf'
-include { gbkResult; staleRnaseq } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_ANNOTATION {
     take:
@@ -57,8 +57,10 @@ workflow FUNANNOTATE_ANNOTATION {
         // disjoint from the genomes (re)predicted in THIS run (which arrive via
         // metadata_ch below). Keeping them disjoint means no genome is fed downstream
         // twice and stale genomes correctly wait for the fresh predict.
-        .filter { out, _asmid, sp, _st, _lt, _bl, _hl, _tt ->
-            gbkResult("${params.target}/${out}/predict_results", out as String) != null && !staleRnaseq(out as String, sp as String)
+        .filter { out, asmid, sp, _st, _lt, _bl, _hl, _tt ->
+            gbkResult("${params.target}/${out}/predict_results", out as String) != null &&
+                !staleRnaseq(out as String, sp as String) &&
+                !staleGenome(out as String, asmid as String)
         }
 
     // annotate_ready_ch threads through optional pre-annotate steps. Each optional

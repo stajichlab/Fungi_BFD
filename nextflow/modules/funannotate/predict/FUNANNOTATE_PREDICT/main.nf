@@ -45,27 +45,36 @@ process FUNANNOTATE_PREDICT {
     fi
 
     # ── Skip vs. refresh decision ─────────────────────────────────────────────
-    # The workflow schedules this process when the GBK is missing OR stale (rnaseq/trinity
-    # newer than the GBK, per staleRnaseq()). Re-derive staleness here from the same on-disk
-    # timestamps so a current GBK short-circuits, but a stale one forces a clean re-predict.
+    # The workflow schedules this process when the GBK is missing OR stale (rnaseq/trinity/
+    # genome assembly newer than the GBK, per staleRnaseq()/staleGenome()). Re-derive
+    # staleness here from the same on-disk timestamps so a current GBK short-circuits, but
+    # a stale one forces a clean re-predict.
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     SKIP_GBK="\$PREDICT_GBK"
     [ -s "\$SKIP_GBK" ] || SKIP_GBK="\$PREDICTDIR/predict_results/${out}.gbk.gz"
     if [ -s "\$SKIP_GBK" ]; then
         SPECIES_TAG=\$(printf '%s' "${species}" | sed -E 's/[[:space:]]+/_/g')
         STALE=0
+        STALE_REASON=""
         for f in "${launchDir}/rnaseq_reads/\${SPECIES_TAG}_norm_R1.fastq.gz" \\
                  "${launchDir}/rnaseq_reads/\${SPECIES_TAG}_norm_SE.fastq.gz" \\
                  "${launchDir}/rnaseq_data/\${SPECIES_TAG}.trinity-GG.fasta" \\
                  "${shared_params_json}"; do
-            if [ -n "\$f" ] && [ -s "\$f" ] && [ "\$f" -nt "\$SKIP_GBK" ]; then STALE=1; fi
+            if [ -n "\$f" ] && [ -s "\$f" ] && [ "\$f" -nt "\$SKIP_GBK" ]; then STALE=1; STALE_REASON="rnaseq/trinity/shared-params"; fi
         done
+        # Genome assembly itself can be swapped/updated for the same asmid path without
+        # any rnaseq change; catch that here too so a re-assembled genome doesn't keep an
+        # annotation predicted against the old coordinates. See FUNANNOTATE_TRAIN's
+        # analogous check for the same underlying gap.
+        if [ -s "${genome_fa}" ] && [ "${genome_fa}" -nt "\$SKIP_GBK" ]; then
+            STALE=1; STALE_REASON="genome assembly"
+        fi
         if [ "\$STALE" -eq 0 ]; then
             echo "[INFO] Prediction already complete and current for ${out}; nothing to do"
             touch ${out}.predict.done
             exit 0
         fi
-        echo "[INFO] Stale prediction for ${out}: rnaseq/trinity newer than GBK — clearing predict outputs for a fresh run"
+        echo "[INFO] Stale prediction for ${out}: \$STALE_REASON newer than GBK — clearing predict outputs for a fresh run"
         rm -rf "\$PREDICTDIR/predict_results" "\$PREDICTDIR/predict_misc"
     fi
 
