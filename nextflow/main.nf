@@ -31,7 +31,23 @@ include { BACKFILL_ABINITIO } from './workflows/backfill_abinitio.nf'
 
 params.pipeline = 'BFD'
 
+// ANI_REPRESENTATIVE_SELECT (funannotate + ani profiles) needs pip cache +
+// python_packages dirs for DuckDB install. Singularity hard-FATALs ("mount
+// source ... doesn't exist") if a bind source path is missing, and the bind
+// is applied when the first task's container launches -- before any process
+// body can run. Called at the top of workflow{} below, before any pipeline
+// is dispatched, so the dirs exist before any container starts. A function
+// declaration is allowed at DSL2 top level (a bare statement there is not),
+// and it's plain Groovy in the .nf script rather than nextflow.config, so it
+// isn't a params/config key and neither ConfigValidator nor nf-schema's
+// validateParameters flags it. Idempotent, so -resume is safe.
+def setupBindSourceDirs() {
+    ['work/ANI/pip_cache', 'work/ANI/python_packages'].each { new File("${launchDir}/${it}").mkdirs() }
+}
+
 workflow {
+    setupBindSourceDirs()
+
     // if/else rather than switch: the strict parser rejects switch statements.
     def pipeline = (params.pipeline as String).toLowerCase()
 
