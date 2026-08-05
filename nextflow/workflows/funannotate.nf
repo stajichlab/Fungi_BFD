@@ -136,6 +136,18 @@ workflow FUNANNOTATE {
 
     FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap)
 
+    // FUNANNOTATE_RNASEQ only assigns its predict_input emission past the
+    // stop_after_sra_fetch/stop_after_sra_query gates (see its "end if" markers);
+    // with run_sra_fetch on and either gate set, that channel is never populated,
+    // so calling PREDICTION/ANNOTATION here would hand them an undefined channel
+    // instead of actually stopping the pipeline early as those params intend.
+    if (params.run_sra_fetch.toBoolean() &&
+        (params.stop_after_sra_fetch.toBoolean() || params.stop_after_sra_query.toBoolean())) {
+        log.info "Stopping after RNA-seq acquisition (stop_after_sra_fetch/stop_after_sra_query) " +
+                  "-- skipping prediction and annotation."
+        return
+    }
+
     FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
 
     FUNANNOTATE_ANNOTATION(FUNANNOTATE_PREDICTION.out.metadata, FUNANNOTATE_RNASEQ.out.reads, taxonFilter, asmidFilter, suppressFilter)

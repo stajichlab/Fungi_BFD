@@ -11,6 +11,8 @@
 set -euo pipefail
 
 mkdir -p logs/slurm logs/nextflow
+# Create Singularity bind mount targets before pipeline starts
+mkdir -p work/ANI/pip_cache work/ANI/python_packages
 
 source /etc/profile.d/modules.sh 2>/dev/null || true
 module load nextflow

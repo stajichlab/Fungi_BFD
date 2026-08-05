@@ -53,6 +53,9 @@ source /etc/profile.d/modules.sh 2>/dev/null || true
 module load nextflow
 
 mkdir -p logs/nextflow
+# Create Singularity bind mount targets before pipeline starts
+# (pip_cache + python_packages for duckdb install in ANI_REPRESENTATIVE_SELECT)
+mkdir -p work/ANI/pip_cache work/ANI/python_packages
 
 # ── Params files ────────────────────────────────────────────────────────────
 # Phase 0 reuses FUN_PARAMS with --only_clean true tacked on (see run_phase call
