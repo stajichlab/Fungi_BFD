@@ -225,7 +225,12 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
             "ani_reuse_threshold": threshold,
             "date_captured": date.today().isoformat(),
             "generated_at": datetime.now().isoformat(),
-            "source_predict_dir": str(rep_dir),
+            # realpath, not just absolute -- rep_dir (and/or params.target above
+            # it) is frequently reached through a symlink on this HPC (per-strain
+            # dirs, scratch mounts), and provenance is meant to point at the one
+            # real on-disk location the trained parameters came from, not a path
+            # that stops resolving the moment the symlink is repointed or removed.
+            "source_predict_dir": str(rep_dir.resolve()),
             "content_hash": new_hash,
         }
         (staging_dir / "provenance.json").write_text(json.dumps(provenance, indent=2))
@@ -263,11 +268,52 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
     return BackfillResult(BackfillOutcome.BACKFILLED, store_dir, sorted(components))
 
 
+def main_batch(manifest: Path, target: Path, shared_root: Path, threshold: float,
+               aug_cfg: Optional[Path], dry_run: bool) -> None:
+    """Run backfill_species_store() once per line of a TSV manifest
+    (species\\trep_out) inside a single process invocation. This is what lets
+    BACKFILL_ABINITIO_PARAMS submit one SLURM job per ~100 representatives
+    instead of one per representative -- the per-species work here is
+    seconds of I/O, so job-submission/queue overhead was the real cost.
+    A failure on one line does not stop the rest of the batch (each line is
+    independent and idempotent -- see backfill_species_store()'s content-hash
+    short-circuit), but any REPRESENTATIVE_NOT_PREDICTED failure still fails
+    the whole task at the end, same as the single-item CLI path, so it's
+    visible in the Nextflow report instead of being silently swallowed."""
+    failures = []
+    with open(manifest) as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.rstrip("\n")
+            if not line.strip():
+                continue
+            species, rep_out = line.split("\t", 1)
+            result = backfill_species_store(
+                species=species, rep_out=rep_out, target=target,
+                shared_root=shared_root, threshold=threshold,
+                aug_cfg=aug_cfg, dry_run=dry_run,
+            )
+            print(f"[RESULT] {species}\t{rep_out}\t{result.outcome.value}")
+            if result.outcome is BackfillOutcome.REPRESENTATIVE_NOT_PREDICTED:
+                print(f"[ERROR] {species}: representative {rep_out} has no "
+                      f"usable prediction on disk (manifest line {lineno})",
+                      file=sys.stderr)
+                failures.append((species, rep_out))
+
+    if failures:
+        print(f"[ERROR] {len(failures)} of {lineno} manifest entries failed: "
+              f"{failures}", file=sys.stderr)
+        sys.exit(1)
+    sys.exit(0)
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--species", required=True)
-    ap.add_argument("--representative-out", required=True)
+    ap.add_argument("--species")
+    ap.add_argument("--representative-out")
+    ap.add_argument("--manifest",
+                     help="TSV of species\\trep_out, one per line -- batch mode. "
+                          "Mutually exclusive with --species/--representative-out.")
     ap.add_argument("--target", required=True)
     ap.add_argument("--shared-root", required=True)
     ap.add_argument("--ani-threshold", type=float, default=99.0)
@@ -275,13 +321,31 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
+    aug_cfg = Path(args.augustus_config) if args.augustus_config else None
+
+    if args.manifest:
+        if args.species or args.representative_out:
+            ap.error("--manifest is mutually exclusive with --species/--representative-out")
+        main_batch(
+            manifest=Path(args.manifest),
+            target=Path(args.target),
+            shared_root=Path(args.shared_root),
+            threshold=args.ani_threshold,
+            aug_cfg=aug_cfg,
+            dry_run=args.dry_run,
+        )
+        return
+
+    if not (args.species and args.representative_out):
+        ap.error("--species and --representative-out are required unless --manifest is given")
+
     result = backfill_species_store(
         species=args.species,
         rep_out=args.representative_out,
         target=Path(args.target),
         shared_root=Path(args.shared_root),
         threshold=args.ani_threshold,
-        aug_cfg=Path(args.augustus_config) if args.augustus_config else None,
+        aug_cfg=aug_cfg,
         dry_run=args.dry_run,
     )
 

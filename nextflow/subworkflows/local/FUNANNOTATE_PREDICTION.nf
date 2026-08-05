@@ -76,9 +76,13 @@ workflow FUNANNOTATE_PREDICTION {
     if (predictScope == 'representative_only') {
         FUNANNOTATE_PREDICT(rep_todo)
 
-        // Backfill every representative predicted (or already up to date) in this run.
+        // Backfill every representative predicted (or already up to date) in this
+        // run. Batched into groups of ~100 (see BACKFILL_ABINITIO_PARAMS/main.nf) --
+        // one SLURM job per batch instead of one per representative.
         def freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
             .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(sp.toString(), out.toString()) }
+            .collate(100)
+            .map { batch -> tuple(batch.hashCode(), batch) }
         BACKFILL_ABINITIO_PARAMS(freshBackfillInput)
 
         metadataOut = FUNANNOTATE_PREDICT.out.metadata
@@ -98,15 +102,22 @@ workflow FUNANNOTATE_PREDICTION {
 
         FUNANNOTATE_PREDICT(rep_todo.mix(indep_todo))
 
-        // Backfill every representative predicted in THIS run.
+        // Backfill every representative predicted in THIS run. Batched into
+        // groups of ~100 (see BACKFILL_ABINITIO_PARAMS/main.nf) -- one SLURM
+        // job per batch instead of one per representative.
         def freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
             .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
             .filter { out, _sp -> abinitioReuseMap[out]?.is_representative ?: false }
             .map { out, sp -> tuple(sp, out) }
+            .collate(100)
+            .map { batch -> tuple(batch.hashCode(), batch) }
         BACKFILL_ABINITIO_PARAMS(freshBackfillInput)
 
+        // .out.done emits one (items, marker) pair per BATCH, not per species --
+        // flatten items (each a [species, rep_out] pair) back to one species per
+        // emission so downstream stays the same shape it was pre-batching.
         def freshSpeciesCh = BACKFILL_ABINITIO_PARAMS.out.done
-            .map { sp, _rep_out, _marker -> sp.toString() }
+            .flatMap { items, _marker -> items.collect { sp, _rep_out -> sp.toString() } }
 
         // Species whose shared store already existed BEFORE this run started --
         // known synchronously from the CSV plus one filesystem check per species,

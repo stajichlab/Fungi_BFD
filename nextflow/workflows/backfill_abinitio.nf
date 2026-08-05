@@ -61,6 +61,15 @@ workflow BACKFILL_ABINITIO {
         return
     }
 
-    log.info "backfill_abinitio: backfilling ${candidates.size()} representative(s)"
-    BACKFILL_ABINITIO_PARAMS(Channel.fromList(candidates))
+    // Batch into groups of ~100: one SLURM job per batch instead of one per
+    // representative (see comment in BACKFILL_ABINITIO_PARAMS/main.nf --
+    // per-species work is seconds, so at this scale queue/submission
+    // overhead dominated wall time). candidates is already a plain synchronous
+    // Groovy list, so collate() here is the same list-batching, not a channel op.
+    def batches = candidates.collate(100)
+    log.info "backfill_abinitio: backfilling ${candidates.size()} representative(s) " +
+        "in ${batches.size()} batch(es) of up to 100"
+
+    def batch_ch = Channel.fromList(batches.withIndex().collect { batch, idx -> tuple(idx, batch) })
+    BACKFILL_ABINITIO_PARAMS(batch_ch)
 }

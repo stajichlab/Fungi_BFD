@@ -1,5 +1,5 @@
 //
-// BACKFILL_ABINITIO_PARAMS — copy a representative strain's trained AUGUSTUS/
+// BACKFILL_ABINITIO_PARAMS — copy representative strains' trained AUGUSTUS/
 // GeneMark/SNAP ab-initio parameters into the shared per-species parameter
 // store (params.gene_prediction_shared_abinitio), so sibling strains can
 // reuse them via `funannotate predict -p parameters.json`.
@@ -13,6 +13,17 @@
 //     representatives predicted before this feature existed (or by a
 //     representative_only run in a separate invocation).
 //
+// Batched, not one task per representative: the per-species work here is
+// seconds of I/O (copy + content-hash compare), so with hundreds of
+// representatives, one-SLURM-job-per-species was dominated by submission/
+// queue overhead rather than actual work. Callers group candidates with
+// .collate(100) (see workflows/backfill_abinitio.nf and
+// FUNANNOTATE_PREDICTION.nf) before calling this process, so one task loops
+// over up to ~100 species inside a single job via backfill_abinitio_params.py
+// --manifest. Each line is independent and idempotent (content-hash
+// short-circuit in backfill_species_store()), so re-running a whole batch on
+// retry/-resume just re-confirms already-backfilled entries as up to date.
+//
 // "Option B" persistence model (same as FUNANNOTATE_PREDICT): the real output
 // is written directly into the persistent gene_prediction_shared_abinitio
 // store, not into the Nextflow work dir. There is no publishDir copy. The
@@ -23,35 +34,38 @@
 // before the marker is touched, within the same script block).
 //
 process BACKFILL_ABINITIO_PARAMS {
-    tag   "$species"
+    tag   "batch_$batch_id"
     label 'report'
 
     input:
-        tuple val(species), val(rep_out)
+        tuple val(batch_id), val(items)   // items: List of [species, rep_out]
 
     output:
-        tuple val(species), val(rep_out), path("*.backfill.done"), emit: done
+        tuple val(items), path("*.backfill.done"), emit: done
 
     script:
-    def species_tag = (species as String).replaceAll(/\s+/, '_')
     def shared_root  = params.gene_prediction_shared_abinitio
     def target       = params.target
     def threshold    = params.ani_reuse_threshold ?: 99.0
     def aug_cfg      = params.augustus_config ?: ''
+    // Manifest content is fully resolved in Groovy before the shell ever sees
+    // it, so there's no bare `$` in this string for Groovy to misinterpolate.
+    def manifest = items.collect { sp, out -> "${sp}\t${out}" }.join('\n')
     """
+    cat > manifest.tsv <<'BACKFILL_MANIFEST_EOF'
+${manifest}
+BACKFILL_MANIFEST_EOF
     python "${projectDir}/bin/backfill_abinitio_params.py" \
-        --species "${species}" \
-        --representative-out "${rep_out}" \
+        --manifest manifest.tsv \
         --target "${target}" \
         --shared-root "${shared_root}" \
         --ani-threshold "${threshold}" \
         ${aug_cfg ? "--augustus-config ${aug_cfg}" : ''}
-    touch "${species_tag}.backfill.done"
+    touch "batch_${batch_id}.backfill.done"
     """
 
     stub:
-    def species_tag = (species as String).replaceAll(/\s+/, '_')
     """
-    touch "${species_tag}.backfill.done"
+    touch "batch_${batch_id}.backfill.done"
     """
 }
