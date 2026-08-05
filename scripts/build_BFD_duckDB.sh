@@ -79,6 +79,50 @@ CREATE UNIQUE INDEX idx_asm_locustag ON asm_stats(LOCUSTAG);
 CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
 " "$DB"
 
+# ─── telomeres ────────────────────────────────────────────────────────────────
+# Produced by the dedicated telomere-finder pipeline (MERGE_TELOMERES), separate
+# from AAFTF's simple motif-count heuristic already embedded in asm_stats as
+# t2t_scaffolds/telomere_fwd/telomere_rev -- the two can and will disagree; this
+# is the detailed, per-tract-capable source. Both tables carry ASMID and
+# LOCUSTAG directly (looked up from samples.csv at merge time), rather than the
+# species_prefix-derived-from-id pattern used by gene_*/functional tables,
+# since there is no encoded id string to split here.
+if [ -f "$SRC/telomere_summary.parquet" ]; then
+    duckdb -c "
+CREATE TABLE telomere_summary AS
+SELECT * FROM read_parquet('$SRC/telomere_summary.parquet');
+CREATE UNIQUE INDEX idx_telosum_asmid    ON telomere_summary(ASMID);
+CREATE        INDEX idx_telosum_locustag ON telomere_summary(LOCUSTAG);
+" "$DB"
+else
+    echo "SKIP: $SRC/telomere_summary.parquet not found; telomere_summary table omitted."
+fi
+
+if [ -f "$SRC/telomere_tracts.parquet" ]; then
+    duckdb -c "
+CREATE TABLE telomere_tracts AS
+SELECT * FROM read_parquet('$SRC/telomere_tracts.parquet');
+CREATE UNIQUE INDEX idx_telotracts_id       ON telomere_tracts(tract_id);
+CREATE        INDEX idx_telotracts_asmid    ON telomere_tracts(ASMID);
+CREATE        INDEX idx_telotracts_locustag ON telomere_tracts(LOCUSTAG);
+CREATE        INDEX idx_telotracts_scaffold ON telomere_tracts(ASMID, scaffold);
+
+-- Scaffolds carrying a *terminal* tract on both ends -- the chromosome-
+-- completeness signal. terminal=true excludes interstitial telomeric
+-- sequences (ITS), which would otherwise falsely register a scaffold as
+-- capped on both ends. Column is end_type, not end -- END is a reserved
+-- SQL keyword and 'end' would force every ad hoc query to quote it.
+CREATE VIEW v_telomere_both_ends AS
+SELECT ASMID, scaffold
+FROM telomere_tracts
+WHERE terminal
+GROUP BY ASMID, scaffold
+HAVING count(DISTINCT end_type) = 2;
+" "$DB"
+else
+    echo "SKIP: $SRC/telomere_tracts.parquet not found; telomere_tracts table omitted."
+fi
+
 # ─── busco_genome ───────────────────────────────────────────────────────────────
 # Assembly-level BUSCO completeness (BUSCO_GENOME), keyed by ASMID -- joined to
 # species for LOCUSTAG, same pattern as asm_stats. Not to be confused with

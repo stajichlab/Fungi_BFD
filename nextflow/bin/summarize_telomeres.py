@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""Aggregate per-genome telomere feature tables into a merged summary.
+"""Aggregate per-genome telomere feature tables into merged summary + detail tables.
 
 Inputs are supplied as a manifest file (--manifest, one TAB-delimited
 ``<path>\\t<mtime>\\t<size>`` record per line) or as a directory to glob
-(--reportdir).  Output is written to -o; if it ends in .gz it is gzip-compressed.
+(--reportdir).  Two outputs are written:
 
-Per-genome aggregates include total telomeric tract length, total repeat count,
-number of scaffolds with at least one telomere, counts by scaffold end and
-strand, and the most frequently observed monomer.
+  --summary-out  one row per ASMID: total tract length/count, scaffold counts,
+                 5'/3'/strand counts, top monomer, and telomere_scaffolds_both_ends
+                 (scaffolds with a *terminal* tract on both ends -- the
+                 chromosome-completeness signal).
+  --tracts-out   one row per raw tract (scaffold/end_type/strand/monomer/sequence),
+                 for sequence- and length-level mining and ad hoc both-ends
+                 queries. Carries a surrogate tract_id since a scaffold can, in
+                 principle, carry more than one tract call at the same end
+                 (e.g. degenerate repeats).
+
+Both outputs carry ASMID and LOCUSTAG (looked up from --samples) so they join
+directly to the `species` table without going through asm_stats.
 """
 
 import argparse
@@ -19,9 +28,10 @@ import sys
 from collections import Counter
 
 
-COLUMNS = [
-    "ASMID", "SPECIES", "STRAIN",
+SUMMARY_COLUMNS = [
+    "ASMID", "LOCUSTAG", "SPECIES", "STRAIN",
     "telomere_scaffolds",
+    "telomere_scaffolds_both_ends",
     "telomere_tracts",
     "telomere_total_length_bp",
     "telomere_total_repeats",
@@ -33,6 +43,14 @@ COLUMNS = [
     "telomere_internal_count",
     "telomere_top_monomer",
     "telomere_monomers",
+]
+
+TRACT_COLUMNS = [
+    "tract_id", "ASMID", "LOCUSTAG",
+    "scaffold", "end_type", "strand", "monomer",
+    "repeat_count", "tract_length",
+    "start", "end_coord", "terminal", "distance_to_end",
+    "tract_seq", "flank_seq",
 ]
 
 
@@ -48,13 +66,14 @@ def parse_bool(value):
 
 
 def load_samples(path):
-    """Return a dict mapping ASMID -> {SPECIES, STRAIN}."""
+    """Return a dict mapping ASMID -> {LOCUSTAG, SPECIES, STRAIN}."""
     samples = {}
     with open(path, newline="") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             asmid = row["ASMID"]
             samples[asmid] = {
+                "LOCUSTAG": row.get("LOCUSTAG", ""),
                 "SPECIES": row.get("SPECIES_IN", row.get("SPECIES", "")),
                 "STRAIN": row.get("STRAIN", ""),
             }
@@ -85,9 +104,10 @@ def open_out(path):
     return open(path, "w", newline="")
 
 
-def aggregate_genome(path):
-    """Aggregate a single genome's telomere TSV into a dict."""
+def process_genome(path, asmid, locustag):
+    """Read one genome's telomere TSV; return (summary_dict, list-of-tract-rows)."""
     scaffolds = set()
+    both_ends_scaffolds = {"5prime": set(), "3prime": set()}
     total_length = 0
     total_repeats = 0
     end_5 = 0
@@ -97,30 +117,60 @@ def aggregate_genome(path):
     terminal = 0
     internal = 0
     monomer_counts = Counter()
+    tract_rows = []
 
     with open_in(path) as fh:
         reader = csv.DictReader(fh, delimiter="\t")
         for row in reader:
-            scaffolds.add(row["scaffold"])
+            scaffold = row["scaffold"]
+            end = row["end"]
+            is_terminal = parse_bool(row.get("terminal", "True"))
+
+            scaffolds.add(scaffold)
             total_length += parse_int(row["tract_length"])
             total_repeats += parse_int(row["repeat_count"])
-            if row["end"] == "5prime":
+            if end == "5prime":
                 end_5 += 1
-            elif row["end"] == "3prime":
+            elif end == "3prime":
                 end_3 += 1
             if row["strand"] == "+":
                 strand_plus += 1
             elif row["strand"] == "-":
                 strand_minus += 1
-            if parse_bool(row.get("terminal", "True")):
+            if is_terminal:
                 terminal += 1
+                # Only a *terminal* call counts toward "both ends telomere-capped" --
+                # an interstitial telomeric sequence (ITS) at an internal locus is
+                # not evidence the scaffold end itself is capped.
+                if end in both_ends_scaffolds:
+                    both_ends_scaffolds[end].add(scaffold)
             else:
                 internal += 1
             monomer_counts[row["monomer"]] += 1
 
+            tract_rows.append({
+                "tract_id": f"{asmid}:{scaffold}:{end}:{row['start']}",
+                "ASMID": asmid,
+                "LOCUSTAG": locustag,
+                "scaffold": scaffold,
+                "end_type": end,
+                "strand": row["strand"],
+                "monomer": row["monomer"],
+                "repeat_count": parse_int(row["repeat_count"]),
+                "tract_length": parse_int(row["tract_length"]),
+                "start": parse_int(row["start"]),
+                "end_coord": parse_int(row["end_coord"]),
+                "terminal": is_terminal,
+                "distance_to_end": parse_int(row["distance_to_end"]),
+                "tract_seq": row.get("tract_seq", ""),
+                "flank_seq": row.get("flank_seq", ""),
+            })
+
+    both_ends = both_ends_scaffolds["5prime"] & both_ends_scaffolds["3prime"]
     top_monomer = monomer_counts.most_common(1)[0][0] if monomer_counts else ""
-    return {
+    summary = {
         "telomere_scaffolds": len(scaffolds),
+        "telomere_scaffolds_both_ends": len(both_ends),
         "telomere_tracts": sum(monomer_counts.values()),
         "telomere_total_length_bp": total_length,
         "telomere_total_repeats": total_repeats,
@@ -133,6 +183,7 @@ def aggregate_genome(path):
         "telomere_top_monomer": top_monomer,
         "telomere_monomers": ";".join(sorted(monomer_counts)),
     }
+    return summary, tract_rows
 
 
 def main():
@@ -140,8 +191,9 @@ def main():
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--manifest", help="TAB-delimited manifest of report paths")
     src.add_argument("--reportdir", help="Directory to glob for *.telomeres.tsv.gz")
-    p.add_argument("--samples", required=True, help="samples CSV with ASMID/SPECIES_IN/STRAIN")
-    p.add_argument("-o", "--output", required=True, help="output TSV (.gz -> gzip-compressed)")
+    p.add_argument("--samples", required=True, help="samples CSV with ASMID/LOCUSTAG/SPECIES_IN/STRAIN")
+    p.add_argument("--summary-out", required=True, help="output TSV (.gz -> gzip-compressed), one row per genome")
+    p.add_argument("--tracts-out", required=True, help="output TSV (.gz -> gzip-compressed), one row per tract")
     args = p.parse_args()
 
     samples = load_samples(args.samples)
@@ -157,24 +209,27 @@ def main():
         print(f"No telomere report files found ({src_desc})", file=sys.stderr)
         sys.exit(1)
 
-    rows = []
+    summary_rows = []
+    tract_rows = []
     missing_meta = []
     for path in report_files:
         stem = os.path.basename(path).replace(".telomeres.tsv.gz", "").replace(".telomeres.tsv", "")
-        agg = aggregate_genome(path)
 
         meta = samples.get(stem)
         if meta is None:
             missing_meta.append(stem)
-            species = ""
-            strain = ""
+            locustag, species, strain = "", "", ""
         else:
+            locustag = meta["LOCUSTAG"]
             species = meta["SPECIES"]
             strain = meta["STRAIN"]
 
-        row = {"ASMID": stem, "SPECIES": species, "STRAIN": strain}
-        row.update(agg)
-        rows.append(row)
+        summary, tracts = process_genome(path, stem, locustag)
+
+        row = {"ASMID": stem, "LOCUSTAG": locustag, "SPECIES": species, "STRAIN": strain}
+        row.update(summary)
+        summary_rows.append(row)
+        tract_rows.extend(tracts)
 
     if missing_meta:
         print(f"WARNING: {len(missing_meta)} ASMIDs not found in {args.samples}:", file=sys.stderr)
@@ -183,12 +238,18 @@ def main():
         if len(missing_meta) > 10:
             print(f"  ... and {len(missing_meta) - 10} more", file=sys.stderr)
 
-    with open_out(args.output) as fh:
-        writer = csv.DictWriter(fh, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
+    with open_out(args.summary_out) as fh:
+        writer = csv.DictWriter(fh, fieldnames=SUMMARY_COLUMNS, delimiter="\t", extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(summary_rows)
 
-    print(f"Wrote {len(rows)} rows to {args.output}")
+    with open_out(args.tracts_out) as fh:
+        writer = csv.DictWriter(fh, fieldnames=TRACT_COLUMNS, delimiter="\t", extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(tract_rows)
+
+    print(f"Wrote {len(summary_rows)} genome summary rows to {args.summary_out}")
+    print(f"Wrote {len(tract_rows)} tract rows to {args.tracts_out}")
 
 
 if __name__ == "__main__":
