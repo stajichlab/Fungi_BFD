@@ -11,8 +11,9 @@
 set -euo pipefail
 
 mkdir -p logs/slurm logs/nextflow
-# Create Singularity bind mount targets before pipeline starts
-mkdir -p work/ANI/pip_cache work/ANI/python_packages
+# Singularity bind sources (work/ANI/pip_cache, work/ANI/python_packages) are
+# created at config-parse time by the ani profile (see _bind_sources in
+# conf/profile_ANI.config) — no launcher-script mkdir needed here.
 
 source /etc/profile.d/modules.sh 2>/dev/null || true
 module load nextflow

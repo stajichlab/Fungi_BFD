@@ -23,9 +23,9 @@ set -euo pipefail
 module load nextflow
 
 mkdir -p logs/nextflow
-# Create Singularity bind mount targets before pipeline starts
-# (pip_cache + python_packages for duckdb install in ANI_REPRESENTATIVE_SELECT)
-mkdir -p work/ANI/pip_cache work/ANI/python_packages
+# Singularity bind sources (work/ANI/pip_cache, work/ANI/python_packages) are
+# created at config-parse time by the funannotate profile (see _bind_sources in
+# conf/profile_funannotate.config) — no launcher-script mkdir needed here.
 
 NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run nextflow/main.nf \
