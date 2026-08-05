@@ -52,6 +52,10 @@ process PICK_REPRESENTATIVE_STRAIN {
     def aug_cfg     = params.augustus_config ?: ''
     """
     mkdir -p _reuse_assignments
+    # duckdb is not in the python:3.12 base image (used via the 'report' label) —
+    # install it first, same pattern as COMBINE_ANI_TABLE.
+    pip install --quiet --target /tmp/python_packages --ignore-installed duckdb
+    PYTHONPATH="/tmp/python_packages:\${PYTHONPATH}" \
     python "${projectDir}/bin/pick_representative_strain.py" \
         --ani-tsv "${ani_tsv}" \
         --predict-input "${predict_input_tsv}" \

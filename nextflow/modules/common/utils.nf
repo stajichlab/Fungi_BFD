@@ -472,7 +472,12 @@ def gatedGlobIn(sync_ch, String baseDir, String glob) {
 // task's input hash changes and -resume re-runs it; if nothing changed the
 // manifest is byte-identical and the task is a cache hit.
 def toManifest(ch, String name) {
-    ch.map { f -> "${f}\t${file(f).lastModified()}\t${file(f).size()}" }
+    // glob: false -- f is already a resolved Path, not a pattern. Some asmid/
+    // strain names contain glob metacharacters (e.g. a literal '*' from a
+    // taxonomy field, seen in F0AEDD87_AH-3-21*), and plain file(f) silently
+    // re-globs the string, returning a LinkedList instead of the file itself
+    // ("Unknown method invocation `lastModified` on LinkedList type").
+    ch.map { f -> "${f}\t${file(f, glob: false).lastModified()}\t${file(f, glob: false).size()}" }
       .toSortedList()
       .flatMap { it }
       .collectFile(name: name, newLine: true)
