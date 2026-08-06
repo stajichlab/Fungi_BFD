@@ -51,7 +51,7 @@ process RNASEQ_PREPARE {
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
-    TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:-/tmp}
 
     # ── Run full funannotate train on the representative genome ───────────────
     # Use SCRATCH for the funannotate output dir so Trinity/HISAT2/normalize

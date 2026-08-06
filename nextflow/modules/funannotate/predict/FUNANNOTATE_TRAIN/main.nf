@@ -58,7 +58,10 @@ process FUNANNOTATE_TRAIN {
         if [ \$RETRAIN -eq 0 ]; then
             echo "[INFO] Training already complete for ${out}; skipping"
             # Still repoint any absolute cross-project symlinks left by an older run.
-            relink_training_symlinks.py --apply --quiet \\
+            # Called by absolute path: this process runs via `bash -l`, and the login
+            # shell's profile/module init rebuilds PATH, dropping the bin/ dir nextflow
+            # otherwise appends for us.
+            ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet \\
                 "${params.training_target}/${out}/training" || true
             exit 0
         fi
@@ -71,7 +74,7 @@ process FUNANNOTATE_TRAIN {
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
-    TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:-/tmp}
     export PASACONF=""
     pasa_db_arg="--pasa_db sqlite"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
@@ -179,7 +182,7 @@ process FUNANNOTATE_TRAIN {
     # trinity-GG.fasta} and transcript.alignments.bam as absolute paths into
     # whatever tree it ran under, which breaks the moment the directory is moved
     # or the source project is retired. Repoint them at the sibling files.
-    relink_training_symlinks.py --apply --quiet "\$TRAINDIR" || true
+    ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet "\$TRAINDIR" || true
 
     echo "[INFO] Training cleanup complete for ${out}"
     echo "mysql is ${params.pasa_mysql}"

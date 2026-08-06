@@ -32,7 +32,7 @@ process FUNANNOTATE_PREDICT {
     module load funannotate/dev-1.9
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
-    TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:-/tmp}
 
     PREDICTDIR="${params.target}/${out}"
     PREDICT_GBK="\$PREDICTDIR/predict_results/${out}.gbk"
