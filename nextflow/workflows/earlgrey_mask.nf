@@ -6,8 +6,9 @@ include { genomeFile }          from '../modules/common/utils.nf'
 
 workflow EARLGREY_MASK {
     def reps = SELECT_REPS(
-        file(params.samples,   glob: false),
-        file(params.asm_stats, glob: false),
+        file(params.samples,             glob: false),
+        file(params.asm_stats_parquet,   glob: false),
+        file(params.busco_genome_parquet, glob: false),
     )
 
     def asmidFilter = params.asmid

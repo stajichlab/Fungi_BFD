@@ -3,16 +3,24 @@
 
 A species qualifies for the expensive EarlGrey treatment only if its chosen
 representative genome exceeds a size cutoff (default 200 Mb). The representative is
-the best assembly in the species, preferring a RefSeq (GCF_) accession, then the
-highest N50, then the fewest contigs.
+the best assembly in the species, ranked the same way
+nextflow/bin/pick_representative_strain.py ranks funannotate's per-species
+representative: highest BUSCO genome completeness first, then highest N50, then
+fewest contigs as a final tiebreak.
 
 For each qualifying species the output lists the representative ASMID plus all
 conspecific strain ASMIDs that have an existing clean genome in --genome-dir; the
 EarlGrey library built on the representative is later applied to every member.
 
 Inputs:
-  - samples.csv         (ASMID -> SPECIES)
-  - tables/asm_stats.tsv.gz  (per-ASMID total_length_bp, N50_bp, contig_count)
+  - samples.csv    (ASMID -> SPECIES)
+  - --asm-stats    per-ASMID TSV(.gz) with total_length_bp, N50_bp, contig_count,
+                    and complete_pct -- produced by SELECT_REPS joining the merged
+                    BFD database tables tables/asm_stats.parquet and
+                    tables/busco_genome.parquet (MERGE_ASM_STATS /
+                    MERGE_BUSCO_GENOME), the same tables PICK_REPRESENTATIVE_STRAIN
+                    reads for funannotate. complete_pct is -1 for an ASMID missing
+                    from busco_genome.parquet, which sorts it last.
 
 Output (CSV): SPECIES,REP_ASMID,REP_SIZE_MB,N_MEMBERS,MEMBER_ASMIDS
   MEMBER_ASMIDS is a ';'-joined list of non-representative strain ASMIDs.
@@ -39,7 +47,10 @@ def load_species_map(samples_path):
 
 
 def load_asm_stats(stats_path):
-    """Return {ASMID: (size_bp, n50_bp, contig_count)} from asm_stats.tsv(.gz)."""
+    """Return {ASMID: (size_bp, n50_bp, contig_count, complete_pct)} from the
+    merged asm_stats + busco_genome TSV(.gz) SELECT_REPS produces via duckdb.
+    complete_pct defaults to -1.0 if absent/empty (ASMID has no BUSCO_GENOME
+    entry), matching pick_representative_strain.py's missing-BUSCO fallback."""
     opener = gzip.open if stats_path.endswith(".gz") else open
     stats = {}
     with opener(stats_path, "rt", newline="") as fh:
@@ -53,19 +64,25 @@ def load_asm_stats(stats_path):
                 contigs = int(row["contig_count"])
             except (KeyError, ValueError):
                 continue
-            stats[asmid] = (size, n50, contigs)
+            try:
+                complete_pct = float(row.get("complete_pct") or -1.0)
+            except ValueError:
+                complete_pct = -1.0
+            stats[asmid] = (size, n50, contigs, complete_pct)
     return stats
 
 
 def rep_sort_key(entry):
-    """Rank assemblies: RefSeq first, then highest N50, then fewest contigs.
+    """Rank assemblies: highest BUSCO completeness, then highest N50, then
+    fewest contigs -- same criteria pick_representative_strain.py uses for
+    funannotate's per-species representative (BUSCO completeness + N50 read
+    from tables/busco_genome.parquet + tables/asm_stats.parquet).
 
-    entry = (asmid, size, n50, contigs). Returned tuple is sorted descending,
-    so larger is better: is_refseq (1/0), n50, -contigs.
+    entry = (asmid, size, n50, contigs, complete_pct). Returned tuple is
+    sorted descending, so larger is better: complete_pct, n50, -contigs.
     """
-    asmid, _size, n50, contigs = entry
-    is_refseq = 1 if asmid.startswith("GCF_") else 0
-    return (is_refseq, n50, -contigs)
+    _asmid, _size, n50, contigs, complete_pct = entry
+    return (complete_pct, n50, -contigs)
 
 
 def load_suppress_list(suppress_path):
@@ -99,8 +116,11 @@ def main():
         description="Pick per-species representative genomes (>cutoff) for EarlGrey masking",
     )
     parser.add_argument("--samples", default="samples.csv", help="samples.csv [samples.csv]")
-    parser.add_argument("--asm-stats", default="tables/asm_stats.tsv.gz",
-                        help="per-ASMID assembly stats TSV(.gz) [tables/asm_stats.tsv.gz]")
+    parser.add_argument("--asm-stats", default="asm_stats_busco.tsv",
+                        help="per-ASMID TSV(.gz) with total_length_bp, N50_bp, "
+                             "contig_count, complete_pct -- SELECT_REPS's duckdb join "
+                             "of tables/asm_stats.parquet + tables/busco_genome.parquet "
+                             "[asm_stats_busco.tsv]")
     parser.add_argument("--genome-dir", default="input_clean_genomes",
                         help="dir with clean <ASMID><suffix> genomes [input_clean_genomes]")
     parser.add_argument("--genome-suffix", default=".fa",
@@ -133,8 +153,8 @@ def main():
                 print(f"[suppress] {asmid}: in suppress list", file=sys.stderr)
             continue
         if asmid in stats:
-            size, n50, contigs = stats[asmid]
-            by_species[species].append((asmid, size, n50, contigs))
+            size, n50, contigs, complete_pct = stats[asmid]
+            by_species[species].append((asmid, size, n50, contigs, complete_pct))
         elif args.debug:
             print(f"[skip] {asmid}: no entry in {args.asm_stats}", file=sys.stderr)
 
@@ -162,7 +182,7 @@ def main():
             continue
 
         members = []
-        for asmid, _size, _n50, _contigs in entries:
+        for asmid, _size, _n50, _contigs, _complete_pct in entries:
             if asmid == rep_asmid:
                 continue
             if clean_exists(asmid):
