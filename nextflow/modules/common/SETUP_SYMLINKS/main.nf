@@ -12,6 +12,8 @@ process SETUP_SYMLINKS {
     mkdir -p "${params.pep_dir}" "${params.cds_dir}" "${params.gff_dir}" \\
              "${params.genome_dir}" "${params.trna_dir}"
 
+    genome_annotation_real=\$(realpath "${params.genome_annotation}")
+
     make_link() {
         local target=\$1 linkname=\$2
         if [ ! -e "\$target" ]; then
@@ -28,8 +30,8 @@ process SETUP_SYMLINKS {
 
     : > symlink_manifest.txt
     while IFS=\$'\\t' read -r basename locustag; do
-        src="${params.genome_annotation}/\${basename}/predict_results"
-        misc="${params.genome_annotation}/\${basename}/predict_misc"
+        src="\${genome_annotation_real}/\${basename}/predict_results"
+        misc="\${genome_annotation_real}/\${basename}/predict_misc"
 
         if [ ! -d "\$src" ]; then
             echo "[WARN] predict_results not found for \${basename}: \$src" >&2

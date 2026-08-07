@@ -28,6 +28,7 @@ include { EARLGREY_MASK } from './workflows/earlgrey_mask.nf'
 include { COMPARATIVE }  from './workflows/comparative_genomics.nf'
 include { PHYling }      from './subworkflows/local/PHYLING_ALIGN.nf'
 include { BACKFILL_ABINITIO } from './workflows/backfill_abinitio.nf'
+include { SETUP_SYMLINKS_ONLY } from './workflows/setup_symlinks.nf'
 
 params.pipeline = 'BFD'
 
@@ -75,8 +76,11 @@ workflow {
     else if (pipeline == 'backfill_abinitio') {
         BACKFILL_ABINITIO()
     }
+    else if (pipeline == 'setup_symlinks') {
+        SETUP_SYMLINKS_ONLY()
+    }
     else {
-        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling, backfill_abinitio (got '${params.pipeline}')\n" +
+        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks (got '${params.pipeline}')\n" +
               "  BFD           — functional annotation + genome stats\n" +
               "  funannotate    — gene prediction + annotation (modular: modules/funannotate/)\n" +
               "  compare_ani    — all-vs-all ANI clustering\n" +
@@ -84,6 +88,7 @@ workflow {
               "  earlgrey_mask  — EarlGrey repeat masking\n" +
               "  comparative    — comparative genomics clustering\n" +
               "  phyling        — PHYling phylogenomics\n" +
-              "  backfill_abinitio — sweep: backfill shared ab-initio params for already-predicted representatives"
+              "  backfill_abinitio — sweep: backfill shared ab-initio params for already-predicted representatives\n" +
+              "  setup_symlinks — only run SETUP_SYMLINKS (input/ symlinking), skip all downstream steps"
     }
 }

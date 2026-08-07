@@ -64,7 +64,7 @@
                 },
                 "pipeline": {
                     "type": "string",
-                    "enum": ["BFD", "compare_ani", "query_ani", "funannotate", "earlgrey_mask", "comparative", "phyling", "backfill_abinitio"],
+                    "enum": ["BFD", "compare_ani", "query_ani", "funannotate", "earlgrey_mask", "comparative", "phyling", "backfill_abinitio", "setup_symlinks"],
                     "description": "Selects which pipeline main.nf includes/runs (case-insensitive; see main.nf).",
                     "default": "BFD"
                 }
