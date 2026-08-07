@@ -62,10 +62,10 @@ mkdir -p logs/nextflow
 # below) rather than a separate yaml — CLEAN and MASK live in the same
 # FUNANNOTATE_GENOME_PREP subworkflow, so one params file keeps both phases'
 # clean_batch_size/source/etc settings in sync.
-CLEAN_PARAMS="nextflow/params_unified_clean.yaml"
-BFD_PARAMS="nextflow/params_unified_bfd.yaml"
-ANI_PARAMS="nextflow/params_unified_ani.yaml"
-FUN_PARAMS="nextflow/params_unified_funannotate.yaml"
+CLEAN_PARAMS="nextflow/param_files/params_unified_clean.yaml"
+BFD_PARAMS="nextflow/param_files/params_unified_bfd.yaml"
+ANI_PARAMS="nextflow/param_files/params_unified_ani.yaml"
+FUN_PARAMS="nextflow/param_files/params_unified_funannotate.yaml"
 
 # ── Parse command-line args ─────────────────────────────────────────────────
 SKIP_PHASE0=false

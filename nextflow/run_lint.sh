@@ -34,7 +34,7 @@ nextflow run ${NXFDIR}/main.nf \
     -c ${NXFDIR}/nextflow.config \
     -profile ani,test \
     --pipeline compare_ani \
-    -params-file ${NXFDIR}/params_ani.yaml \
+    -params-file ${NXFDIR}/params_dir/params_ani.yaml \
     -preview \
     2>&1
 

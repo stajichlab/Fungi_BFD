@@ -85,6 +85,21 @@ def rep_sort_key(entry):
     return (complete_pct, n50, -contigs)
 
 
+def genome_size_bp(path):
+    """Return total sequence length (bp) of a FASTA(.gz) file, summing only
+    sequence lines (skipping '>' headers). Used only for single-strain species
+    whose only ASMID has no entry in the asm_stats/busco join -- there's
+    nothing to rank against, so we skip that lookup and size the genome
+    directly instead of dropping the species."""
+    opener = gzip.open if path.endswith(".gz") else open
+    total = 0
+    with opener(path, "rt") as fh:
+        for line in fh:
+            if not line.startswith(">"):
+                total += len(line.strip())
+    return total
+
+
 def load_suppress_list(suppress_path):
     """Return set of suppressed ASMIDs from suppress.txt (CSV format).
 
@@ -143,6 +158,12 @@ def main():
     if suppressed:
         print(f"[info] Loaded {len(suppressed)} suppressed ASMIDs from {args.suppress_list}", file=sys.stderr)
 
+    # All ASMIDs per species (pre-stats), used to detect single-strain species.
+    asmids_by_species = defaultdict(list)
+    for asmid, species in species_of.items():
+        if asmid not in suppressed:
+            asmids_by_species[species].append(asmid)
+
     # Group assemblies (with stats) by species.
     by_species = defaultdict(list)
     n_suppressed = 0
@@ -167,8 +188,41 @@ def main():
         base = os.path.join(args.genome_dir, f"{asmid}{args.genome_suffix}")
         return os.path.isfile(base) or os.path.isfile(f"{base}.gz")
 
+    def clean_path(asmid):
+        base = os.path.join(args.genome_dir, f"{asmid}{args.genome_suffix}")
+        return base if os.path.isfile(base) else f"{base}.gz"
+
     rows = []
     n_species_over = 0
+
+    # Single-strain species whose only ASMID has no asm_stats/busco entry: there's
+    # nothing to rank, so skip the stats lookup and default straight to that
+    # strain, sizing it from the genome file instead of via asm_stats_busco.tsv.
+    for species, asmids in asmids_by_species.items():
+        if len(asmids) != 1 or species in by_species:
+            continue
+        asmid = asmids[0]
+        if not clean_exists(asmid):
+            if args.debug:
+                print(f"[skip] {species}: single strain {asmid} has no asm_stats entry "
+                      f"and no clean genome", file=sys.stderr)
+            continue
+        rep_size = genome_size_bp(clean_path(asmid))
+        if rep_size <= cutoff_bp:
+            continue
+        n_species_over += 1
+        rows.append({
+            "SPECIES": species,
+            "REP_ASMID": asmid,
+            "REP_SIZE_MB": f"{rep_size / 1_000_000:.1f}",
+            "N_MEMBERS": "0",
+            "MEMBER_ASMIDS": "",
+        })
+        if args.debug:
+            print(f"[single-strain] {species}: defaulted to {asmid} "
+                  f"({rep_size / 1_000_000:.1f} Mb), skipped BUSCO/asm_stats lookup",
+                  file=sys.stderr)
+
     for species, entries in by_species.items():
         rep = sorted(entries, key=rep_sort_key, reverse=True)[0]
         rep_asmid, rep_size = rep[0], rep[1]

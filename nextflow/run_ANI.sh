@@ -25,6 +25,6 @@ nextflow run nextflow/main.nf \
     -c nextflow/nextflow.config \
     -profile ani \
     --pipeline compare_ani \
-    -params-file nextflow/params_ani.yaml \
+    -params-file nextflow/param_files/params_ani.yaml \
     -resume \
     "$@"
