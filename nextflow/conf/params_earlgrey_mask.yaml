@@ -1,0 +1,43 @@
+# Example params-file for the earlgrey_mask workflow (workflows/earlgrey_mask.nf).
+# Usage:
+#   nextflow run nextflow/main.nf -c nextflow/nextflow.config \
+#       -profile earlgrey -params-file nextflow/conf/params_earlgrey_mask.yaml -resume
+#
+# Everything below can also be overridden on the command line with --key value;
+# a -params-file value loses to an explicit --flag of the same name.
+
+# Pipeline selection (main.nf dispatches on this; earlgrey profile only sets
+# process/config defaults, not which workflow runs)
+pipeline: earlgrey_mask
+
+# ── Input data ────────────────────────────────────────────────────────────
+samples: ./samples.csv
+
+# Merged BFD database tables (same tables/ dir MERGE_ASM_STATS / MERGE_BUSCO_GENOME
+# publish into for funannotate's PICK_REPRESENTATIVE_STRAIN) — SELECT_REPS joins
+# these via duckdb to rank representatives (BUSCO completeness, then N50, then
+# fewest contigs).
+asm_stats_parquet: ./tables/asm_stats.parquet
+busco_genome_parquet: ./tables/busco_genome.parquet
+
+genome_dir: ./input_clean_genomes
+genome_suffix: .fa
+
+# Optional ASMID,REASON exclusion list consumed by select_repeat_representatives.py
+# (leave unset/~ to skip suppression)
+suppress_list: ./data/curation/suppress.txt
+
+# ── Output directories ───────────────────────────────────────────────────
+outdir: ./results/repeatlibrary
+masked_dir: ./input_clean_genomes
+earlgrey_workdir: ./work/earlgrey_persist
+
+# ── Filtering & scaling ───────────────────────────────────────────────────
+cutoff_mb: 200          # minimum representative genome size (Mb)
+n_test: 0                # test mode: process only first N species (0 = all)
+asmid: ~                 # restrict to one species by ASMID (rep or member); ~ = all
+
+# ── Software versions (module load inside process beforeScript) ──────────
+earlgrey_version: 7.2.6
+repeatmasker_version: 4.1.8
+repeat_taxon: fungi
