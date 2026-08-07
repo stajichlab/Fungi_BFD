@@ -19,6 +19,7 @@ process RNASEQ_PREPARE {
     output:
     tuple val(species_tag),
             path("${species_tag}.trinity-GG.fasta"), emit: shared
+    path("${species_tag}.funannotate-trinity.log"), optional: true, emit: train_log
 
     script:
     """
@@ -95,6 +96,21 @@ process RNASEQ_PREPARE {
     else
         echo "[WARN] No trinity.fasta found under \$TRAINDIR for ${out}"
         touch ${species_tag}.trinity-GG.fasta
+    fi
+
+    # ── Preserve the funannotate train log before scratch is wiped ────────────
+    # funannotate writes logfiles/funannotate-trinity.log under the scratch
+    # output dir; that whole dir is removed below. Copy it into this task's
+    # work dir, and into training_target/${out}/logfiles/ so it lands in the
+    # same genome_annotation_training/<out>/logfiles/ schema that a normal
+    # (non-representative) funannotate train run under FUNANNOTATE_TRAIN uses.
+    TRAIN_LOG="\$SCRATCH/${out}/logfiles/funannotate-trinity.log"
+    if [ -f "\$TRAIN_LOG" ]; then
+        cp "\$TRAIN_LOG" ${species_tag}.funannotate-trinity.log
+        mkdir -p "${params.training_target}/${out}/logfiles"
+        cp "\$TRAIN_LOG" "${params.training_target}/${out}/logfiles/funannotate-trinity.log"
+    else
+        echo "[WARN] No funannotate-trinity.log found at \$TRAIN_LOG for ${out}"
     fi
 
     # ── Clean up scratch output dir (all intermediates were temporary) ────────

@@ -21,6 +21,7 @@
 set -euo pipefail
 
 module load nextflow
+module load singularity
 
 mkdir -p logs/nextflow
 # Singularity bind sources (work/ANI/pip_cache, work/ANI/python_packages) are
