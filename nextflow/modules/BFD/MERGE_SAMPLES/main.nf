@@ -19,11 +19,11 @@ process MERGE_SAMPLES {
 
     script:
     """
-    python3 ${params.scripts}/subset_samples.py \\
+    python3 ${projectDir}/bin/subset_samples.py \\
         --samples ${samples} \\
         --key     LOCUSTAG \\
         -o        samples.csv.gz
-    python3 ${params.scripts}/build_species_table.py \\
+    python3 ${projectDir}/bin/build_species_table.py \\
         --samples ${samples} \\
         --key     LOCUSTAG \\
         -o        species.csv.gz
@@ -36,11 +36,11 @@ process MERGE_SAMPLES {
 
     stub:
     """
-    python3 ${params.scripts}/subset_samples.py \\
+    python3 ${projectDir}/bin/subset_samples.py \\
         --samples ${samples} \\
         --key     LOCUSTAG \\
         -o        samples.csv.gz
-    python3 ${params.scripts}/build_species_table.py \\
+    python3 ${projectDir}/bin/build_species_table.py \\
         --samples ${samples} \\
         --key     LOCUSTAG \\
         -o        species.csv.gz

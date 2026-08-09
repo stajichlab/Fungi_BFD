@@ -12,8 +12,7 @@ process MERGE_TMHMM {
 
     script:
     """
-    export PATH="${projectDir}/bin:\$PATH"
-    merge_tmhmm.py -o tmhmm.csv ${tsvs}
+    python3 ${projectDir}/bin/merge_tmhmm.py -o tmhmm.csv ${tsvs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('tmhmm.csv', sample_size=-1)) TO 'tmhmm.parquet' (FORMAT PARQUET);"
     rm -f tmhmm.csv

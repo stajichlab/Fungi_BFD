@@ -30,7 +30,7 @@ process BATCH_AA_FREQ {
     def protList = prots     instanceof List ? prots     : [prots]
     def cmds = [locustagList, protList].transpose().collect { locustag, prot ->
         def bucket = hashBucketForType('aa_freq', locustag)
-        "mkdir -p ${bucket} && python3 ${params.scripts}/calculate_AA_freq.py ${prot.name} -o ${bucket}/${locustag}.aa_freq.csv.gz"
+        "mkdir -p ${bucket} && python3 ${projectDir}/bin/calculate_AA_freq.py ${prot.name} -o ${bucket}/${locustag}.aa_freq.csv.gz"
     }.join('\n')
     """
     module load biopython

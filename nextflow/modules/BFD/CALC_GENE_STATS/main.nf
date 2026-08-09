@@ -23,7 +23,7 @@ process CALC_GENE_STATS {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load biopython
     module load bedtools/2.30.0
-    python3 ${params.scripts}/build_genestats_table.py \\
+    python3 ${projectDir}/bin/build_genestats_table.py \\
         ${gff_file} \\
         -d . \\
         -o .

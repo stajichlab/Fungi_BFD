@@ -18,7 +18,7 @@ process FIND_TELOMERES {
     def allow_internal = params.telomere_allow_internal.toBoolean() ? '--allow-internal' : ''
     """
     module load biopython
-    python3 ${params.scripts}/find_telomeres.py \
+    python3 ${projectDir}/bin/find_telomeres.py \
         ${patterns_arg} \
         -n ${params.telomere_min_repeats} \
         -l ${params.telomere_min_length} \

@@ -13,7 +13,7 @@ process MERGE_ASM_STATS {
 
     script:
     """
-    python3 ${params.scripts}/summarize_asm_stats.py \\
+    python3 ${projectDir}/bin/summarize_asm_stats.py \\
         --manifest ${manifest} \\
         --samples  ${samples} \\
         -o         asm_stats.tsv.gz

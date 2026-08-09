@@ -14,7 +14,7 @@ process MERGE_TELOMERES {
 
     script:
     """
-    python3 ${params.scripts}/summarize_telomeres.py \
+    python3 ${projectDir}/bin/summarize_telomeres.py \
         --manifest    ${manifest} \
         --samples     ${samples} \
         --summary-out telomere_summary.tsv.gz \

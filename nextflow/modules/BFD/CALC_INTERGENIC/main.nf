@@ -14,7 +14,7 @@ process CALC_INTERGENIC {
     script:
     """
     module load biopython
-    python3 ${params.scripts}/calculate_intergenic.py \\
+    python3 ${projectDir}/bin/calculate_intergenic.py \\
         ${gff_file} -o .
     pigz gene_pairwise_distances.csv
     mv gene_pairwise_distances.csv.gz ${meta.locustag}.gene_intergenic_distances.csv.gz

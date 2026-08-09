@@ -140,7 +140,6 @@
                 "genome_dir":          { "type": "string", "format": "directory-path", "description": "Genome DNA input dir." },
                 "genome_annotation":   { "type": "string", "format": "directory-path", "description": "Annotation source dir." },
                 "tables":              { "type": "string", "format": "directory-path", "description": "Consolidated table output dir." },
-                "scripts":             { "type": "string", "format": "directory-path", "description": "Project scripts dir." },
                 "outdir":              { "type": "string", "format": "directory-path", "description": "Functional results dir." },
                 "stats_outdir":        { "type": "string", "format": "directory-path", "description": "Sequence-stats results dir." },
                 "genome_stats_outdir": { "type": "string", "format": "directory-path", "description": "Genome-stats results dir." },

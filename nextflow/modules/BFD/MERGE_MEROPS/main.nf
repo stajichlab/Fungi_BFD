@@ -12,8 +12,7 @@ process MERGE_MEROPS {
 
     script:
     """
-    export PATH="${projectDir}/bin:\$PATH"
-    merge_merops.py -o merops.csv ${blasttabs}
+    python3 ${projectDir}/bin/merge_merops.py -o merops.csv ${blasttabs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('merops.csv', sample_size=-1)) TO 'merops.parquet' (FORMAT PARQUET);"
     rm -f merops.csv

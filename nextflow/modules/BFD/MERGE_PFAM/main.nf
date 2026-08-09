@@ -12,7 +12,7 @@ process MERGE_PFAM {
 
     script:
     """
-    python3 ${params.scripts}/pfamtbl_to_long.py \\
+    python3 ${projectDir}/bin/pfamtbl_to_long.py \\
         --outfile pfam.csv \\
         ${domtbls}
     module load duckdb 2>/dev/null || true

@@ -18,7 +18,7 @@ process RUN_IDP {
     module load aiupred
     aiupred.py -i ${proteins} -o ${meta.locustag}.aiupred.txt
     pigz ${meta.locustag}.aiupred.txt
-    python3 ${params.scripts}/gather_AIUPred.py ${meta.locustag}.aiupred.txt.gz \\
+    python3 ${projectDir}/bin/gather_AIUPred.py ${meta.locustag}.aiupred.txt.gz \\
         --outfile      ${meta.locustag}.idp.csv \\
         --outfilesum   ${meta.locustag}.idp_summary.csv
     pigz ${meta.locustag}.idp.csv ${meta.locustag}.idp_summary.csv

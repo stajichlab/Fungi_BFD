@@ -14,8 +14,7 @@ process MERGE_CAZY {
 
     script:
     """
-    export PATH="${projectDir}/bin:\$PATH"
-    merge_cazy.py \\
+    python3 ${projectDir}/bin/merge_cazy.py \\
         --overviews ${overviews} \\
         --cazymes   ${cazymes} \\
         --out-overview cazy.overview.csv \\

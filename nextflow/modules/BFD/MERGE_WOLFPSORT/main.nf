@@ -12,8 +12,7 @@ process MERGE_WOLFPSORT {
 
     script:
     """
-    export PATH="${projectDir}/bin:\$PATH"
-    merge_wolfpsort.py -o wolfpsort.csv ${results}
+    python3 ${projectDir}/bin/merge_wolfpsort.py -o wolfpsort.csv ${results}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('wolfpsort.csv', sample_size=-1)) TO 'wolfpsort.parquet' (FORMAT PARQUET);"
     rm -f wolfpsort.csv

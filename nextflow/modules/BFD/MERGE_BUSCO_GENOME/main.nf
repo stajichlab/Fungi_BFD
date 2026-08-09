@@ -12,7 +12,7 @@ process MERGE_BUSCO_GENOME {
 
     script:
     """
-    python3 ${params.scripts}/summarize_busco_stats.py \\
+    python3 ${projectDir}/bin/summarize_busco_stats.py \\
         --manifest ${manifest} \\
         -o         busco_genome.tsv.gz
     module load duckdb 2>/dev/null || true

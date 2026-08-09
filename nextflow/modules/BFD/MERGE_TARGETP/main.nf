@@ -12,8 +12,7 @@ process MERGE_TARGETP {
 
     script:
     """
-    export PATH="${projectDir}/bin:\$PATH"
-    merge_targetp.py -o targetP.csv ${summaries}
+    python3 ${projectDir}/bin/merge_targetp.py -o targetP.csv ${summaries}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('targetP.csv', sample_size=-1)) TO 'targetP.parquet' (FORMAT PARQUET);"
     rm -f targetP.csv
