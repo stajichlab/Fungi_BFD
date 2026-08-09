@@ -9,8 +9,8 @@
         "properties": {
             "ASMID": {
                 "type": "string",
-                "pattern": "^GC[AF]_\\S+$",
-                "errorMessage": "ASMID is required and must be an NCBI assembly accession beginning with GCA_ or GCF_ (e.g. GCF_010015735.1_Aaoar1)."
+                "pattern": "^\\S+$",
+                "errorMessage": "ASMID is required and must be a non-empty identifier (NCBI assembly accession GCA_/GCF_ or a custom label)."
             },
             "SPECIES_IN": {
                 "type": "string",
