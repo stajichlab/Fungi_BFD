@@ -25,6 +25,12 @@ def tablesDir() {
     "${params.tables}"
 }
 
+// Resolve the output directory for BUILD_DUCKDB's BFD.duckdb (params.db,
+// default "${launchDir}/db" -- see nextflow.config).
+def dbDir() {
+    "${params.db}"
+}
+
 // ── Sample identity ─────────────────────────────────────────────────────────
 //
 // Moved here from lib/SampleUtils.groovy: Groovy classes on the lib/ classpath

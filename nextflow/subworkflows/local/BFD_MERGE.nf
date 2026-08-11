@@ -26,6 +26,7 @@ include { MERGE_ASM_STATS  } from '../../modules/BFD/MERGE_ASM_STATS/main.nf'
 include { MERGE_BUSCO_GENOME } from '../../modules/BFD/MERGE_BUSCO_GENOME/main.nf'
 include { MERGE_TELOMERES  } from '../../modules/BFD/MERGE_TELOMERES/main.nf'
 include { MERGE_SAMPLES    } from '../../modules/BFD/MERGE_SAMPLES/main.nf'
+include { BUILD_DUCKDB     } from '../../modules/BFD/BUILD_DUCKDB/main.nf'
 
 include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
 
@@ -55,6 +56,14 @@ workflow BFD_MERGE {
     // no matched-keys input, no per-taxon subset.
     MERGE_SAMPLES(file(params.samples))
 
+    // Gating list for BUILD_DUCKDB: collects one output channel from every
+    // MERGE_* process actually invoked below (any single emit suffices -- all
+    // of a process's emits complete together), so the duckdb rebuild (if
+    // enabled) waits for all of this run's merges to publish before it globs
+    // tables/ -- same purpose as gatedGlobIn's sync_ch, just fanned in from
+    // process outputs instead of an upstream file-existence channel.
+    def merge_outs = [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species]
+
     if (use_glob) {
         // In glob mode a table is rebuilt even when its producer did not run this
         // session, so genomes computed earlier still reach the table. Globs are
@@ -65,54 +74,82 @@ workflow BFD_MERGE {
         MERGE_AA_FREQ(toManifest(gatedGlobStats(
             params.run_aa_freq.toBoolean() ? aa_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
             "aa_freq/**/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
+        merge_outs << MERGE_AA_FREQ.out.parquet
 
         MERGE_CODON_FREQ(toManifest(gatedGlobStats(
             params.run_codon_freq.toBoolean() ? codon_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
             "codon_freq/**/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
+        merge_outs << MERGE_CODON_FREQ.out.parquet
 
         MERGE_INTERGENIC(toManifest(gatedGlobStats(
             params.run_intergenic.toBoolean() ? intergenic_csv.collect() : Channel.of(true),
             "intergenic_stats/**/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
+        merge_outs << MERGE_INTERGENIC.out.parquet
 
         MERGE_GENE_STATS(toManifest(gatedGlobStats(
             params.run_gene_stats.toBoolean() ? gene_stats.collect() : Channel.of(true),
             "gene_stats/**/*.csv.gz"), 'gene_stats.manifest.txt'))
+        merge_outs << MERGE_GENE_STATS.out.gene_info
 
         MERGE_ASM_STATS(toManifest(gatedGlobStats(
             params.run_asm_stats.toBoolean() ? asm_stats.collect() : Channel.of(true),
             "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'), file(params.samples))
+        merge_outs << MERGE_ASM_STATS.out.parquet
 
         MERGE_TELOMERES(toManifest(gatedGlobStats(
             params.run_telomeres.toBoolean() ? telomeres.collect() : Channel.of(true),
             "telomeres/**/*.telomeres.tsv.gz"), 'telomeres.manifest.txt'), file(params.samples))
+        merge_outs << MERGE_TELOMERES.out.summary_parquet
 
         MERGE_BUSCO_GENOME(toManifest(gatedGlobStats(
             params.run_busco_genome.toBoolean() ? busco_genome.collect() : Channel.of(true),
             "BUSCO_genome/**/*.BUSCO_summary.*.txt"), 'busco_genome.manifest.txt'))
+        merge_outs << MERGE_BUSCO_GENOME.out.parquet
 
     } else {
         // Run mode: the frequency merges take the union of genomes already cached
         // before the run and genomes this run produced — both resolved without any
         // existence test racing an in-flight write (plan item 13).
-        if (params.run_aa_freq.toBoolean())
+        if (params.run_aa_freq.toBoolean()) {
             MERGE_AA_FREQ(toManifest(aa_cached.mix(aa_csv.flatten()), 'aa_freq.manifest.txt'))
+            merge_outs << MERGE_AA_FREQ.out.parquet
+        }
 
-        if (params.run_codon_freq.toBoolean())
+        if (params.run_codon_freq.toBoolean()) {
             MERGE_CODON_FREQ(toManifest(codon_cached.mix(codon_csv.flatten()), 'codon_freq.manifest.txt'))
+            merge_outs << MERGE_CODON_FREQ.out.parquet
+        }
 
-        if (params.run_intergenic.toBoolean())
+        if (params.run_intergenic.toBoolean()) {
             MERGE_INTERGENIC(toManifest(intergenic_csv, 'intergenic.manifest.txt'))
+            merge_outs << MERGE_INTERGENIC.out.parquet
+        }
 
-        if (params.run_gene_stats.toBoolean())
+        if (params.run_gene_stats.toBoolean()) {
             MERGE_GENE_STATS(toManifest(gene_stats, 'gene_stats.manifest.txt'))
+            merge_outs << MERGE_GENE_STATS.out.gene_info
+        }
 
-        if (params.run_asm_stats.toBoolean())
+        if (params.run_asm_stats.toBoolean()) {
             MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'), file(params.samples))
+            merge_outs << MERGE_ASM_STATS.out.parquet
+        }
 
-        if (params.run_telomeres.toBoolean())
+        if (params.run_telomeres.toBoolean()) {
             MERGE_TELOMERES(toManifest(telomeres, 'telomeres.manifest.txt'), file(params.samples))
+            merge_outs << MERGE_TELOMERES.out.summary_parquet
+        }
 
-        if (params.run_busco_genome.toBoolean())
+        if (params.run_busco_genome.toBoolean()) {
             MERGE_BUSCO_GENOME(toManifest(busco_genome, 'busco_genome.manifest.txt'))
+            merge_outs << MERGE_BUSCO_GENOME.out.parquet
+        }
+    }
+
+    if (params.run_build_duckdb.toBoolean()) {
+        // Nextflow's strict parser rejects the Groovy spread operator
+        // (`mix(*merge_outs)`), hence the explicit fold.
+        def sync_ch = merge_outs.inject(Channel.empty()) { acc, ch -> acc.mix(ch) }
+        BUILD_DUCKDB(sync_ch.collect())
     }
 }

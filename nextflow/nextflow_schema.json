@@ -49,6 +49,16 @@
                     "type": "boolean",
                     "description": "Skip all MERGE_* steps (e.g. when running only new species).",
                     "default": true
+                },
+                "run_build_duckdb": {
+                    "type": "boolean",
+                    "description": "Rebuild db/BFD.duckdb from tables/*.parquet after MERGE_* steps complete.",
+                    "default": false
+                },
+                "db": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Output dir for the rebuilt BFD.duckdb."
                 }
             }
         },
