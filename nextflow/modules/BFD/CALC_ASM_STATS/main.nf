@@ -13,8 +13,9 @@ process CALC_ASM_STATS {
 
     script:
     """
-    module load AAFTF/0.6.0
-    AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
+    module load singularity
+    singularity exec ${params.aaftf_sif} \\
+        AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
     """
 
     stub:

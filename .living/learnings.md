@@ -960,3 +960,45 @@ A second, independent bug compounded this: `terminal = (start_coord == 0)` requi
 **How to apply**: When you add a SLURM node exclusion (or any node-targeting fix) to fix a SIGILL/illegal-instruction/random-crash pattern for one process, grep `nextflow/modules/**/main.nf` for other processes that shell out to the same binary or wrap the same external tool (`funannotate train`, `hisat2`, `augustus`, etc.) and check whether they run on the same queue pool — apply the exclusion everywhere the crash path can be reached, not just where the symptom was first observed. Considered alternatives: a SLURM `--constraint` feature filter (no `avx2` feature is registered on this cluster, only `abu_dhabi`/`amd` — a constraint would have to be phrased as `--constraint='!abu_dhabi'`, which is equivalent to but less explicit than `--exclude=c[01-30]`) and building funannotate's dependencies from source without AVX2 optimization (rejected — throws away the perf benefit on the many non-abu_dhabi nodes just to support ~30 old nodes cluster-wide).
 
 **Tags**: nextflow, slurm, abu-dhabi, avx2, hisat2, funannotate-train, rnaseq-prepare, sigill, gotcha
+
+### [2026-08-09] `clean_genome_fa.py` did not drop funannotate's "alphabet < 4" contigs; predict aborted on 3-base contigs
+
+**Category**: bug
+
+**What happened**: funannotate predict failed on `Rugonectria_rugulosa_M7C8` (`GCA_058970095.1_ASM5897009v1`) with "Found 1 bad contigs, where alphabet is less than 4 [this should not happen]" then `ERROR: funannotate predict did not produce expected GBK`. The offending contig `JBUFDE010000307.1` (2,156 bp) contained only A(1310)/G(268)/T(578) — 3 distinct nucleotides, zero C. `funannotate.library.analyzeAssembly()` counts the **number of distinct characters** in each contig (uppercased, including N/ambiguity) and flags any contig with `< 4` distinct as suspect, aborting predict unless `--force`. `clean_genome_fa.py` only filtered by `--len`, so bad-alphabet contigs sailed through into the masked genome and predict blew up downstream.
+
+**Why it matters**: A 3-base or 2-base contig is a strong contamination/QA signal (a real chromosomal contig always has all 4 bases), and funannotate will hard-stall the whole predict on it. The clean step is the right single choke point to catch these; catching them post-hoc in the run `work/` dir wastes a full predict attempt.
+
+**Resolution**: `nextflow/bin/clean_genome_fa.py` now mirrors funannotate's exact check — counts distinct uppercase chars per contig, and by default (`--min-alphabet 4`, matches funannotate) **drops** any contig with fewer than 4 distinct characters, emitting one stderr WARNING per dropped contig with its composition (e.g. `A:1,310, G:268, T:578`) plus a summary count. Opt out with `--min-alphabet 1`. No Nextflow changes needed (GENOME_CLEAN/GENOME_CLEAN_BATCH call it with only `--len`). The affected genome's clean/masked inputs must be regenerated (the `.masked.fasta.gz` storeDir artifact embeds the bad contig) before predict can proceed.
+
+**How to apply**: When "preprocessing" a genome before funannotate, run the *same* alphabet census funannotate runs (`len(set(seq.upper())) < 4`) rather than only checking IUPAC membership/length — "looks like DNA" is not the same as "has a complete alphabet". Validate a clean script against the exact library.py predicate it's supposed to defend against, ideally on the real failing assembly.
+
+**Tags**: funannotate, clean_genome_fa, alphabet, contig-filter, predict-failure, GBK, bug, bioinformatics-review
+
+### [2026-08-10] AAFTF container: `beforeScript`-free, in-script `singularity exec` wins here
+
+**Category**: insight
+
+**What happened**: Switched CALC_ASM_STATS, GENOME_CLEAN, GENOME_CLEAN_BATCH from `module load AAFTF` / `module load taxonkit` to the new `AAFTF-v0.7.0-beta.2.sif` (built by the AAFTF repo's release CI from its AAFTF.def; installed in the Nextflow singularity cacheDir; image hardcodes `AAFTF_DB=/opt/aaaftf_db` and ships taxonkit v0.20.0). These processes were NOT moved to Nextflow `process.container`; instead each script block defines `SING_BINDS` + `SING="singularity exec ${SING_BINDS} ${AAFTF_SIF}"` and calls `$SING AAFTF ...` / `$SING taxonkit ...`. The AAFTF repo's CI only builds the SIF/pushes releases ($ nothing to do on the BFD side), and verified empirically: `$SING AAFTF --version` → `AAFTF 0.7.0b2`, `$SING taxonkit version` → `v0.20.0`, `bash -lc` login shell sources `/etc/profile.d/aaaftf.sh` so `AAFTF` resolves + `AAFTF_DB` points at `/opt/aaaftf_db`, and the bind exposes host `/srv/projects/db/AAFTF_DB` contents.
+
+**Why it matters**: These genome-clean processes also need host-side tools (`pigz`, R/conda, `clean_genome_fa.py`) and the FCS-GX DB staged into the HOST `/dev/shm` by `setup_fcs_shm.sh` (`/dev/shm/gxdb/all`). `process.container` would containerize the whole task (losing host /dev/shm + host modules without heavy binds) — manual `singularity exec` scopes the container to just the AAFTF/taxonkit calls while the rest of the script stays native. The container is invoked with `--bind ${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm`.
+
+**Resolution / How to apply**: All three modules drop their `module load AAFTF|taxonkit`, add `module load singularity` + the SING/SING_BINDS block, and prefix every in-container call (`AAFTT fcs_gx_purge`, `AAFTF assess`, `taxonkit lineage/reformat/name2taxid`) with `$SING`. Root param `params.aaftf_sif` added in `nextflow/config`. If the image is rebuilt, update only `params.aaaftf_sif` (and `_BATCH`'s copy) — no module-level code changes.
+
+**Tags**: aaftf, singularity, container, taxonkit, fcs-gx, dev-shm, geneclean, nextflow, insight
+
+### [2026-08-10] AAFTF-SIF genome-clean real-run validation: workflow passes end-to-end, cluster contention + cleanup quirks bite
+
+**Category**: validation / gotcha
+
+**What happened**: Ran the first real `GENOME_CLEAN_BATCH` under the AAFTF-SIF wiring (3 small real genomes — S. cerevisiae, S. pombe, C. neoformans — via `conf/test_clean_real.config` with `only_clean=true`, `run_ani_reuse=false`, `clean_batch_size=3`). Driver launched interactively through a detached `screen` (not sbatch; see below). Pipeline completed `Succeeded: 2` (SETUP_TAXONDB reuse + the batch): the 465 GB FCS-GX db staged into host `/dev/shm` at 520 MB/s (498.6 GB in 914 s, logged to `logs/nextflow/fcs_gx_shm_timing.tsv`), `clean_batch_1` ran on h04 (job 27332111, 18:05 runtime), and `/dev/shm` was freed on teardown. Outputs: `input_clean_genomes/<asmid>.fa.gz` + `clean/*.purge.fasta.gz` + `*.purge.fcs_gx-taxonomy.tsv.gz` with correct divisions (S288C `fung:ascomycetes`/`budding yeasts` agg-cov 0.998; C. neoformans `fung:basidiomycetes` agg-cov 0.979). `TO_ADD_TO_SUPRESS.csv` empty (nothing below min length).
+
+**Why it matters / gotchas**:
+1. **highmem "Resources" wait**: the batch asks for 16 cpus + 500 GB pinned to `-w h04,h05,h06`. All three nodes had >500 GB *already allocated* by other jobs (~655/643/800 GB), leaving <280 GB free each — SLURM therefore waited ~6 h before h04 freed enough. On a busy cluster the 500 GB request against fixed node pins is the scheduling bottleneck, not anything in the pipeline.
+2. **`cleanup = true` hides per-batch outputs**: `profile_funannotate` sets `nextflow.cleanup=true`, so the task work dir (including `clean_batch_*.manifest.tsv`) is scrubbed on success — the manifest is not on disk after a clean run. Harmless for `only_clean` (no downstream consumer), but don't look for it in `input_clean_genomes/` after a successful run.
+3. **sbatch launcher still broken for real Nextflow runs** (unchanged 2026-08-10): launching `nextflow run` from an sbatch job fails deterministically on `.nextflow/history.lock` (Java `NoSuchFileException`) and top-level `mkdir` (Permission denied) even though interactive/`screen` shells work identically from the same dir — the Java/Nextflow process under the job environment is the difference. Detached `screen` + `> logs/nextflow/real_clean_driver.log 2>&1` is the proven pattern for real runs (production driver runs this way too).
+4. **`run_ani_reuse` must be false for `only_clean` test configs**: `workflows/funannotate.nf` hard-errors at build time if `run_ani_reuse=true` while `params.abinitio_reuse_csv` is unset, killing the run before any task starts.
+
+**How to apply**: For real clean-step validation/acceptance, launch via `screen -dmS` from `nextflow/` (not sbatch); expect an unbounded wait if the pinned highmem nodes are contended; read timing from `logs/nextflow/fcs_gx_shm_timing.tsv` and validate taxonomy by `pigz -dc <asmid>.purge.fcs_gx-taxonomy.tsv.gz` (header-only lines mean no flagged contamination rows). Keep `conf/test_clean_real.config` + `tests/real_clean/` together as the reproducible unit (see `nextflow/tests/real_clean/REAL_CLEAN.md`).
+
+**Tags**: aaftf, singularity, fcs-gx, dev-shm, geneclean, batch-clean, highmem, slurm, nextflow, validation, gotcha

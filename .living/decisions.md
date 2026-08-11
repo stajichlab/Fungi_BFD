@@ -534,3 +534,19 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Verified**: Not yet run against a live production job (SLURM job on r41 was already running the old serial version at review time; not restarted). Code review only — recommend confirming wall-clock improvement on the next real `SETUP_SYMLINKS` run and watching for symlink-target correctness (should be identical output, just concurrent) before treating this as fully validated.
 
 **Tags**: nextflow, setup-symlinks, nfs, performance, parallelism, bash, wait-n, flock, decision
+
+## AAFTF via manual `singularity exec` (SING/SING_BINDS), not `process.container` (2026-08-10)
+
+**Context**: CALC_ASM_STATS (AAFTF assess), GENOME_CLEAN, and GENOME_CLEAN_BATCH (AAFTF fcs_gx_purge + taxonkit phylum resolution) depended on `module load AAFTF` / `module load taxonkit`. Replaced by the new `AAFTF-v0.7.0-beta.2.sif` (release CI build from the AAFTF repo; hardcodes `AAFTF_DB=/opt/aaaftf_db`, ships taxonkit).
+
+**Decision**: Do NOT set Nextflow `process.container` on these processes. Instead each script block sets `SING_BINDS="--bind ${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"` and `SING="singularity exec ${SING_BINDS} ${AAFTF_SIF}"` (with `module load singularity`), and invokes AAFTF/taxonkit through `$SING`.
+
+**Why**: (1) GENOME_CLEAN/_BATCH must also run host tools (pigz, conda/R, clean_genome_fa.py) and read the FCS-GX DB staged into the **host** `/dev/shm` by setup_fcs_shm.sh (`/dev/shm/gxdb/all`) — whole-task containerization would require binding host /dev/shm anyway and complicates the host-side HPC-ism handling (scratch, login-shell modules); (2) scoping the container around just the external tool calls keeps the rest of the script byte-identical to the module-load version, minimizing blast radius; (3) this repo already has this working pattern (FUNANNOTATE_UPDATE uses manual `singularity instance start`). AAFTF does not need its DB baked in because `--bind /srv/projects/db/AAFTF_DB:/opt/aaaftf_db` overlays it and `AAFTF_DB` defaults to `/opt/aaaftf_db` in the image.
+
+**Not changed**: taxonkit stays in-container (in the SIF) reading `${taxondb}` names.dmp via `--data-dir`; the FCS-GX /dev/shm staging script and its timing log stay host-side. `params.aaaftf_sif` (root nextflow.config) is the single knob for swapping the image.
+
+**Verified**: `nextflow config -profile BFD|funannotate` parses and resolves `params.aaaftf_sif`; smoke test of the exact SING form ran from a scratch dir: `AAFTF --version` → `0.7.0b2`, `taxonkit version` → `v0.20.0`, `$AAFTF_DB=/opt/aaaftf_db` with host DB contents visible through the bind.
+
+**Validated (2026-08-10, live clean-batch job)**: Real 3-genome `GENOME_CLEAN_BATCH` (`only_clean`, S. cerevisiae / S. pombe / C. neoformans) ran to completion via detached `screen` (SLURM job 27332111, h04, 18:05 runtime after ~6h PENDING for a highmem node with ≥500 GB free). The whole clean step ran through the SIF (`$SING AAFTF fcs_gx_purge` + `$SING taxonkit`); FCS-GX db (2023-01-24 build) staged into host `/dev/shm` (498.6 GB in 914 s ≈ 520 MB/s) and freed after the job; real outputs written to `input_clean_genomes/*.fa.gz` + `clean/*.purge.fasta.gz` with correct taxonomy (`fung:ascomycetes`/`budding yeasts` for S288C, `fung:basidiomycetes` for C. neoformans, agg-cov ≥0.979). See `nextflow/tests/real_clean/REAL_CLEAN.md`. The production module-load form is retired — SIF is the only active path in all 3 module files.
+
+**Tags**: nextflow, singularity, aaftf, container, geneclean, decision

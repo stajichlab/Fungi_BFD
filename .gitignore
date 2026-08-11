@@ -40,3 +40,12 @@ lib/augustus/3.5/config/species
 !nextflow/tests/data/input/gff3/
 !nextflow/tests/data/input/dna/
 !nextflow/tests/data/input/trna/
+# Real-dataset AAFTF-SIF clean validation (conf/test_clean_real.config + samples/launcher/
+# docs) must be committed like the synthetic tests/data/input fixtures above.
+!nextflow/tests/
+!nextflow/tests/real_clean/
+!nextflow/tests/real_clean/**
+# NCBI taxdump replicated by SETUP_TAXONDB storeDir (~533 MB) — never commit.
+nextflow/lib/taxdump/
+# Per-batch clean artefact that GENOME_CLEAN_BATCH emits to launchDir.
+nextflow/TO_ADD_TO_SUPRESS.csv

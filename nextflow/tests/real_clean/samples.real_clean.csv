@@ -1,0 +1,4 @@
+ASMID,SPECIES_IN,STRAIN,BIOPROJECT,NCBI_TAXONID,BUSCO_LINEAGE,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES,TRANSL_TABLE,LOCUSTAG
+GCF_000146045.2_R64,Saccharomyces cerevisiae S288C,S288C,PRJNA43747,559292,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Saccharomyces,Saccharomyces cerevisiae,1,F24A1226
+GCF_000002945.2_ASM294v3,Schizosaccharomyces pombe,972h,PRJNA13836,4896,dikarya,Ascomycota,,Schizosaccharomycetes,,Schizosaccharomycetales,Schizosaccharomycetaceae,Schizosaccharomyces,Schizosaccharomyces pombe,1,FD3AB542
+GCA_056632885.1_ASM5663288v1,Cryptococcus neoformans,125.91,PRJNA1103777,5207,dikarya,Basidiomycota,,Tremellomycetes,,Tremellales,Cryptococcaceae,Cryptococcus,Cryptococcus neoformans,1,F80D32E5

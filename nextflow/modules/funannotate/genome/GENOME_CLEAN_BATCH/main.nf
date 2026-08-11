@@ -29,6 +29,14 @@ process GENOME_CLEAN_BATCH {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
+    module load singularity
+    AAFTF_SIF=${params.aaftf_sif}
+    # AAFTF + taxonkit now come from the AAFTF SIF (replaces `module load AAFTF`
+    # and `module load taxonkit`). The image hardcodes AAFTF_DB=/opt/aaaftf_db and
+    # AAFTF fcs_gx_purge needs the host-staged FCS-GX db (/dev/shm/gxdb) visible,
+    # so bind the host DB + /dev/shm for every in-container call.
+    SING_BINDS="--bind ${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"
+    SING="singularity exec \${SING_BINDS} \${AAFTF_SIF}"
 
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     TAXONKIT_DB=${taxondb}
@@ -108,27 +116,24 @@ BATCH_EOF
         # taxonkit name2taxid -- AAFTF fcs_gx_purge -t requires a numeric NCBI taxid.
         phylum_name=\$(awk -F',' -v id="\$asmid" '\$1==id{print \$7; exit}' ${samples_csv})
         phylum=""
-        module load taxonkit
         if [ -n "\$phylum_name" ]; then
-            phylum=\$(echo "\$phylum_name" | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            phylum=\$(echo "\$phylum_name" | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
             echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_name=\$phylum_name -> phylum_taxid=\$phylum (from samples.csv PHYLUM)"
         fi
         if [ -z "\$phylum" ]; then
-            phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            phylum=\$(echo \$taxonid | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
             if [ -z "\$phylum" ]; then
-                phylum=\$(echo \$taxonid | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
+                phylum=\$(echo \$taxonid | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
             fi
             echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_taxid=\$phylum (from taxonkit lineage, samples.csv PHYLUM was blank or unresolvable)"
         fi
-        module unload taxonkit
         if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
             echo "[\$i/\$n_total][WARN] could not resolve a numeric phylum taxid for \$asmid (taxonid=\$taxonid, samples.csv PHYLUM=\$phylum_name); got '\$phylum'. fcs_gx_purge will likely fail" >&2
             echo "[\$i/\$n_total][WARN] if this taxonid is recent/newly-deposited, TAXONKIT_DB=\$TAXONKIT_DB may be stale; try refreshing it (rm -rf \$TAXONKIT_DB && rerun SETUP_TAXONDB) before assuming the lookup itself is broken" >&2
         fi
 
-        module load AAFTF
         pigz -dc "\$gz" > \$SCRATCH/\${asmid}.raw.fa
-        if AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
+        if \$SING AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
             -i \$SCRATCH/\${asmid}.raw.fa --cpus ${task.cpus} \
             -o \$SCRATCH/\${asmid}.purge.fasta \
             -t "\$phylum" -w \$SCRATCH/\${asmid}.fcs_report ; then

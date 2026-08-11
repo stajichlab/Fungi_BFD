@@ -1,7 +1,10 @@
 process GENOME_CLEAN {
     tag "$asmid"
 
-    // container '/rhome/jstajich/projects/AAFTF/AAFTF_v0.6.1-signed.sif'
+    // AAFTF (+ in-image taxonkit) is invoked inside the script via
+    // `singularity exec ${params.aaftf_sif} ...` (see SING_BINDS/SING below), not
+    // as a Nextflow `process.container` -- this process also needs host-side tools
+    // (pigz, Rscript/conda) and the host-staged FCS-GX /dev/shm db.
 
     // Nextflow skips this task when input_clean_genomes/<asmid>.fa.gz already exists.
     storeDir "${launchDir}/input_clean_genomes"
@@ -31,35 +34,39 @@ process GENOME_CLEAN {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
+    module load singularity
+    AAFTF_SIF=${params.aaftf_sif}
+    # AAFTF + taxonkit now come from the AAFTF SIF (replaces `module load AAFTF`
+    # and `module load taxonkit`). The image hardcodes AAFTF_DB=/opt/aaaftf_db and
+    # AAFTF fcs_gx_purge needs the host-staged FCS-GX db (/dev/shm/gxdb) visible,
+    # so bind the host DB + /dev/shm for every in-container call.
+    SING_BINDS="--bind ${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"
+    SING="singularity exec \${SING_BINDS} \${AAFTF_SIF}"
     # Ensure /dev/shm/gxdb is present on this node; register for cleanup when done.
     # Persist per-task FCS-GX /dev/shm sync timing outside work/ (cleanup=true).
     export FCS_GX_TIMING_LOG="${launchDir}/logs/nextflow/fcs_gx_shm_timing.tsv"
     source ${projectDir}/bin/setup_fcs_shm.sh
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     TAXONKIT_DB=${taxondb}
-    module load taxonkit
-    phylum=\$(echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+    phylum=\$(echo ${taxonid} | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
     if [ -z "\$phylum" ]; then
-    	phylum=\$(echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
+    	phylum=\$(echo ${taxonid} | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
 	# weird we are getting 2 lines from name2taxid when input is Fungi add the uniq/head -n 1 to ensure only one line
     fi
     if ! [[ "\$phylum" =~ ^[0-9]+\$ ]]; then
         echo "ERROR: could not resolve a numeric taxid for ${asmid} (input taxonid=${taxonid}); got '\$phylum' instead." >&2
         echo "[DEBUG] taxonkit lineage output:" >&2
-        echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage >&2
+        echo ${taxonid} | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage >&2
         echo "[DEBUG] taxonkit reformat -f {p} output:" >&2
-        echo ${taxonid} | taxonkit --data-dir \$TAXONKIT_DB lineage | taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result >&2
+        echo ${taxonid} | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result >&2
         echo "[DEBUG] TAXONKIT_DB=\$TAXONKIT_DB" >&2
         echo "This usually means the phylum/kingdom name is missing from the taxonkit names.dmp in TAXONKIT_DB (outdated or mismatched taxonomy dump). Update TAXONKIT_DB and retry." >&2
-        module unload taxonkit
         exit 1
     fi
-    module unload taxonkit
     echo "[INFO] Phylum for ${asmid} (taxonid=${taxonid}): \$phylum"
     echo "[INFO] Decompressing and cleaning genome for ${asmid}..."
-    module load AAFTF
     pigz -dc ${genome_gz} > \$SCRATCH/${asmid}.raw.fa
-    AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
+    \$SING AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
         -i \$SCRATCH/${asmid}.raw.fa --cpus ${task.cpus} \
         -o \$SCRATCH/${asmid}.purge.fasta \
         -t "\$phylum" -w \$SCRATCH/${asmid}.fcs_report
