@@ -31,6 +31,7 @@ nextflow run nextflow/main.nf \
     --run_pfam false \
     --run_cazy true \
     --run_merops true \
+    --run_swissprot true \
     --run_signalp true \
     --run_tmhmm false \
     --run_targetp false \
