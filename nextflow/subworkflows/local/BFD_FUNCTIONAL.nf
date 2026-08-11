@@ -23,10 +23,13 @@ include { RUN_TARGETP   } from '../../modules/BFD/TARGETP/main.nf'
 include { RUN_IDP       } from '../../modules/BFD/IDP/main.nf'
 include { RUN_WOLFPSORT } from '../../modules/BFD/WOLFPSORT/main.nf'
 include { RUN_PREDGPI   } from '../../modules/BFD/PREDGPI/main.nf'
+include { RUN_SWISSPROT } from '../../modules/BFD/SWISSPROT/main.nf'
 
 include { MERGE_PFAM      } from '../../modules/BFD/MERGE_PFAM/main.nf'
 include { MERGE_CAZY      } from '../../modules/BFD/MERGE_CAZY/main.nf'
 include { MERGE_MEROPS    } from '../../modules/BFD/MERGE_MEROPS/main.nf'
+include { MERGE_SWISSPROT } from '../../modules/BFD/MERGE_SWISSPROT/main.nf'
+include { BUILD_SWISSPROT_ANNOT } from '../../modules/BFD/BUILD_SWISSPROT_ANNOT/main.nf'
 include { MERGE_SIGNALP   } from '../../modules/BFD/MERGE_SIGNALP/main.nf'
 include { MERGE_TMHMM     } from '../../modules/BFD/MERGE_TMHMM/main.nf'
 include { MERGE_TARGETP   } from '../../modules/BFD/MERGE_TARGETP/main.nf'
@@ -104,6 +107,8 @@ workflow BFD_FUNCTIONAL {
     def run_idp       = params.run_idp.toBoolean()
     def run_wolfpsort = params.run_wolfpsort.toBoolean()
     def run_predgpi   = params.run_predgpi.toBoolean()
+    def run_swissprot = params.run_swissprot.toBoolean()
+    def run_swissprot_annot = params.run_swissprot_annot.toBoolean()
 
     // ── Per-species RUN steps ────────────────────────────────────────────────
     if (run_pfam)
@@ -112,6 +117,8 @@ workflow BFD_FUNCTIONAL {
         RUN_CAZY(staleGuard(proteins_ch, ['cazy/@/@.overview.tsv.gz', 'cazy/@/@.cazymes.tsv.gz', 'cazy/@/@.substrates.tsv.gz']))
     if (run_merops)
         RUN_MEROPS(staleGuardBucketed(proteins_ch, 'merops', ['@.blasttab.gz']))
+    if (run_swissprot)
+        RUN_SWISSPROT(staleGuardBucketed(proteins_ch, 'swissprot', ['@.blasttab.gz']))
     if (run_signalp)
         RUN_SIGNALP(staleGuardBucketed(proteins_ch, 'signalp', ['@.signalp.gff3.gz', '@.signalp.results.txt.gz']))
     if (run_tmhmm)
@@ -144,6 +151,15 @@ workflow BFD_FUNCTIONAL {
 
         def merops_in = mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
         if (merops_in) MERGE_MEROPS(merops_in)
+
+        def swissprot_in = mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
+        if (swissprot_in) MERGE_SWISSPROT(swissprot_in)
+
+        // One-shot build of the SwissProt accession -> annotation table,
+        // independent of the per-genome search engine used above (or of
+        // run_swissprot itself, so it can be refreshed standalone).
+        if (run_swissprot_annot)
+            BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
 
         def signalp_in = mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
         if (signalp_in) MERGE_SIGNALP(signalp_in)

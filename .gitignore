@@ -50,3 +50,7 @@ lib/augustus/3.5/config/species
 nextflow/lib/taxdump/
 # Per-batch clean artefact that GENOME_CLEAN_BATCH emits to launchDir.
 nextflow/TO_ADD_TO_SUPRESS.csv
+
+# SwissProt 2026_02 DBs + flatfile staged under nextflow/lib/swissprot (~1.3 GB) --
+# never commit the binaries. reldate.txt (the pinned release marker) IS committed.
+nextflow/lib/swissprot/uniprot_sprot.*

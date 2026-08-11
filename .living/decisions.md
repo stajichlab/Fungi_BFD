@@ -562,3 +562,19 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Verified**: `nextflow config -profile BFD` resolves `pfam_sif`; standalone smoke of the exact SING form against `Testus_fungus_STRAIN1.proteins.fa` and the real `$PFAM_DB` (2026-01-27-Pfam38.2) through the bind → exit 0, 12.8 s, real domtbl/tblout hits. K8s precedent exists: `conf/profile_BFD_k8.config` already containerized hmmer (`quay.io/biocontainers/hmmer:3.4--pyhdfd78af_0`).
 
 **Tags**: hmmer, hmmsearch, pfam, singleton, singularity, container, nextflow, decision
+## SwissProt search (RUN_SWISSPROT) with dual diamond/blastp engines + MEROPS moved to container blastp (2026-08-10)
+
+**Context**: The BFD functional annotation has no SwissProt homology evidence today. Add `RUN_SWISSPROT` (per-genome blasttab, storeDir `swissprot/<bucket>/`) → `MERGE_SWISSPROT` (duckdb → `swissprot.parquet`) with a joinable `BUILD_SWISSPROT_ANNOT` table (`swissprot_annot.parquet`) parsed from the UniProtKB/Swiss-Prot flatfile. Meanwhile `RUN_MEROPS` still loaded `module load ncbi-blast` (unpinned version, host module).
+
+**Decision**:
+- Both SwissProt engines and MEROPS run from pinned Singularity containers (`module load singularity` + `SING_BINDS`/`SING` pattern, never whole-task `process.container`): **diamond 2.2.5** (quay biocontainer, `params.diamond_sif`) for the default `swissprot_search=diamond` engine, and **blast 2.16.0** (`params.blastp_sif`, pre-existing cache image) for the `swissprot_search=blastp` alternative **and** for `RUN_MEROPS` (self-contained `module load db-merops/124` gives `MEROPS_DB=/srv/projects/db/MEROPS/124`, bound into the container).
+- One 18-column blasttab format shared by both engines so the merge is engine-agnostic; raw evidence is kept at permissive cutoffs (`e 1e-5`, `max_targets 20`) and the 80-80 functional-transfer flag is derived in `bin/merge_swissprot.py`, not pre-filtered in the search.
+- `BUILD_SWISSPROT_ANNOT` intentionally has **no storeDir**: it reprocesses the flatfile every launch so an updated release always propagates (cost ~2m15s to parse `uniprot_sprot.dat.gz`; candidate for a storeDir later if turnaround matters).
+- New run flags `run_swissprot`/`run_swissprot_annot` default true; `swissprot_search`/`swissprot_max_targets`/`swissprot_evalue`/`swissprot_dbdir`/`swissprot_dat` added to `nextflow.config`; `withLabel:'swissprot'` = 8 cpus/16 GB/8 h/epyc.
+- Large staged assets (`nextflow/lib/swissprot/uniprot_sprot.*` — dmnd, fasta/dat.gz, makeblastdb 6-file) are **gitignored**; `reldate.txt` remains committed as the pinned-release marker. Download instructions are documented in `.living`.
+
+**Why not** `process.container` / nf-schema params for the SIF paths: consistent with the established AAFTF/PFAM precedent — per-call `singularity exec` scoping keeps the rest of the shell byte-identical to the module-load form, and the db-merops module is still needed for `MEROPS_DB` (which can't be obtained any other way on this cluster).
+
+**Verified**: `nextflow config -profile BFD` resolves all params; diamond 2.2.5 reads the 2.1.24-built dmnd (build 178) and both engines emit verified 18-col output on a real 100-protein subset (diamond 1,167 HSPs / blastp 1,380 HSPs through the exact module commands); `merge_swissprot.py` + duckdb produced a real parquet (2,547 rows); containerized MEROPS blastp against real `$MEROPS_DB` returns standard 12-col `-outfmt 6 -use_sw_tback` hits; full `-profile test -stub-run` DAG (51/51, incl. RUN/MERGE_SWISSPROT + BUILD_SWISSPROT_ANNOT) passed.
+
+**Tags**: swissprot, diamond, blastp, merops, singularity, container, nextflow, decision

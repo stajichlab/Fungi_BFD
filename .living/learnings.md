@@ -1014,3 +1014,37 @@ A second, independent bug compounded this: `terminal = (start_coord == 0)` requi
 **How to apply**: When containerizing an HPC tool that has both threaded and MPI modes, check the image for `mpirun`/MPI libs first (`singularity exec <sif> which mpirun`) and only containerize the mode the production config actually uses (here `pfam_tasks=1`). Gate any mode that needs MPI behind the host module, and keep the branch divergence explicit in the same `if/else` so the container hit is one isolated hunk.
 
 **Tags**: hmmer, hmmsearch, pfam, mpi, mpirun, singularity, container, nextflow, insight
+### [2026-08-10] SwissProt search + MEROPS containerization: engine choice, DB compat, and MEROPS_DB pin
+
+**Category**: validation / gotcha
+
+**What happened**: Built the BFD SwissProt homology module (`RUN_SWISSPROT`) with two switchable engines, both from Singularity containers (`params.swissprot_search` = `diamond` default | `blastp`):
+- **diamond 2.2.5** (`quay.io/biocontainers/diamond:2.2.5--he361c42_0`, staged as `.../shared/lib/singularity_cache/diamond_2.2.5--he361c42_0.sif`). Chosen over the host `diamond` module (2.1.24) and over `getwilds/diamond:latest` because the getwilds image is stale (latest 2.1.16, 2025-12-30) — user preference: "prefer to use diamond from container over local if recent", and quay biocontainers is the canonical source.
+- **NCBI blastp 2.16.0** (pre-existing `.../shared/lib/singularity_cache/depot.galaxyproject.org-singularity-blast-2.16.0--h66d330f_5.img`, verified `blastp 2.16.0+`). The same image now drives the **containerized RUN_MEROPS** (replaces `module load ncbi-blast`).
+
+**Why it matters / gotchas**:
+1. **diamond 2.2.5 reads the 2.1.24-built dmnd with no rebuild** — verified against `nextflow/lib/swissprot/uniprot_sprot.dmnd` (build version 178, 575,503 seqs). Confirmed again in the full real-proteome run.
+2. **`db-merops/124` exports `MEROPS_DB=/srv/projects/db/MEROPS/124`, not /120** — I initially assumed /120; the modulefile at `/opt/linux/rocky/8.x/x86_64/modules/db-merops/124` sets /124 (the /120 symlink/default is older). `merops_scan.lib` is a symlink to `meropsscan.lib` with full makeblastdb 6-file DB present in /124.
+3. **The `swissprot` label needs its own `withLabel` block** in `conf/profile_BFD.config` (8 cpus/16 GB/8 h/`epyc`) and in `conf/test.config` (local + `beforeScript=':'`, or the stub-run would try to queue SLURM and load unrelated modules).
+4. **Eighteen-column custom blasttab is engine-agnostic**: both diamond `-f 6` and blastp `-outfmt "6 ..."` emit `qseqid sseqid pident positive nident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen stitle`, so `MERGE_SWISSPROT` has one code path. Diamond 2.2.5 emits all 18 columns (verified: 1,167 HSPs from a 100-protein real subset, all width 18).
+5. **Raw 80-80 is a derived flag, not a pre-filter**: cutoffs stay permissive (`-e 1e-5 -k/max_targets 20`); `func_transfer_80_80` = `pident>=80 AND query_cov>=0.8 AND hit_cov>=0.8` is computed in `merge_swissprot.py`. `query_cov=length/qlen`, `hit_cov=length/slen`.
+6. **Real-proteome benchmark**: `Moesziomyces_antarcticus_T-34` proteome (6,288 seqs) → diamond `--sensitive -k 10 -e 1e-5` @ 8 threads = **2m19s** (4,609 aligned), backing the 8-cpu/8-h swissprot label.
+
+**How to apply**: To refresh the SwissProt release, replace `nextflow/lib/swissprot/uniprot_sprot.{fasta,dat}.gz` from `https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/`, rebuild `uniprot_sprot.{dmnd,blastDB}` (makeblastdb 2.16.0 container), and bump `reldate.txt`; `BUILD_SWISSPROT_ANNOT` re-parses the flatfile each launch (no storeDir) so the annot table auto-propagates. Switch engines per-run with `--swissprot_search blastp`.
+
+**Tags**: swissprot, diamond, blastp, merops, singularity, container, nextflow, gotcha, benchmark
+### [2026-08-10] Real-SLURM smoke of containerized MEROPS + SwissProt: /scratch is node-local, and BUILD_DUCKDB wants a full table set
+
+**Category**: validation / gotcha
+
+**What happened**: Ran a real-SLURM smoke (single real genome, Moesziomyces_antarcticus_T-34 / FDB2C4F4) covering containerized `RUN_MEROPS` + `RUN_SWISSPROT` (diamond) + `MERGE_*` + `BUILD_SWISSPROT_ANNOT`. Two real gotchas surfaced:
+1. **`/scratch/jstajich` is node-local NVMe, not shared across SLURM compute nodes** (stat shows `/dev/nvme0n1p6` XFS). Nextflow stages `path(...)` inputs as symlinks; a `samples.csv` under `/scratch/...` was invisible to the compute node the job landed on → `FileNotFoundError: 'samples.csv'` inside `MERGE_SAMPLES` (looked like a code bug, was environmental). Fix: keep ALL smoke inputs/outputs/workdir on the shared filesystem (`/bigdata`). A workdir inside `/scratch` is equally fatal.
+2. **`BUILD_DUCKDB` (`run_build_duckdb`) fails on an incomplete table dir**: `build_BFD_duckDB.sh` hard-globs the full parquet set (`asm_stats.parquet`, ...), so a SwissProt/MEROPS-only smoke errors "IO Error: No files found that match the pattern .../asm_stats.parquet". Expected — that step is for complete runs; smoke sets `run_build_duckdb=false`.
+
+**Other notes from the smoke**: (a) keep a real run's workdir/logbook out of the repo work dir by launching from a dedicated run dir and passing `-resume`, `-w`, and let `launchDir` defaults produce the production layout (`results/`, `tables/`, `db/`, `work/`) — no outdir/tables/db overrides needed; (b) with `run_setup=false` the workflow still hard-validates the input dirs at startup (workflows/BFD.nf `dirIndex(...)`), so point `pep_dir/cds_dir/gff_dir/genome_dir/trna_dir` at the real `_runs/input/{pep,cds,gff3,dna,trna}` (10,943 genomes each; naming `{id}.proteins.fa`, `{id}.cds-transcripts.fa`, `{id}.gff3`, `{id}.scaffolds.fa`, `{id}.trna.gff3`); (c) `setsid bash driver.sh </dev/null >/dev/null 2>&1 &` (not bare `nohup ... &`) so a foreground tool timeout cannot SIGTERM the process group and kill the run.
+
+**Outcome**: smoke fully green — `merops.parquet` (13 cols), `swissprot.parquet` (68,238 rows), `swissprot_annot.parquet` (575,503 rows = full release), `samples/species.parquet`; all 68,238 swissprot rows join to an annotation row on `swissprot_acc = accession`.
+
+**How to apply**: For pipeline smokes on UCR HPCC, keep every path on `/bigdata`, launch from a dedicated run dir with `-resume -w`, and only enable `run_build_duckdb` when the full table set is present.
+
+**Tags**: nextflow, slurm, hpcc, scratch, node-local, smoke, swissprot, merops, duckdb, gotcha
