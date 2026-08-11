@@ -21,8 +21,8 @@ set -euo pipefail
 
 module load duckdb
 
-TABLES=tables
-DBDIR=db
+TABLES="${TABLES:-tables}"
+DBDIR="${DBDIR:-db}"
 DBNAME=BFD
 
 SRC="$TABLES"
