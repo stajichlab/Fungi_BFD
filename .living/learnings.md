@@ -1048,3 +1048,17 @@ A second, independent bug compounded this: `terminal = (start_coord == 0)` requi
 **How to apply**: For pipeline smokes on UCR HPCC, keep every path on `/bigdata`, launch from a dedicated run dir with `-resume -w`, and only enable `run_build_duckdb` when the full table set is present.
 
 **Tags**: nextflow, slurm, hpcc, scratch, node-local, smoke, swissprot, merops, duckdb, gotcha
+### [2026-08-10] Blastp-engine smoke benchmark + storeDir cache gotcha: switching swissprot_search needs a fresh storeDir
+
+**Category**: validation / gotcha / benchmark
+
+**What happened**: Ran the full smoke with `swissprot_search='blastp'` (NCBI blast 2.16.0 container) end-to-end under real SLURM for the same T-34 genome. It completed green (Succeeded 6, Duration 59m 9s). Key numbers vs the diamond path (same proteome, both 8 threads, `-max_target_seqs`/`-k 20`, `-e 1e-5`):
+- **diamond 2.2.5 `--sensitive`**: 2m19s, `swissprot.parquet` = 68,238 rows.
+- **blastp 2.16.0 `-seg yes -soft_masking true`**: ~56 min (RUN_BLAST only), `swissprot.parquet` = 80,502 rows (55,295 distinct accessions).
+- Both emit an identical 18-column blasttab (verified in storeDir output), both merge/annot paths green, both 100% `swissprot_acc`→`accession` join resolution. Blastp returns MORE hits than diamond here (soft-masking rescues alignments diamond's seeding misses). Both accessions resolve in the annot table. Differences are engine-inherent, not a merge bug.
+
+**The operational gotcha (why this took two launches)**: trying to switch engines via `-resume` silently does NOT re-run `RUN_SWISSPROT` — the process has a `storeDir` (`${params.outdir}/swissprot/...`), and when the expected output (`${locustag}.blasttab.gz`) already exists there, Nextflow marks the task `skipped/stored` and never looks at the changed `swissprot_search` param; the cached downstream `MERGE_*` replay diamond output into `tables/` too. To genuinely re-execute, launch a FRESH run dir (empty storeDir) or clear/redirect outdir.
+
+**How to apply**: `params.swissprot_search` only takes effect if the `outdir`/`storeDir` for that species is empty or the species is new. For engine A/B comparisons, use separate run/outdir trees (as here: `smoke_swissprot` diamond vs `smoke_blastp` blastp). In production, the two engines are interchangeable per-run via the same strip; diamond stays the default (56 min vs 2m19s is a 24× runtime difference — irrelevant for a single genome but huge across 10,943).
+
+**Tags**: swissprot, blastp, diamond, benchmark, storedir, nextflow, cache, gotcha, smoke
