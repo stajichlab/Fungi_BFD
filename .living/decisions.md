@@ -550,3 +550,15 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Validated (2026-08-10, live clean-batch job)**: Real 3-genome `GENOME_CLEAN_BATCH` (`only_clean`, S. cerevisiae / S. pombe / C. neoformans) ran to completion via detached `screen` (SLURM job 27332111, h04, 18:05 runtime after ~6h PENDING for a highmem node with ≥500 GB free). The whole clean step ran through the SIF (`$SING AAFTF fcs_gx_purge` + `$SING taxonkit`); FCS-GX db (2023-01-24 build) staged into host `/dev/shm` (498.6 GB in 914 s ≈ 520 MB/s) and freed after the job; real outputs written to `input_clean_genomes/*.fa.gz` + `clean/*.purge.fasta.gz` with correct taxonomy (`fung:ascomycetes`/`budding yeasts` for S288C, `fung:basidiomycetes` for C. neoformans, agg-cov ≥0.979). See `nextflow/tests/real_clean/REAL_CLEAN.md`. The production module-load form is retired — SIF is the only active path in all 3 module files.
 
 **Tags**: nextflow, singularity, aaftf, container, geneclean, decision
+
+## HMMER in RUN_PFAM via manual `singularity exec`, MPI branch stays on the host module (2026-08-10)
+
+**Context**: BFD's only HMMER consumer is `RUN_PFAM` (`nextflow/modules/BFD/PFAM/main.nf`; ANTISMASH `--fullhmmer`/`--clusterhmmer` are internal and irrelevant). It loads `module load db-pfam` (host-side `$PFAM_DB`) and either `hmmer/3.4` (production default `pfam_tasks=1`, non-MPI) or `hmmer/3.4-mpi` with `srun ... --mpi` when `pfam_tasks>1`.
+
+**Decision**: Containerize only the **non-MPI** path — mirror the AAFTF SING/SING_BINDS pattern: `module load singularity`, `SING_BINDS="--bind ${PFAM_DB}:${PFAM_DB}"`, `SING="singularity exec ${SING_BINDS} ${pfam_sif}"`, and invoke `$SING hmmsearch`. Root param `params.pfam_sif` added (`/bigdata/stajichlab/shared/lib/singularity_cache/hmmer_3.4--hdbdd923_1.sif`, HMMER 3.4 Aug 2023 — same version as the module). The `pfam_tasks>1` MPI branch keeps `module load hmmer/3.4-mpi` and is byte-identical to before: the SIF contains `hmmsearch`/`phmmer`/`hmmscan` but **no `mpirun`**, and `--mpi` needs the cluster's OpenMPI/PMI wiring, so it cannot run in the container. In the MPI branch `$SING` is simply unset (expands to empty), leaving `srun ... hmmsearch --mpi ...` unchanged. `db-pfam` stays host-side for both branches (it only exports `$PFAM_DB`, which is then bound into the container).
+
+**Why not** `process.container`: consistency with the AAFTF precedent — the job still needs host pigz etc., and scoping `singularity exec` around just the hmmsearch call keeps the rest of the script identical to the module-load version.
+
+**Verified**: `nextflow config -profile BFD` resolves `pfam_sif`; standalone smoke of the exact SING form against `Testus_fungus_STRAIN1.proteins.fa` and the real `$PFAM_DB` (2026-01-27-Pfam38.2) through the bind → exit 0, 12.8 s, real domtbl/tblout hits. K8s precedent exists: `conf/profile_BFD_k8.config` already containerized hmmer (`quay.io/biocontainers/hmmer:3.4--pyhdfd78af_0`).
+
+**Tags**: hmmer, hmmsearch, pfam, singleton, singularity, container, nextflow, decision

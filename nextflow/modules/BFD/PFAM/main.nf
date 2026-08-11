@@ -28,10 +28,17 @@ process RUN_PFAM {
     if [ ! -z "${mpi_flag}" ]; then
         module load hmmer/3.4-mpi
     else
-        module load hmmer/3.4
+        # Non-MPI (production default: pfam_tasks=1): hmmsearch comes from the
+        # HMMER 3.4 SIF, not `module load hmmer/3.4` (mirrors the AAFTF SIF
+        # pattern). The MPI branch keeps the host module: the SIF has no MPI
+        # runtime and --mpi needs the cluster's OpenMPI/PMI wiring.
+        module load singularity
+        PFAM_SIF=${params.pfam_sif}
+        SING_BINDS="--bind \${PFAM_DB}:\${PFAM_DB}"
+        SING="singularity exec \${SING_BINDS} \${PFAM_SIF}"
     fi
     module load db-pfam
-    ${mpi_launch} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
+    ${mpi_launch} \${SING} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
         --domtbl    ${meta.locustag}.domtblout \\
         --tblout    ${meta.locustag}.tblout \\
         \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null

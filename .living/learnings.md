@@ -1002,3 +1002,15 @@ A second, independent bug compounded this: `terminal = (start_coord == 0)` requi
 **How to apply**: For real clean-step validation/acceptance, launch via `screen -dmS` from `nextflow/` (not sbatch); expect an unbounded wait if the pinned highmem nodes are contended; read timing from `logs/nextflow/fcs_gx_shm_timing.tsv` and validate taxonomy by `pigz -dc <asmid>.purge.fcs_gx-taxonomy.tsv.gz` (header-only lines mean no flagged contamination rows). Keep `conf/test_clean_real.config` + `tests/real_clean/` together as the reproducible unit (see `nextflow/tests/real_clean/REAL_CLEAN.md`).
 
 **Tags**: aaftf, singularity, fcs-gx, dev-shm, geneclean, batch-clean, highmem, slurm, nextflow, validation, gotcha
+
+### [2026-08-10] HMMER SIF has no MPI runtime — containerize only the non-MPI hmmsearch path
+
+**Category**: insight
+
+**What happened**: Containerized `RUN_PFAM`'s hmmsearch (non-MPI default) with `hmmer_3.4--hdbdd923_1.sif` via `singularity exec --bind $PFAM_DB:$PFAM_DB`, mirroring the AAFTF SIF pattern (`params.pfam_sif` in `nextflow.config`). Smoke test of the exact invocation against `Testus_fungus_STRAIN1.proteins.fa` + the real `$PFAM_DB` (2026-01-27-Pfam38.2) exited 0 in 12.8 s with real domtbl/tblout hits. The `pfam_tasks>1` MPI branch was left alone because **the SIF ships `hmmsearch`/`phmmer`/`hmmscan` but no `mpirun`** — it cannot drive HMMER's `--mpi` mode, so that branch still uses `module load hmmer/3.4-mpi` + `srun ... --mpi`. In the MPI branch `$SING` is unset (empty), so the invocation stays byte-identical to the pre-container module-load form.
+
+**Why it matters**: Biocontainers' hmmer image is built without the MPI stack, so "containerize all of hmmer" would silently break `--mpi` (or require a different MPI-enabled image and SIMD/PMI bindings that don't carry over to SLURM srun cleanly). The correct scope is: container for the threaded non-MPI path, host module for the MPI path. Also re-confirmed the repo's Groovy-GString rule: shell vars (`SING`, `SING_BINDS`, `PFAM_SIF`, `$PFAM_DB`) must be written `\${SING}`/`\$PFAM_DB` inside the `"""..."""` script block, while Groovy defs (`${mpi_launch}`, `${params.pfam_sif}`) are plain `$`/`${}`.
+
+**How to apply**: When containerizing an HPC tool that has both threaded and MPI modes, check the image for `mpirun`/MPI libs first (`singularity exec <sif> which mpirun`) and only containerize the mode the production config actually uses (here `pfam_tasks=1`). Gate any mode that needs MPI behind the host module, and keep the branch divergence explicit in the same `if/else` so the container hit is one isolated hunk.
+
+**Tags**: hmmer, hmmsearch, pfam, mpi, mpirun, singularity, container, nextflow, insight
