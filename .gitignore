@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .nextflow/
 .nextflow.log*
+.living/log/
 work/
 tests/output/
 tests/work/
