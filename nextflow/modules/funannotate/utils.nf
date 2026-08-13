@@ -102,6 +102,19 @@ def sharedGenemarkModFor(String species) {
     return (mod.exists() && mod.size() > 0) ? mod : null
 }
 
+// A strain's FUNANNOTATE_TRAIN-produced transcript-to-genome alignment BAM --
+// GENEMARK_RUN's ET mode derives its RNA-seq-informed intron hints from this
+// (bam2hints -> filterIntronsFindStrand.pl -> join_mult_hints.pl -> gmes_petap.pl
+// --ET; see nextflow/docs/GENEMARK_RUN_DESIGN.md's "ET mode" section for why
+// this file specifically, not the raw RNA-seq read BAM). Returns '' (not null)
+// when absent/empty -- GENEMARK_RUN's own script checks for a non-empty string,
+// and an absent file (no RNA-seq for this genome, or FUNANNOTATE_TRAIN hasn't
+// run) is the correct, safe signal to fall back to ES, not an error.
+def trainingTranscriptBamFor(String out) {
+    def bam = file("${params.training_target}/${out}/training/transcript.alignments.bam")
+    return (bam.exists() && bam.size() > 0) ? bam.toString() : ''
+}
+
 // A reuse_eligible strain's GBK must be considered stale if the shared parameters.json
 // it was predicted with has since been refreshed (representative re-annotated, or the
 // ANI/reuse assignment changed) -- mirrors staleRnaseq's shape/purpose.

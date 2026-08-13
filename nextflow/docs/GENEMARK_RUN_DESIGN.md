@@ -1,6 +1,7 @@
 # Design: standalone `GENEMARK_RUN` Nextflow process
 
-Status: IMPLEMENTED (ES mode only, 2026-08-12). Reviewed by Fable before
+Status: IMPLEMENTED — ES and ET both wired and real end-to-end validated
+(2026-08-12). Reviewed by Fable before
 implementation — 8 concrete gaps found, all incorporated (full review kept in
 `.living/decisions.md`, 2026-08-12 entry, for provenance). DAG wiring
 validated via `-profile funannotate,test,test_funannotate -stub-run`: all 5
@@ -352,11 +353,34 @@ nothing extra here and reuses infrastructure this pipeline already has.
 **Revised design for `GENEMARK_RUN`'s ET branch**: gated on
 `training/transcript.alignments.bam` existing and being non-empty (mirrors
 `staleRnaseq()`'s existing data-presence check pattern, just pointed at a
-different file). Still one `genemark_mode: ET` branch inside the same
-`GENEMARK_RUN` process, not a separate process. **Not yet wired into the
-module or the Nextflow subworkflow** — this pass validated the recipe with
-real standalone commands, matching how ES mode was first proven out before
-being built into `GENEMARK_RUN/main.nf`.
+different file). One `genemark_mode: ET` branch inside the same
+`GENEMARK_RUN` process, not a separate process.
+
+**WIRED (2026-08-12)**: `GENEMARK_RUN/main.nf` now has a real
+`mode`/`training_bam`-gated ET branch (falls back to ES when `training_bam`
+is empty — no RNA-seq for that genome). `genemark_mode` (previously declared
+but unreferenced anywhere — confirmed by grep before this change) and a new
+`trainingTranscriptBamFor(out)` helper (`utils.nf`, mirrors
+`sharedGenemarkModFor()`'s shape) are now threaded through all three
+`GENEMARK_RUN`/`GENEMARK_RUN_SIB` call sites in `FUNANNOTATE_PREDICTION.nf`.
+Real end-to-end smoke-tested against the actual wired module (not the
+by-hand recipe) via `nextflow/genemark_run_smoke.nf` — **10,780 gene
+models**, matching the standalone recipe's 10,776 — plus a fast-reuse
+regression check confirming the new 10-element input tuple didn't break the
+ES/`--predict_with` path. Full results:
+`analysis/genemark_run_validation/GENEMARK_RUN_VALIDATION.md`.
+
+One real bug hit and fixed while building the smoke test itself, not the
+module: the first test script attempt lived under
+`nextflow/tests/manual/`, and `${workflow.projectDir}` (which `GENEMARK_RUN`
+uses to locate the vendored `filterIntronsFindStrand.pl`) resolves to
+*whichever script was originally launched*'s own containing directory, not
+a fixed repo root — so a test script anywhere other than `nextflow/` itself
+(sibling to `main.nf`) resolves that path wrong. Fixed by moving the test
+script to `nextflow/genemark_run_smoke.nf`. Production is unaffected (
+`main.nf` already lives at `nextflow/`, confirmed via the params-summary
+`projectDir` printout in an earlier stub-run), but this was a real trap
+worth documenting for any future standalone module smoke test.
 
 **No-RNA-seq genomes, confirmed against the actual wired code**:
 `FUNANNOTATE_RNASEQ.nf:249` explicitly mixes a `predict_no_rnaseq` branch
@@ -367,12 +391,13 @@ works fine without PASA training data. `GENEMARK_RUN`'s **ES** branch has no
 dependency on this at all (`gmes_petap.pl --ES` is pure genome self-training,
 no `training/` data touched) — it triggers unconditionally for every genome
 reaching `rep_todo`/`indep_todo`/`sibling_predict_todo`, RNA-seq or not, and
-this is correct today. The (not-yet-wired) **ET** branch is the one that
-needs an explicit no-RNA-seq fallback to ES, since a no-RNA-seq genome has no
+this is correct today. The **ET** branch (now wired) needs an explicit
+no-RNA-seq fallback to ES, since a no-RNA-seq genome has no
 `transcript.alignments.bam` for ET to read — the
 `training/transcript.alignments.bam` existence gate mentioned above
-naturally provides this (falls through to ES when absent), but it's worth
-stating as an explicit design requirement, not an accident of the gate's
+naturally provides this (falls through to ES when absent, implemented in
+`GENEMARK_RUN/main.nf`'s script body), but it's worth stating as an explicit
+design requirement, not an accident of the gate's
 mechanics, when ET actually gets built.
 
 ### Future consideration: protein hints (BRAKER's EP/ETP mode)
@@ -481,10 +506,15 @@ ES, fast reuse, predict consumption) pass.
 
 ## Remaining next steps
 
-1. ET mode (scoped above, not built).
+1. ~~ET mode~~ — wired and real end-to-end validated 2026-08-12 (T-022 closed).
 2. `species_reuse_clusters.py`'s undeduplicated backfill (Known gap above).
 3. A `GENEMARK_RUN_SIB` invocation has not yet been exercised through the
    real `FUNANNOTATE_PREDICTION.nf` subworkflow itself (only the underlying
-   module, standalone, above) — worth a real `--predict_scope all` run once
-   two real strains of the same species with a backfilled shared store are
+   module, standalone) — worth a real `--predict_scope all` run once two
+   real strains of the same species with a backfilled shared store are
    available to test against.
+4. Protein hints / BRAKER's EP-ETP mode (scoped above, not built).
+5. Test `ghcr.io/nextgenusfs/funannotate:v1.9.0-beta.4` (released after this
+   design's container-side testing) — not yet re-checked whether it resolves
+   any of the packaging bugs found against beta.2/beta.3
+   (`.living/learnings.md`, 2026-08-12 container smoke-test entries).

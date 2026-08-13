@@ -43,7 +43,7 @@ include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/f
 include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 
-include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_PREDICTION {
     take:
@@ -58,6 +58,12 @@ workflow FUNANNOTATE_PREDICTION {
     def predictScope  = ((params.predict_scope ?: 'all') as String).toLowerCase()
     def allowFallback = (params.allow_independent_fallback ?: false).toString().toBoolean()
     def runGenemark   = (params.run_genemark ?: true).toString().toBoolean()
+    // ET mode (nextflow/docs/GENEMARK_RUN_DESIGN.md's "ET mode" section):
+    // recipe validated real end-to-end (10,776 genes), wired here. GENEMARK_RUN
+    // itself falls back to ES per-genome when training_bam is empty (no RNA-seq
+    // for that genome) -- this param picks which mode to REQUEST, not a
+    // guarantee every genome actually gets it.
+    def genemarkMode  = ((params.genemark_mode ?: 'ES') as String).toUpperCase()
 
     // Classify once, up front. is_rep/eligible come from the offline-loaded CSV
     // map (a plain synchronous read, not a channel), so this is cheap per item.
@@ -100,7 +106,7 @@ workflow FUNANNOTATE_PREDICTION {
         if (runGenemark) {
             def rep_genemark_in = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
-                tuple(out, asmid, sp, st, gfa, tt, forceIndep, '')
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '')
             }
             GENEMARK_RUN(rep_genemark_in)
             rep_with_gtf = rep_todo.join(GENEMARK_RUN.out.gtf)
@@ -165,7 +171,7 @@ workflow FUNANNOTATE_PREDICTION {
         if (runGenemark) {
             def genemark_in = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
-                tuple(out, asmid, sp, st, gfa, tt, forceIndep, '')
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '')
             }
             GENEMARK_RUN(genemark_in)
             rep_and_indep_with_gtf = rep_and_indep.join(GENEMARK_RUN.out.gtf)
@@ -309,7 +315,7 @@ workflow FUNANNOTATE_PREDICTION {
             def sib_genemark_in = sibling_predict_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
                 def sharedMod  = sharedGenemarkModFor(sp as String)?.toString() ?: ''
-                tuple(out, asmid, sp, st, gfa, tt, forceIndep, sharedMod)
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, sharedMod)
             }
             GENEMARK_RUN_SIB(sib_genemark_in)
             sibling_predict_with_gtf = sibling_predict_todo.join(GENEMARK_RUN_SIB.out.gtf)

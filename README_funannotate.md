@@ -86,9 +86,10 @@ design, Fable-reviewed before implementation) and
   `predict --genemark_gtf` consumption confirmed equivalent, 11,202 vs.
   11,198 genes). Shipped, `run_genemark=true` by default.
 - **ET mode** (RNA-seq-informed, via `training/transcript.alignments.bam`):
-  recipe validated with real `gmes_petap.pl --ET` runs (10,776 genes), but
-  **not yet wired into the module or subworkflow** — see T-022 in
-  `todo/TODO_REGISTRY.md`.
+  built and wired, real end-to-end validated (10,780 genes through the
+  actual wired module, matching the standalone recipe's 10,776). Falls back
+  to ES automatically for genomes with no RNA-seq. Set `--genemark_mode ET`
+  to enable (default `ES`). T-022 closed, `todo/TODO_REGISTRY.md`.
 - **Ab-initio parameter reuse** (species-representative `.mod` sharing,
   `--predict_with`) composes with the pipeline's existing ANI-driven
   representative/sibling reuse system (`FUNANNOTATE_PREDICTION.nf`,

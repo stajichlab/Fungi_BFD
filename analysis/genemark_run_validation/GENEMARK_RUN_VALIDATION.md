@@ -94,10 +94,40 @@ argparse option has no `action='append'`, so a second `-w` flag silently
 replaces the first — confirmed directly against argparse — this was almost a
 second bug introduced while fixing the first one).
 
+## ET mode wired into the module (`nextflow/genemark_run_smoke.nf`)
+
+Following the recipe validation above, `GENEMARK_RUN/main.nf` was extended
+with a real `mode`/`training_bam`-gated ET branch (bam2hints →
+`filterIntronsFindStrand.pl` → `join_mult_hints.pl` → `gmes_petap.pl --ET`,
+falling back to ES when `training_bam` is empty), and `genemark_mode` +
+`trainingTranscriptBamFor()` threaded through all three `GENEMARK_RUN`
+call sites in `FUNANNOTATE_PREDICTION.nf`.
+
+**Real smoke-tested against the actual wired module** (not the by-hand
+recipe) via `nextflow/genemark_run_smoke.nf` — deliberately placed at
+`nextflow/` top level, sibling to `main.nf`, not under `analysis/`: a first
+attempt at this test living elsewhere failed with
+`Can't open perl script ".../bin/vendor/filterIntronsFindStrand.pl"` because
+`workflow.projectDir` resolves to the *launched script's own* containing
+directory, not a fixed repo root — `GENEMARK_RUN`'s
+`${workflow.projectDir}/bin/vendor/...` reference only resolves correctly
+when the top-level launched script is `nextflow/main.nf` (production) or
+another script living at that same `nextflow/` level (this test).
+
+| Test | Result | Pass criteria |
+|---|---|---|
+| Wired ET (`mode=ET`, real `training_bam`) | 10,780 gene models | Matches the standalone recipe's 10,776 (normal noise) — **pass** |
+| Wired fast reuse (`mode=ES`, real `shared_mod`) | 100,966-line GTF | Matches the earlier reuse test exactly, confirming the new 10-element input tuple didn't regress the ES/reuse path — **pass** |
+
+`GENEMARK_RUN`'s stub-run through the real entry point
+(`nextflow run nextflow/main.nf ... -stub-run`) also confirmed clean DAG
+wiring end-to-end with the new tuple shape (`completed=4 failed=0` /
+`completed=8 failed=0` across two verification passes).
+
 ## Status
 
-Complete for ES mode (wired, tested, shipped) and for validating the ET
-recipe (proven correct standalone, not yet wired). Full detail and
+Complete for both ES mode (wired, tested, shipped) and ET mode (wired,
+real end-to-end tested — see above). T-022 closed. Full detail and
 provenance in `.living/learnings.md` (2026-08-12 entries) and
 `nextflow/docs/GENEMARK_RUN_DESIGN.md`.
 
