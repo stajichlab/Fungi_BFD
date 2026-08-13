@@ -101,7 +101,15 @@ def _store_content_hash(store_dir: Path, augustus_name: str, species_tag: str) -
 def backfill_species_store(species: str, rep_out: str, target: Path,
                             shared_root: Path, threshold: float,
                             aug_cfg: Optional[Path] = None,
-                            dry_run: bool = False) -> BackfillResult:
+                            dry_run: bool = False,
+                            genemark_mod: Optional[Path] = None) -> BackfillResult:
+    """genemark_mod: explicit path to the representative's freshly-trained
+    GeneMark .mod, from GENEMARK_RUN (nextflow/docs/GENEMARK_RUN_DESIGN.md) --
+    GeneMark moved out of funannotate predict's own internal call, so it no
+    longer lands in predict_misc/ab_initio_parameters/ for runs that went
+    through GENEMARK_RUN. When None (the standalone backfill_abinitio sweep,
+    which only knows about representatives predicted before GENEMARK_RUN
+    existed), falls back to deriving it from predict_misc/ as before."""
     species_tag = re.sub(r"\s+", "_", species)
     augustus_name = species_tag.lower()
     rep_dir = find_rep_predict_dir(target, rep_out)
@@ -114,7 +122,7 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
 
     components = {}
     aug_src = ab_initio / "augustus" / "species" / lower_out
-    genemark_src = ab_initio / f"{lower_out}.genemark.mod"
+    genemark_src = genemark_mod if genemark_mod is not None else ab_initio / f"{lower_out}.genemark.mod"
     snap_src = ab_initio / f"{lower_out}.snap.hmm"
 
     if aug_src.is_dir():
@@ -271,26 +279,29 @@ def backfill_species_store(species: str, rep_out: str, target: Path,
 def main_batch(manifest: Path, target: Path, shared_root: Path, threshold: float,
                aug_cfg: Optional[Path], dry_run: bool) -> None:
     """Run backfill_species_store() once per line of a TSV manifest
-    (species\\trep_out) inside a single process invocation. This is what lets
-    BACKFILL_ABINITIO_PARAMS submit one SLURM job per ~100 representatives
-    instead of one per representative -- the per-species work here is
-    seconds of I/O, so job-submission/queue overhead was the real cost.
-    A failure on one line does not stop the rest of the batch (each line is
-    independent and idempotent -- see backfill_species_store()'s content-hash
-    short-circuit), but any REPRESENTATIVE_NOT_PREDICTED failure still fails
-    the whole task at the end, same as the single-item CLI path, so it's
-    visible in the Nextflow report instead of being silently swallowed."""
+    (species\\trep_out\\tgenemark_mod, 3rd field may be empty) inside a single
+    process invocation. This is what lets BACKFILL_ABINITIO_PARAMS submit one
+    SLURM job per ~100 representatives instead of one per representative --
+    the per-species work here is seconds of I/O, so job-submission/queue
+    overhead was the real cost. A failure on one line does not stop the rest
+    of the batch (each line is independent and idempotent -- see
+    backfill_species_store()'s content-hash short-circuit), but any
+    REPRESENTATIVE_NOT_PREDICTED failure still fails the whole task at the
+    end, same as the single-item CLI path, so it's visible in the Nextflow
+    report instead of being silently swallowed."""
     failures = []
     with open(manifest) as fh:
         for lineno, raw in enumerate(fh, 1):
             line = raw.rstrip("\n")
             if not line.strip():
                 continue
-            species, rep_out = line.split("\t", 1)
+            fields = line.split("\t")
+            species, rep_out = fields[0], fields[1]
+            genemark_mod = Path(fields[2]) if len(fields) > 2 and fields[2] else None
             result = backfill_species_store(
                 species=species, rep_out=rep_out, target=target,
                 shared_root=shared_root, threshold=threshold,
-                aug_cfg=aug_cfg, dry_run=dry_run,
+                aug_cfg=aug_cfg, dry_run=dry_run, genemark_mod=genemark_mod,
             )
             print(f"[RESULT] {species}\t{rep_out}\t{result.outcome.value}")
             if result.outcome is BackfillOutcome.REPRESENTATIVE_NOT_PREDICTED:

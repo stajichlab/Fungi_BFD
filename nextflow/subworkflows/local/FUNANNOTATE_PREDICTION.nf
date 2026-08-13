@@ -32,18 +32,32 @@
 include { FUNANNOTATE_PREDICT }                           from '../../modules/funannotate/predict/FUNANNOTATE_PREDICT/main.nf'
 include { FUNANNOTATE_PREDICT as FUNANNOTATE_PREDICT_SIB } from '../../modules/funannotate/predict/FUNANNOTATE_PREDICT/main.nf'
 include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/funannotate/predict/BACKFILL_ABINITIO_PARAMS/main.nf'
+// GENEMARK_RUN (nextflow/docs/GENEMARK_RUN_DESIGN.md): standalone GeneMark
+// step ahead of predict, so predict can move onto the rust container. Two
+// invocations needed -- rep/indep (mutually exclusive with the SIB one
+// within a single execution, since the rep/indep call happens once per
+// predictScope branch and only one branch's Groovy code path ever actually
+// executes) share the plain `GENEMARK_RUN` name; the eligible-sibling
+// invocation, which genuinely coexists with it in --predict_scope all, needs
+// its own alias -- same reasoning as FUNANNOTATE_PREDICT/_SIB above.
+include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
+include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 
-include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_PREDICTION {
     take:
-    predict_input_ch       // tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
-    abinitioReuseMap       // out -> [species, reuse_eligible, is_representative], loaded offline
-    forceIndependentSet    // species that always train independently
+    predict_input_ch             // tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
+    abinitioReuseMap             // out -> [species, reuse_eligible, is_representative], loaded offline
+    forceIndependentSet          // species that always train independently (whole ab-initio bundle)
+    forceIndependentGenemarkSet  // out values that always run GeneMark independently, finer-grained
+                                  // than forceIndependentSet -- AUGUSTUS/SNAP reuse can stay on for a
+                                  // strain while forcing GeneMark specifically to retrain for it
 
     main:
     def predictScope  = ((params.predict_scope ?: 'all') as String).toLowerCase()
     def allowFallback = (params.allow_independent_fallback ?: false).toString().toBoolean()
+    def runGenemark   = (params.run_genemark ?: true).toString().toBoolean()
 
     // Classify once, up front. is_rep/eligible come from the offline-loaded CSV
     // map (a plain synchronous read, not a channel), so this is cheap per item.
@@ -74,15 +88,54 @@ workflow FUNANNOTATE_PREDICTION {
 
     def metadataOut
     if (predictScope == 'representative_only') {
-        FUNANNOTATE_PREDICT(rep_todo)
+        // GENEMARK_RUN ahead of predict (see include block comment for why this
+        // single call, un-aliased, is safe here: only one predictScope branch's
+        // Groovy code path ever actually executes). Representatives never reuse
+        // a shared .mod -- they're what DEFINES the store -- so shared_mod is
+        // always '' and GENEMARK_RUN always takes the fresh --ES path,
+        // guaranteeing every row here gets both a gtf AND a mod. If
+        // run_genemark=false, skip the process entirely and fall back to
+        // predict's own --auto-skip-genemark degradation (empty genemark_gtf).
+        def rep_with_gtf
+        if (runGenemark) {
+            def rep_genemark_in = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
+                def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
+                tuple(out, asmid, sp, st, gfa, tt, forceIndep, '')
+            }
+            GENEMARK_RUN(rep_genemark_in)
+            rep_with_gtf = rep_todo.join(GENEMARK_RUN.out.gtf)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+                }
+        } else {
+            rep_with_gtf = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+            }
+        }
+
+        FUNANNOTATE_PREDICT(rep_with_gtf)
 
         // Backfill every representative predicted (or already up to date) in this
         // run. Batched into groups of ~100 (see BACKFILL_ABINITIO_PARAMS/main.nf) --
-        // one SLURM job per batch instead of one per representative.
-        def freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
-            .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(sp.toString(), out.toString()) }
-            .collate(100)
-            .map { batch -> tuple(batch.hashCode(), batch) }
+        // one SLURM job per batch instead of one per representative. Join in
+        // GENEMARK_RUN's fresh .mod by `out` (1:1, safe -- not the species-keyed
+        // many-to-one shape the availableSpeciesSet join below has to work
+        // around) when run_genemark is on; empty genemark_mod field otherwise so
+        // backfill_abinitio_params.py's augustus/snap backfill still runs.
+        def freshBackfillInput
+        if (runGenemark) {
+            freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
+                .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
+                .join(GENEMARK_RUN.out.mod.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
+                .map { out, sp, mod -> tuple(sp, out, mod) }
+                .collate(100)
+                .map { batch -> tuple(batch.hashCode(), batch) }
+        } else {
+            freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
+                .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(sp.toString(), out.toString(), '') }
+                .collate(100)
+                .map { batch -> tuple(batch.hashCode(), batch) }
+        }
         BACKFILL_ABINITIO_PARAMS(freshBackfillInput)
 
         metadataOut = FUNANNOTATE_PREDICT.out.metadata
@@ -100,24 +153,64 @@ workflow FUNANNOTATE_PREDICTION {
                     staleGenome(out as String, a as String)
             }
 
-        FUNANNOTATE_PREDICT(rep_todo.mix(indep_todo))
+        // rep_todo and indep_todo both always pass shared_mod='' to GENEMARK_RUN
+        // (representatives define the store, independents were never eligible
+        // to reuse it) -- functionally identical fresh-ES paths, so one shared
+        // GENEMARK_RUN call on the mixed channel is correct, not just
+        // convenient (avoids needing a 3rd process alias). Join back onto the
+        // SAME mixed channel before predict; join-by-`out` doesn't care which
+        // original branch a row came from.
+        def rep_and_indep = rep_todo.mix(indep_todo)
+        def rep_and_indep_with_gtf
+        if (runGenemark) {
+            def genemark_in = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
+                def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
+                tuple(out, asmid, sp, st, gfa, tt, forceIndep, '')
+            }
+            GENEMARK_RUN(genemark_in)
+            rep_and_indep_with_gtf = rep_and_indep.join(GENEMARK_RUN.out.gtf)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+                }
+        } else {
+            rep_and_indep_with_gtf = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+            }
+        }
+
+        FUNANNOTATE_PREDICT(rep_and_indep_with_gtf)
 
         // Backfill every representative predicted in THIS run. Batched into
         // groups of ~100 (see BACKFILL_ABINITIO_PARAMS/main.nf) -- one SLURM
-        // job per batch instead of one per representative.
-        def freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
-            .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
-            .filter { out, _sp -> abinitioReuseMap[out]?.is_representative ?: false }
-            .map { out, sp -> tuple(sp, out) }
-            .collate(100)
-            .map { batch -> tuple(batch.hashCode(), batch) }
+        // job per batch instead of one per representative. Representatives
+        // always get a fresh .mod from GENEMARK_RUN above (never reuse), so
+        // this join is 1:1/safe, same argument as the representative_only
+        // branch's equivalent join.
+        def freshBackfillInput
+        if (runGenemark) {
+            freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
+                .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
+                .filter { out, _sp -> abinitioReuseMap[out]?.is_representative ?: false }
+                .join(GENEMARK_RUN.out.mod.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
+                .map { out, sp, mod -> tuple(sp, out, mod) }
+                .collate(100)
+                .map { batch -> tuple(batch.hashCode(), batch) }
+        } else {
+            freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
+                .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
+                .filter { out, _sp -> abinitioReuseMap[out]?.is_representative ?: false }
+                .map { out, sp -> tuple(sp, out, '') }
+                .collate(100)
+                .map { batch -> tuple(batch.hashCode(), batch) }
+        }
         BACKFILL_ABINITIO_PARAMS(freshBackfillInput)
 
         // .out.done emits one (items, marker) pair per BATCH, not per species --
-        // flatten items (each a [species, rep_out] pair) back to one species per
-        // emission so downstream stays the same shape it was pre-batching.
+        // flatten items (each a [species, rep_out, genemark_mod] triple) back to
+        // one species per emission so downstream stays the same shape it was
+        // pre-batching.
         def freshSpeciesCh = BACKFILL_ABINITIO_PARAMS.out.done
-            .flatMap { items, _marker -> items.collect { sp, _rep_out -> sp.toString() } }
+            .flatMap { items, _marker -> items.collect { sp, _rep_out, _mod -> sp.toString() } }
 
         // Species whose shared store already existed BEFORE this run started --
         // known synchronously from the CSV plus one filesystem check per species,
@@ -203,7 +296,39 @@ workflow FUNANNOTATE_PREDICTION {
                     staleSharedParams(out as String, shared_params_json ? file(shared_params_json as String) : null)
             }
 
-        FUNANNOTATE_PREDICT_SIB(sibling_predict_todo)
+        // Eligible siblings: GENEMARK_RUN must read from sibling_predict_todo
+        // (post availability-gating/readyRows), not branched.eligible_sibling
+        // directly -- shared_mod is only resolvable once availableSpeciesSet has
+        // been computed, and resolving it earlier would mean duplicating
+        // readyRows'/blockedRows'/allowFallback's gating logic a second time.
+        // No-op in --predict_scope representative_only (siblings are never
+        // predicted there at all -- branched.eligible_sibling has no consumer
+        // in that branch), which is why this lives only inside the `else`.
+        def sibling_predict_with_gtf
+        if (runGenemark) {
+            def sib_genemark_in = sibling_predict_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
+                def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
+                def sharedMod  = sharedGenemarkModFor(sp as String)?.toString() ?: ''
+                tuple(out, asmid, sp, st, gfa, tt, forceIndep, sharedMod)
+            }
+            GENEMARK_RUN_SIB(sib_genemark_in)
+            sibling_predict_with_gtf = sibling_predict_todo.join(GENEMARK_RUN_SIB.out.gtf)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+                }
+        } else {
+            sibling_predict_with_gtf = sibling_predict_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+            }
+        }
+        // A sibling's own GENEMARK_RUN_SIB.out.mod (only emitted when
+        // force_independent=true forced a fresh train, or the very rare case
+        // a sibling ran before its species had any shared mod at all) is
+        // deliberately never wired into backfill -- only representatives
+        // define the shared per-species store; a forced-independent sibling's
+        // one-off GeneMark model must not silently become that.
+
+        FUNANNOTATE_PREDICT_SIB(sibling_predict_with_gtf)
 
         metadataOut = FUNANNOTATE_PREDICT.out.metadata.mix(FUNANNOTATE_PREDICT_SIB.out.metadata)
     }

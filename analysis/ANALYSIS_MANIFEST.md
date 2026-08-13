@@ -235,3 +235,57 @@ orientation), per-genome TSV outputs with sequences, and a merged per-genome
 summary table reporting total telomeric length and repeat counts. Tested on a
 Neurospora crassa OR74A assembly via local Nextflow execution. Reproduce:
 `bash analysis/telomere_finder/run.sh`.
+
+### genemark_es_contribution
+
+```yaml
+name: genemark-es-contribution
+type: pipeline-validation
+status: complete
+created: 2026-08-12
+last_updated: 2026-08-12
+datasets: [genome_annotation_training/*/training, genome_annotation/*/logfiles/funannotate-predict.log, samples.csv, analysis/funannotate_predict_stage_timing/outputs/per_run_summary.csv]
+algorithms: []
+parent_analysis: null
+key_findings:
+  - "GeneMark-ES's contribution to the final gene set ranges from dominant (68% of genes, fragmented 9.7Mb/1145-contig draft) to substantial (14%) to negligible/net-neutral (0.4%), n=3 genomes (F-008)."
+  - "Dominant case is the smallest/most fragmented assembly, consistent with sparser PASA/RNA-seq training evidence leaving GeneMark as the largest ab-initio evidence source."
+  - "Conclusion: GeneMark is not safely droppable for the rust-container migration; supports building a standalone GENEMARK_RUN Nextflow task rather than relying on --auto-skip-genemark degradation."
+report: analysis/genemark_es_contribution/GENEMARK_ES_CONTRIBUTION.md
+tags: [funannotate, genemark, evm, predict, ab-test, pipeline-validation]
+```
+
+Deterministic paired A/B rerun of `funannotate predict` (baseline vs.
+`-w genemark:0`) on 3 already-trained genomes, against the same existing PASA
+training data, to quantify GeneMark-ES's contribution to the final EVM
+consensus gene set. Motivated by evaluating whether to split GeneMark into a
+standalone Nextflow task (host module, feeding `--genemark_gtf` into a
+container-based predict) as part of adopting the rust-optimized funannotate
+container. Reproduce: `bash analysis/genemark_es_contribution/run.sh`, then
+`python3 analysis/genemark_es_contribution/scripts/compare_results.py`.
+
+### genemark_run_validation
+
+```yaml
+name: genemark-run-validation
+type: pipeline-validation
+status: complete
+created: 2026-08-12
+last_updated: 2026-08-12
+datasets: [analysis/genemark_es_contribution/outputs/predict_runs/Penicillium_citrinum_NRRL_1841__baseline/predict_misc/ab_initio_parameters, input_clean_genomes]
+algorithms: []
+parent_analysis: genemark_es_contribution
+key_findings:
+  - "GENEMARK_RUN fresh --ES: 11,116 gene models, matching the A/B test baseline's internal GeneMark call (11,112) almost exactly."
+  - "GENEMARK_RUN fast --predict_with reuse: completed in ~7 min at 2 cores vs fresh-ES's ~15.5 min at 8 cores -- confirms genuine training-free reuse, not seeded retrain."
+  - "Real funannotate predict --genemark_gtf consumption: confirmed bypasses predict's internal GeneMark call entirely (resolves design doc's open question); final gene count 11,202 vs baseline 11,198, normal noise."
+report: analysis/genemark_run_validation/GENEMARK_RUN_VALIDATION.md
+tags: [funannotate, genemark, evm, predict, container-migration, validation, gmes_petap]
+```
+
+Real (non-stub) end-to-end validation of the `GENEMARK_RUN` Nextflow module
+(nextflow/docs/GENEMARK_RUN_DESIGN.md) via a throwaway standalone workflow
+that includes the real module file directly. All 3 tests (fresh ES, fast
+reuse, predict consumption) pass. Reproduce:
+`nextflow run analysis/genemark_run_validation/scripts/test_genemark_run.nf ...`
+(see report for exact invocations).

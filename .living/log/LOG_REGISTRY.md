@@ -60,3 +60,4 @@
 | 2026-08-03 | 2026-08-03-004 | fungi-bfd | main | 17m | 6 | profile_BFD.config,main.nf,main.nf (+2 more) | | complete | | [log](2026-08-03-004-fungi-bfd.md) |
 | 2026-08-03 | 2026-08-03-005 | fungi-bfd | main | 3m | 7 | rescue_taxonomy_from_backup.py | | complete | | [log](2026-08-03-005-fungi-bfd.md) |
 | 2026-08-03 | 2026-08-03-006 | fungi-bfd | main | 58m | 142 | CLEAN_MASK_PARAMS_GUIDE.md,CLEAN_MASK_QUICK_START.md,suppress.txt (+9 more) | | complete | | [log](2026-08-03-006-fungi-bfd.md) |
+| 2026-08-12 | 2026-08-11-001 | fungi-bfd | main | 913m | 0 |  | | complete | | [log](2026-08-11-001-fungi-bfd.md) |

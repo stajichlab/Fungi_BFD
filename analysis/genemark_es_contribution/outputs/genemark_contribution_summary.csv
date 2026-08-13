@@ -1,0 +1,4 @@
+genome,baseline_raw_total,baseline_genemark_raw,baseline_evm_count,baseline_final_gene_count,nogenemark_raw_total,nogenemark_genemark_raw,nogenemark_evm_count,nogenemark_final_gene_count,baseline_gff_gene_count,nogenemark_gff_gene_count,genes_only_in_baseline,genes_only_in_nogenemark,genes_shared_by_coordinate
+Kluyveromyces_marxianus_YG-4,8193,3535,2953,2632,4658,,2719,2256,2632,2256,381,3,2251
+Penicillium_citrinum_NRRL_1841,40216,11116,11087,11198,29100,,11257,11363,11198,11363,44,152,11154
+Saccharomyces_kudriavzevii_IFO10991,6548,2267,2176,882,4281,,1986,328,882,328,603,47,279

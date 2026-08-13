@@ -17,7 +17,7 @@ process FUNANNOTATE_PREDICT {
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), val(shared_params_json)
+          val(genome_fa), val(shared_params_json), val(genemark_gtf)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -145,6 +145,22 @@ process FUNANNOTATE_PREDICT {
         ABINITIO_REUSE_FLAG=(-p "${shared_params_json}")
     fi
 
+    # GeneMark now runs as its own upstream GENEMARK_RUN process (host module
+    # only -- GeneMark can't be containerized, see nextflow/docs/
+    # GENEMARK_RUN_DESIGN.md), which hands predict a pre-computed GTF here.
+    # --genemark_gtf makes predict skip its internal GeneMark call entirely
+    # (verified in funannotate-live/funannotate/predict.py: the --genemark_gtf
+    # branch short-circuits before RunGeneMarkES/RunGeneMarkET ever run), so
+    # -p's own genemark_mod reuse never gets a chance to redundantly re-run
+    # GeneMark -- Augustus/SNAP reuse from -p is unaffected. Empty
+    # genemark_gtf (run_genemark=false, or GENEMARK_RUN unavailable) falls
+    # back to --auto-skip-genemark's existing graceful degradation, unchanged.
+    GENEMARK_GTF_FLAG=()
+    if [ -n "${genemark_gtf}" ]; then
+        echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
+        GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
+    fi
+
     funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 glimmerhmm:0 \\
@@ -152,7 +168,7 @@ process FUNANNOTATE_PREDICT {
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
-        "\${ABINITIO_REUSE_FLAG[@]}" || true
+        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" || true
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"

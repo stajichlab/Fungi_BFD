@@ -38,7 +38,12 @@ process BACKFILL_ABINITIO_PARAMS {
     label 'report'
 
     input:
-        tuple val(batch_id), val(items)   // items: List of [species, rep_out]
+        // items: List of [species, rep_out, genemark_mod] -- 3rd field is ''
+        // when GENEMARK_RUN is off (run_genemark=false) or the caller is the
+        // standalone backfill_abinitio sweep (representatives predicted before
+        // GENEMARK_RUN existed; backfill_abinitio_params.py falls back to
+        // deriving genemark.mod from predict_misc/ when this field is empty).
+        tuple val(batch_id), val(items)
 
     output:
         tuple val(items), path("*.backfill.done"), emit: done
@@ -50,7 +55,7 @@ process BACKFILL_ABINITIO_PARAMS {
     def aug_cfg      = params.augustus_config ?: ''
     // Manifest content is fully resolved in Groovy before the shell ever sees
     // it, so there's no bare `$` in this string for Groovy to misinterpolate.
-    def manifest = items.collect { sp, out -> "${sp}\t${out}" }.join('\n')
+    def manifest = items.collect { sp, out, mod -> "${sp}\t${out}\t${mod ?: ''}" }.join('\n')
     """
     cat > manifest.tsv <<'BACKFILL_MANIFEST_EOF'
 ${manifest}

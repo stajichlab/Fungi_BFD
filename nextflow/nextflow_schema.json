@@ -135,7 +135,10 @@
                 "gene_prediction_shared_abinitio": { "type": "string", "format": "directory-path", "description": "Root of the species_reuse_clusters.py-backfilled shared ab-initio parameter stores (top-level, not nested under target)." },
                 "force_independent_species":{ "type": "string", "description": "Comma-separated SPECIES values to always train independently, overriding reuse_eligible.", "default": "" },
                 "predict_scope":     { "type": "string", "enum": ["all", "representative_only"], "description": "FUNANNOTATE_PREDICTION scope: 'all' predicts every strain (representatives first, no waiting); 'representative_only' predicts only representative strains.", "default": "all" },
-                "busco_genome_dir":  { "type": "string", "format": "directory-path", "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection." }
+                "busco_genome_dir":  { "type": "string", "format": "directory-path", "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection." },
+                "run_genemark":      { "type": "boolean", "description": "Run standalone GENEMARK_RUN before predict and feed it --genemark_gtf. false reproduces predict's own --auto-skip-genemark degradation (host GENEMARK_PATH unavailable/not wanted). See nextflow/docs/GENEMARK_RUN_DESIGN.md.", "default": true },
+                "genemark_mode":     { "type": "string", "enum": ["ES", "ET"], "description": "GeneMark run mode. ET (RNA-seq intron hints) is scoped but not yet implemented -- only ES is wired up.", "default": "ES" },
+                "genemark_force_independent_strains": { "type": "string", "description": "Comma-separated OUT (species_strain dir name) values to always run GeneMark independently (fresh --ES) for, ignoring an otherwise-available shared species .mod. Finer-grained than force_independent_species: lets AUGUSTUS/SNAP reuse stay on for a strain while forcing GeneMark specifically to retrain (e.g. validating reuse on a borderline-ANI strain).", "default": "" }
             }
         },
         "bfd_functional_options": {

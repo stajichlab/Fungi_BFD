@@ -56,6 +56,19 @@ workflow FUNANNOTATE {
         log.info "force_independent_species: ${forceIndependentSet.join(', ')}"
     }
 
+    // Finer-grained than forceIndependentSet (species-keyed): forces GeneMark
+    // specifically to run independently for these OUT values, while leaving
+    // AUGUSTUS/SNAP reuse (forceIndependentSet) untouched for the same strain.
+    // See nextflow/docs/GENEMARK_RUN_DESIGN.md.
+    def forceIndependentGenemarkSet = (params.genemark_force_independent_strains as String)
+        .split(',')
+        .collect { it.trim() }
+        .findAll { it }
+        .toSet()
+    if (forceIndependentGenemarkSet) {
+        log.info "genemark_force_independent_strains: ${forceIndependentGenemarkSet.join(', ')}"
+    }
+
     // ── Taxonomy filter ───────────────────────────────────────────────────────
     def taxonFilter
     if (params.taxon) {
@@ -148,7 +161,7 @@ workflow FUNANNOTATE {
         return
     }
 
-    FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet)
+    FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet, forceIndependentGenemarkSet)
 
     FUNANNOTATE_ANNOTATION(FUNANNOTATE_PREDICTION.out.metadata, FUNANNOTATE_RNASEQ.out.reads, taxonFilter, asmidFilter, suppressFilter)
 }

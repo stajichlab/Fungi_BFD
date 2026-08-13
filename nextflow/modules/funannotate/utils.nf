@@ -90,6 +90,18 @@ def sharedParamsJsonFor(String species) {
     return (json.exists() && json.size() > 0) ? json : null
 }
 
+// Same existence/non-empty check as sharedParamsJsonFor(), pointed at the
+// species' shared GeneMark .mod instead of parameters.json -- used by
+// GENEMARK_RUN to decide fast-reuse (--predict_with) vs fresh --ES training.
+// Backfilled by backfill_abinitio_params.py into the same per-species store,
+// same file this pipeline already produced (predict_misc/ab_initio_parameters/
+// before GENEMARK_RUN existed; GENEMARK_RUN.out.mod now, see design doc).
+def sharedGenemarkModFor(String species) {
+    def species_tag = species.replaceAll(/\s+/, '_')
+    def mod = file("${params.gene_prediction_shared_abinitio}/${species_tag}/${species_tag}.genemark.mod")
+    return (mod.exists() && mod.size() > 0) ? mod : null
+}
+
 // A reuse_eligible strain's GBK must be considered stale if the shared parameters.json
 // it was predicted with has since been refreshed (representative re-annotated, or the
 // ANI/reuse assignment changed) -- mirrors staleRnaseq's shape/purpose.

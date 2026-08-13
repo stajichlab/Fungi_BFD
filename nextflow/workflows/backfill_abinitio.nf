@@ -45,10 +45,15 @@ workflow BACKFILL_ABINITIO {
     // computation is synchronous (loadAbinitioReuseMap() already read the CSV
     // eagerly), so there's no combine()/collectFile() footgun to worry about
     // here; only the final Channel.fromList() hand-off is a real channel.
+    // 3rd field ('') tells backfill_abinitio_params.py to derive genemark.mod
+    // from predict_misc/ab_initio_parameters/ the old way (see
+    // BACKFILL_ABINITIO_PARAMS/main.nf) -- this sweep only ever sees
+    // representatives predicted before GENEMARK_RUN existed, so there is no
+    // GENEMARK_RUN output to hand it explicitly.
     def candidates = abinitioReuseMap
         .findAll { _out, v -> v.is_representative }
-        .collect { out, v -> tuple(v.species, out) }
-        .findAll { species, out ->
+        .collect { out, v -> tuple(v.species, out, '') }
+        .findAll { species, out, _mod ->
             def has_gbk = gbkResult("${params.target}/${out}/predict_results", out as String) != null
             if (!has_gbk) {
                 log.info "backfill_abinitio: skipping ${out} (${species}) -- not yet predicted"

@@ -54,3 +54,12 @@ nextflow/TO_ADD_TO_SUPRESS.csv
 # SwissProt 2026_02 DBs + flatfile staged under nextflow/lib/swissprot (~1.3 GB) --
 # never commit the binaries. reldate.txt (the pinned release marker) IS committed.
 nextflow/lib/swissprot/uniprot_sprot.*
+
+# GeneMark A/B test + GENEMARK_RUN validation: full funannotate predict output
+# trees (multi-GB each, same shape as genome_annotation/ above) and derived
+# GTF/mod artifacts -- regenerable via each analysis's documented reproduce
+# commands. Scripts, docs, small CSV summaries, and SLURM logs ARE committed.
+analysis/genemark_es_contribution/outputs/predict_runs/
+analysis/genemark_run_validation/outputs/predict_runs/
+analysis/genemark_run_validation/outputs/*.gtf
+analysis/genemark_run_validation/outputs/*.mod
