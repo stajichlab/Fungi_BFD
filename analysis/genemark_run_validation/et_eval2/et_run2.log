@@ -1,0 +1,128 @@
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2202	2593	0
+Internal	1010	1326	1612
+Terminal	2113	2665	0
+Single	3475	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	8800	5365	3435	2214485	5165875
+Intergenic	all	between_match	seq_match
+Intergenic:	8316	953	1655083
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2297	4044	0
+Internal	1327	1838	3640
+Terminal	1995	4328	0
+Single	2838	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	8457	5306	3151	1949836	4844152
+Intergenic	all	between_match	seq_match
+Intergenic:	9225	2116	2778451
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2686	4822	0
+Internal	2509	2378	5858
+Terminal	2278	5210	0
+Single	3047	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	10520	7573	2947	2280440	4480245
+Intergenic	all	between_match	seq_match
+Intergenic:	10603	2677	2945562
+SvsM  0.232837055417701 vs 0.767162944582299
+genes in IvsT all and selected: 16223 6275
+1, -1.14894148514601
+2, -1.26446463283496
+3, -1.7143558522936
+4, -2.27663003789563
+5, -2.93618627401954
+6, -3.50258174894034
+7, -4.09036841384246
+8, -4.66679132009426
+9, -5.60883454807083
+10, -5.69980632627656
+12, -6.44174367100594
+# estimate 1: 0.612402145102632
+# estimate 2: 0.585662693911388
+# value: 0.585662693911388
+IvsT  0.585662693911388 vs 0.414337306088612
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2703	5505	0
+Internal	2823	2128	7450
+Terminal	2352	5851	0
+Single	2541	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	10419	7687	2732	2153176	4132843
+Intergenic	all	between_match	seq_match
+Intergenic:	10804	3315	3481744
+SvsM  0.199773136718489 vs 0.800226863281511
+genes in IvsT all and selected: 18030 6760
+1, -1.17817434264338
+2, -1.28508445918838
+3, -1.72620445306233
+4, -2.23398677665129
+5, -2.85263142991332
+6, -3.44814014090935
+7, -3.92842904081526
+8, -4.5992704638609
+9, -5.15521652290736
+10, -5.64072433868906
+11, -6.25382881157547
+# estimate 1: 0.624070992789795
+# estimate 2: 0.5854338289133
+# value: 0.5854338289133
+IvsT  0.5854338289133 vs 0.4145661710867
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2747	5568	0
+Internal	2890	2103	7577
+Terminal	2405	5905	0
+Single	2469	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	10511	7789	2722	2149086	4118299
+Intergenic	all	between_match	seq_match
+Intergenic:	10836	3368	3527038
+SvsM  0.195011639507815 vs 0.804988360492185
+genes in IvsT all and selected: 18236 6837
+1, -1.1681067590119
+2, -1.29480761546971
+3, -1.72596022492627
+4, -2.24531292552808
+5, -2.86139675792843
+6, -3.42742693604151
+7, -3.93975518969204
+8, -4.5396448767654
+9, -5.16654267178415
+10, -5.65205048756585
+11, -6.12205411681158
+# estimate 1: 0.624095196314981
+# estimate 2: 0.589207378068092
+# value: 0.589207378068092
+IvsT  0.589207378068092 vs 0.410792621931908
+From 20601 loaded 20601 and ignored dublications 0
+exon	no_match	match_one	match_two
+Initial	2757	5575	0
+Internal	2902	2107	7591
+Terminal	2411	5916	0
+Single	2456	0	0
+CDS_no_match	all	short	long	seq_short	seq_long
+CDS_no_match	10526	7802	2724	2149214	4120933
+Intergenic	all	between_match	seq_match
+Intergenic:	10840	3380	3538508
+SvsM  0.19432445005649 vs 0.80567554994351
+genes in IvsT all and selected: 18272 6851
+1, -1.16921205554136
+2, -1.29578596759839
+3, -1.72308777031573
+4, -2.23910537186046
+5, -2.86857056238445
+6, -3.42497813454278
+7, -3.94934798341653
+8, -4.52808481279873
+9, -5.16858825987325
+10, -5.74110745264458
+11, -6.05956118376312
+# estimate 1: 0.624069614711033
+# estimate 2: 0.588988922264385
+# value: 0.588988922264385
+IvsT  0.588988922264385 vs 0.411011077735615

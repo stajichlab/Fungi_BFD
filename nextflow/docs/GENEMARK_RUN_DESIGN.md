@@ -233,17 +233,169 @@ Concretely:
   alongside `is_rep`/`eligible` in the `classified` `.map{}` block, threaded
   through into the `rep_genemark_in`/sibling `GENEMARK_RUN` input tuples.
 
-## ET mode — scoped, not built yet (todo/genemark_et_mode.md)
+## ET mode — evaluated 2026-08-12 (T-022), corrected from the first pass above
 
-Confirmed by reading `RunGeneMarkET()`: needs (1) the sorted RNA-seq BAM
-(`funannotate_train.coordSorted.bam`, already produced by `FUNANNOTATE_TRAIN`),
-(2) Augustus's `bam2hints --intronsonly` to build the `b2h`-tagged intron
-hints GFF `RunGeneMarkET` filters for, (3) `gmes_petap.pl --ET <hints>
---sequence genome.fa`. All three pieces already exist somewhere in the
-pipeline (BAM from training, `bam2hints` ships with Augustus); this is a
-`genemark_mode: ET` branch inside the same `GENEMARK_RUN` process, gated by
-whether the strain has real RNA-seq (mirrors `staleRnaseq()`'s existing
-data-presence check), not a separate process or pipeline.
+**The first pass above was wrong about which BAM feeds the hints.**
+`RunGeneMarkET()`'s filter is `"\tintron\t" in line and "\tb2h\t" in line` —
+tracing where a real `\tb2h\t`-tagged line actually comes from (not just
+grepping for "bam2hints" and assuming) shows it is **not** the raw RNA-seq
+read alignment (`args.rna_bam` / `funannotate_train.coordSorted.bam`,
+processed via the external `bam2hints` binary with its *default* `--source=E`
+— tagged `E`, which `RunGeneMarkET`'s filter would silently never match).
+It's **transcript-alignment evidence**: `bam2ExonsHints()`
+(`funannotate/library.py:1952`, funannotate's own Python BAM→hints
+converter, not the AUGUSTUS binary) explicitly sets `btag = "b2h"` when
+called on minimap2-aligned transcript evidence
+(`predict.py:1476`). AUGUSTUS's own `blat2hints.pl` (the BLAT-alignment path)
+uses the same `b2h` convention. Both paths are about spliced *transcript*
+alignments, not raw short-read RNA-seq alignments.
+
+**Good news this correction produces**: the exact input needed —
+`training/transcript.alignments.bam` — is **already produced and retained**
+by `FUNANNOTATE_TRAIN` (confirmed on disk for
+`Penicillium_citrinum_NRRL_1841`, alongside `funannotate_train.coordSorted.bam`,
+the raw-reads BAM this design's first pass mistakenly pointed at). No new
+alignment work is needed; ET mode is actually *simpler* than first scoped,
+not harder.
+
+**Verified end-to-end** (`analysis/genemark_run_validation/et_eval/`, real
+run, not inferred from source): the external AUGUSTUS `bam2hints` binary,
+run directly against `transcript.alignments.bam` with an explicit
+`--source=b2h` override (its default is `E`), produces a hints file whose
+every line is independently confirmed to match `RunGeneMarkET()`'s filter
+exactly (`b2h` in column 2, `intron` in column 3):
+
+```bash
+bam2hints --intronsonly --source=b2h \
+    --in=<training_dir>/transcript.alignments.bam \
+    --out=raw_hints.gff
+awk -F'\t' 'BEGIN{OFS="\t"} $3=="intron" && $2=="b2h" {$6="500"; print}' \
+    raw_hints.gff > genemark.intron-hints.gff   # score->500, exactly matching
+                                                 # RunGeneMarkET()'s own rewrite
+gmes_petap.pl --ET genemark.intron-hints.gff --sequence genome.fa \
+    --max_intron 3000 --soft_mask 2000 --cores N --fungus
+```
+
+21,400 intron hints produced for `Penicillium_citrinum_NRRL_1841` (correctly
+b2h/intron-tagged, score rewritten to 500 matching `RunGeneMarkET()` exactly)
+— **but the real `gmes_petap.pl --ET` run on them FAILS**:
+```
+warning, no data in specified range .../histogram.pl
+error, hash is empty: .../bp_seq_select.pl
+error on call: .../bp_seq_select.pl --seq_in bp_region.seq --seq_out gibbs.seq
+  --max_seq 4000 --bp_region_length 50 --min_bp_region_length 40
+```
+**Root cause, confirmed** (not guessed): this genome's intron length
+distribution is `min=32 median=65 mean=81.6 max=2934` bp (measured directly
+from the 21,400 hints). GeneMark's branch-point-region extraction searches a
+40-50bp window *within* each intron to find spliceosomal branch-point signal
+— for a median-65bp intron, that window consumes nearly the entire intron,
+leaving `bp_seq_select.pl` with too little usable sequence to build a
+branch-point training set. Reading `gmes_petap.pl`'s source
+(`bp_seq_select.pl` calls at lines 483/539/878) shows this branch-point step
+is shared between `--ET` and `--fungus`'s internal `ES_C` sub-mode — and the
+earlier **successful** `--ES --fungus` run (11,116 genes) went through an
+analogous step fine, because ES's candidate introns come from its own
+broader genome-wide self-discovered search, not from a caller-supplied hints
+file restricted to externally-aligned regions. The failure is specific to
+feeding *external* hints into the branch-point step for a fungal genome with
+characteristically short introns, not something wrong with the hints file's
+format or content.
+
+**FIXED (2026-08-12), root cause was not intron length — it was missing
+strand assignment.** Cross-checked against BRAKER (`Gaius-Augustus/BRAKER`
+on GitHub, fetched `braker.pl` + `filterIntronsFindStrand.pl` directly — the
+far more battle-tested GeneMark-ET pipeline), which never feeds raw
+`bam2hints` output straight to GeneMark. Every intron hint first goes
+through `filterIntronsFindStrand.pl`: it checks the genome sequence at each
+intron's boundary against canonical splice-site dinucleotides (GT-AG/GC-AG/
+AT-AC), assigns the correct strand, and **silently drops any intron without
+a canonical splice site**. My hints had `.` (unstranded) in the strand
+column — branch-point signal is inherently strand-specific, so `bp_seq_select.pl`
+had nothing orientable to work with. The `--bp_region_length`/intron-length
+hypothesis above was a plausible-sounding but wrong lead — BRAKER uses the
+same GeneMark defaults and never touches those flags either.
+
+Corrected recipe, verified with a real `gmes_petap.pl --ET` run
+(`analysis/genemark_run_validation/et_eval2/`, matching BRAKER's
+`get_genemark_hints()` exactly — `braker.pl` lines 4888-4995):
+
+```bash
+bam2hints --intronsonly --in=<training_dir>/transcript.alignments.bam --out=raw_hints.gff
+perl filterIntronsFindStrand.pl genome.fa raw_hints.gff --score > stranded.gff
+sort -n -k4,4 stranded.gff | sort -s -n -k5,5 | sort -s -k3,3 | sort -s -k1,1 \
+    | join_mult_hints.pl > genemark.intron-hints.gff   # AUGUSTUS script, already on PATH
+gmes_petap.pl --ET genemark.intron-hints.gff --sequence genome.fa \
+    --max_intron 3000 --soft_mask 2000 --cores N --fungus
+```
+
+20,603 of 21,400 hints (96%) passed stranding/canonicalization for
+`Penicillium_citrinum_NRRL_1841`. The `--ET` run **completed successfully**:
+**10,776 gene models** — same order of magnitude as the ES run's 11,116,
+plausible given RNA-seq-informed splice boundaries producing a somewhat
+different (not necessarily worse) model. `filterIntronsFindStrand.pl` is not
+bundled with this project's funannotate/Augustus install — fetched directly
+from BRAKER's repo for this test; needs to be vendored (`nextflow/bin/`) if
+ET mode gets built.
+
+One design point clarified along the way (not a correction, a confirmation):
+BRAKER derives hints from raw RNA-seq read alignment (no prior assembly
+needed, since BRAKER never runs Trinity), while funannotate's `b2h` hints
+come from **transcript**-alignment evidence — a real difference in general,
+but for this project specifically `FUNANNOTATE_TRAIN` already runs Trinity-GG
+assembly + transcript alignment as part of its existing PASA-training
+pipeline, so that cost is paid regardless of whether `GENEMARK_RUN` uses it.
+Using `training/transcript.alignments.bam` (funannotate's existing
+convention) rather than re-deriving BRAKER-style raw-read hints costs
+nothing extra here and reuses infrastructure this pipeline already has.
+
+**Revised design for `GENEMARK_RUN`'s ET branch**: gated on
+`training/transcript.alignments.bam` existing and being non-empty (mirrors
+`staleRnaseq()`'s existing data-presence check pattern, just pointed at a
+different file). Still one `genemark_mode: ET` branch inside the same
+`GENEMARK_RUN` process, not a separate process. **Not yet wired into the
+module or the Nextflow subworkflow** — this pass validated the recipe with
+real standalone commands, matching how ES mode was first proven out before
+being built into `GENEMARK_RUN/main.nf`.
+
+**No-RNA-seq genomes, confirmed against the actual wired code**:
+`FUNANNOTATE_RNASEQ.nf:249` explicitly mixes a `predict_no_rnaseq` branch
+into `predict_input_ch` — genomes with no RNA-seq skip `FUNANNOTATE_TRAIN`
+entirely (no `training/` dir gets populated at all) but still flow into
+`FUNANNOTATE_PREDICTION.nf` like any other genome, since predict itself
+works fine without PASA training data. `GENEMARK_RUN`'s **ES** branch has no
+dependency on this at all (`gmes_petap.pl --ES` is pure genome self-training,
+no `training/` data touched) — it triggers unconditionally for every genome
+reaching `rep_todo`/`indep_todo`/`sibling_predict_todo`, RNA-seq or not, and
+this is correct today. The (not-yet-wired) **ET** branch is the one that
+needs an explicit no-RNA-seq fallback to ES, since a no-RNA-seq genome has no
+`transcript.alignments.bam` for ET to read — the
+`training/transcript.alignments.bam` existence gate mentioned above
+naturally provides this (falls through to ES when absent), but it's worth
+stating as an explicit design requirement, not an accident of the gate's
+mechanics, when ET actually gets built.
+
+### Future consideration: protein hints (BRAKER's EP/ETP mode)
+
+`gmes_petap.pl` has distinct `--EP`/`--ETP` modes (protein-only / transcript
++protein combined) — BRAKER's `get_genemark_hints()` builds a matching
+`gm_hints_prot` file by filtering the master hints for `src=P`. This project
+already computes comparable protein-alignment evidence: funannotate's own
+`exonerate2hints()` (`library.py:4571`, run against `--protein_evidence`,
+SwissProt in this pipeline) produces `hintsP`, but tags it `src=XNT`, not
+`src=P` — same category of tag mismatch as the intron-hints case above, so
+combining it isn't a free drop-in (would need relabeling `XNT`→`P` or a
+small translator; the `CDSpart`/`intron` feature shapes look compatible at a
+glance but weren't verified). Not attempted in this pass — noted as a real,
+plausible extension once ET mode itself is wired into `GENEMARK_RUN`, not
+before.
+
+**BRAKER4** (`Gaius-Augustus/BRAKER4`, Snakemake-based) exists as a newer
+alternative with different mode support. Not adopted here — the ES/ET recipe
+validated in this pass (calling `gmes_petap.pl` directly, matching the exact
+hints-preparation steps BRAKER's Perl pipeline performs) is sufficient for
+what `GENEMARK_RUN` needs and keeps this project's own Nextflow orchestration
+in control, rather than taking on a second full pipeline dependency.
 
 ## Open question — RESOLVED (see "Real end-to-end validation" below)
 

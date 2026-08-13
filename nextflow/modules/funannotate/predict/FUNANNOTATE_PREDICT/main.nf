@@ -155,15 +155,35 @@ process FUNANNOTATE_PREDICT {
     # GeneMark -- Augustus/SNAP reuse from -p is unaffected. Empty
     # genemark_gtf (run_genemark=false, or GENEMARK_RUN unavailable) falls
     # back to --auto-skip-genemark's existing graceful degradation, unchanged.
+    #
+    # -w genemark:1 MUST be passed explicitly whenever genemark_gtf is set --
+    # predict.py:567 unconditionally zeroes StartWeights["genemark"] when
+    # gmes_petap.pl isn't on the host running predict (`if not genemarkcheck:
+    # StartWeights["genemark"] = 0`), with NO check for whether --genemark_gtf
+    # was supplied as an alternative. On the host module today gmes_petap.pl
+    # IS present, so this is currently a no-op safety net; the moment predict
+    # moves onto the container (no gmes_petap.pl at all), genemarkcheck goes
+    # False and a correctly-supplied --genemark_gtf would silently get EVM
+    # weight 0 -- the precomputed evidence consumed but then discarded --
+    # unless this override forces the weight back on. Confirmed by reading
+    # predict.py, not yet re-tested against an actual container run.
+    #
+    # All -w values MUST go in a single -w group, not two separate -w flags:
+    # funannotate's argparse `-w/--weights` (nargs='+', no action='append')
+    # replaces the whole list on a second -w occurrence rather than merging
+    # (verified directly against argparse) -- a second `-w genemark:1` would
+    # silently drop codingquarry:0/glimmerhmm:0 entirely.
     GENEMARK_GTF_FLAG=()
+    WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
     if [ -n "${genemark_gtf}" ]; then
         echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
         GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
+        WEIGHT_ARGS+=(genemark:1)
     fi
 
     funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
-        --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w codingquarry:0 glimmerhmm:0 \\
+        --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\

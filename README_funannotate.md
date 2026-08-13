@@ -14,14 +14,15 @@ modules/funannotate/
   genome/      GENOME_CLEAN, GENOME_CLEAN_BATCH, MASKREPEAT_TANTAN_RUN
   rnaseq/      SRA_QUERY_BATCH, COLLECT_SRA_QUERY, SRA_FETCH, SRA_FETCH_SE,
                WRITE_EMPTY_READS, RNASEQ_PREPARE, FUNANNOTATE_TRAIN
-  predict/     FUNANNOTATE_PREDICT, FUNANNOTATE_UPDATE
+  predict/     GENEMARK_RUN, FUNANNOTATE_PREDICT, FUNANNOTATE_UPDATE,
+               BACKFILL_ABINITIO_PARAMS
   function/    ANTISMASH_RUN, INTERPROSCAN_RUN, SIGNALP_RUN,
                FUNANNOTATE_ANNOTATE
 
 subworkflows/local/
   FUNANNOTATE_GENOME_PREP.nf    genome cleaning + repeat masking
   FUNANNOTATE_RNASEQ.nf         SRA query → fetch → trinity → train
-  FUNANNOTATE_PREDICTION.nf     funannotate predict (ab-initio reuse + staleness)
+  FUNANNOTATE_PREDICTION.nf     GeneMark → funannotate predict (ab-initio reuse + staleness)
   FUNANNOTATE_ANNOTATION.nf     antiSMASH + InterProScan + SignalP + update + annotate
 
 workflows/funannotate.nf        orchestrates the 4 subworkflows
@@ -41,6 +42,68 @@ Or via the SLURM wrapper (recommended for production):
 ```bash
 sbatch nextflow/run_funannotate.sh
 ```
+
+---
+
+## GeneMark handling
+
+GeneMark's license forbids redistribution, so it can never ship in a
+container — this matters because the pipeline's training/predict steps are
+migrating from a host environment-module install onto a rust-optimized
+Singularity container (Trinity/PASA/EVM all confirmed working there).
+GeneMark had to come out of `funannotate predict`'s internal call and become
+its own step: **`GENEMARK_RUN`** (`modules/funannotate/predict/GENEMARK_RUN/`),
+always host-module-only, running *between* `FUNANNOTATE_TRAIN` and
+`FUNANNOTATE_PREDICT`:
+
+```
+RNASEQ_PREPARE (species rep only, once)  →  Trinity-GG assembly
+        │
+        ▼
+FUNANNOTATE_TRAIN (per strain)  →  reuses shared Trinity, runs PASA
+        │                          → training/funannotate_train.pasa.gff3
+        │                          → training/transcript.alignments.bam
+        ▼
+GENEMARK_RUN (per strain, ES mode)  →  gmes_petap.pl --ES (fresh) or
+        │                              --predict_with <mod> (fast reuse,
+        │                              genuinely training-free, not just a
+        │                              faster seeded retrain)
+        │                          → <out>.genemark.gtf
+        ▼
+FUNANNOTATE_PREDICT  →  --genemark_gtf <out>.genemark.gtf
+                         (predict's own internal GeneMark call never runs;
+                          confirmed via real testing, not just source reading)
+```
+
+**Design/validation record**: `nextflow/docs/GENEMARK_RUN_DESIGN.md` (full
+design, Fable-reviewed before implementation) and
+`analysis/genemark_run_validation/` (real end-to-end test results).
+
+**Current status (2026-08-12)**:
+- **ES mode**: built, wired into `FUNANNOTATE_PREDICTION.nf`, real
+  end-to-end validated (fresh training and fast `--predict_with` reuse both
+  produce results matching the original internal-GeneMark baseline; real
+  `predict --genemark_gtf` consumption confirmed equivalent, 11,202 vs.
+  11,198 genes). Shipped, `run_genemark=true` by default.
+- **ET mode** (RNA-seq-informed, via `training/transcript.alignments.bam`):
+  recipe validated with real `gmes_petap.pl --ET` runs (10,776 genes), but
+  **not yet wired into the module or subworkflow** — see T-022 in
+  `todo/TODO_REGISTRY.md`.
+- **Ab-initio parameter reuse** (species-representative `.mod` sharing,
+  `--predict_with`) composes with the pipeline's existing ANI-driven
+  representative/sibling reuse system (`FUNANNOTATE_PREDICTION.nf`,
+  `BACKFILL_ABINITIO_PARAMS`) — a representative's freshly-trained `.mod`
+  gets backfilled to `gene_prediction_shared_abinitio/<species>/`, and
+  eligible siblings get the fast training-free reuse path automatically.
+- GeneMark's contribution to the final annotated gene set is **highly
+  genome-dependent** — from negligible (0.4%) to a genome's majority (68%,
+  on a small/fragmented assembly) — see finding F-008
+  (`.living/findings/funannotate-genemark-contribution.md`). This is why
+  `GENEMARK_RUN` exists rather than relying on `--auto-skip-genemark`'s
+  graceful degradation once predict moves to the container.
+- No RNA-seq for a genome does **not** skip `GENEMARK_RUN` — ES mode is
+  pure genome self-training with no RNA-seq dependency, so it runs
+  unconditionally for every genome reaching the predict stage.
 
 ---
 

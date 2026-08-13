@@ -63,3 +63,7 @@ analysis/genemark_es_contribution/outputs/predict_runs/
 analysis/genemark_run_validation/outputs/predict_runs/
 analysis/genemark_run_validation/outputs/*.gtf
 analysis/genemark_run_validation/outputs/*.mod
+analysis/genemark_run_validation/et_eval/*.gff
+analysis/genemark_run_validation/et_eval2/*.gff
+analysis/genemark_run_validation/et_eval2/*.gtf
+analysis/genemark_run_validation/et_eval2/*.mod

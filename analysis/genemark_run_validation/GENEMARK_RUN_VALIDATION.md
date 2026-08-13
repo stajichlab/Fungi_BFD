@@ -46,11 +46,60 @@ empty value. Fixed by omitting the flag rather than passing an empty string;
 confirmed this cannot affect the real pipeline (which passes these values as
 Groovy string literals inside `tuple()`, never through CLI parsing).
 
+## ET mode (T-022) — standalone recipe validation (`et_eval/`, `et_eval2/`)
+
+Separate from the 3 tests above (which cover the wired `GENEMARK_RUN` module
+in ES mode only): evaluated whether GeneMark-ET is viable at all for this
+pipeline, using real standalone commands (not yet wired into the module).
+
+**First attempt failed**: `bam2hints --source=b2h` on
+`training/transcript.alignments.bam`, filtered/rescored to match
+`RunGeneMarkET()`'s exact convention → `gmes_petap.pl --ET` died in
+`bp_seq_select.pl: hash is empty`.
+
+**Root cause** (confirmed against `Gaius-Augustus/BRAKER`'s real pipeline,
+not guessed): the hints had no strand assigned (`.` in column 7). BRAKER
+always runs raw intron hints through `filterIntronsFindStrand.pl` before
+GeneMark ever sees them — checks genome sequence at each intron boundary for
+canonical splice sites (GT-AG/GC-AG/AT-AC), assigns strand, and drops
+non-canonical introns. Branch-point signal is inherently strand-specific;
+unstranded hints gave `bp_seq_select.pl` nothing usable.
+
+**Fixed recipe** (`et_eval2/`), verified with a real `gmes_petap.pl --ET`
+run: `bam2hints --intronsonly` → `filterIntronsFindStrand.pl` (vendored at
+`nextflow/bin/vendor/filterIntronsFindStrand.pl`, Artistic License, from
+BRAKER) → `join_mult_hints.pl` (AUGUSTUS script, already on PATH) →
+`gmes_petap.pl --ET`. 20,603 of 21,400 hints (96%) passed stranding.
+**Result: 10,776 gene models**, same order of magnitude as the ES run's
+11,116. **T-022 status: unblocked, recipe validated, not yet wired into
+`GENEMARK_RUN/main.nf` or the Nextflow subworkflow.**
+
+Full trace, including the BRAKER source investigation and the ruled-out
+`--bp_region_length` hypothesis: `nextflow/docs/GENEMARK_RUN_DESIGN.md`'s
+"ET mode" section.
+
+## Also found while validating: a latent EVM-weight bug in `FUNANNOTATE_PREDICT`
+
+`predict.py:567` unconditionally zeroes GeneMark's EVM weight
+(`StartWeights["genemark"] = 0`) whenever `gmes_petap.pl` isn't found on the
+host running `predict` — with no check for whether `--genemark_gtf` was
+supplied as an alternative evidence source. Not triggered by Test 3 above
+(that host had `gmes_petap.pl` present), but would silently zero out a
+correctly-supplied `--genemark_gtf`'s contribution once `FUNANNOTATE_PREDICT`
+actually moves onto the rust container (no `gmes_petap.pl` there at all).
+Fixed in `FUNANNOTATE_PREDICT/main.nf`: explicit `-w genemark:1` whenever
+`genemark_gtf` is non-empty, merged into the *same* `-w` argument group as
+the existing `codingquarry:0 glimmerhmm:0` (funannotate's `-w`/`--weights`
+argparse option has no `action='append'`, so a second `-w` flag silently
+replaces the first — confirmed directly against argparse — this was almost a
+second bug introduced while fixing the first one).
+
 ## Status
 
-Complete. All 3 tests pass. Full detail and provenance in
-`.living/learnings.md` (2026-08-12 entry) and
-`nextflow/docs/GENEMARK_RUN_DESIGN.md`'s "Real end-to-end validation" section.
+Complete for ES mode (wired, tested, shipped) and for validating the ET
+recipe (proven correct standalone, not yet wired). Full detail and
+provenance in `.living/learnings.md` (2026-08-12 entries) and
+`nextflow/docs/GENEMARK_RUN_DESIGN.md`.
 
 ## Reproduce
 
