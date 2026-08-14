@@ -1166,3 +1166,69 @@ Verified with a real `-stub-run` through the actual entry point (`nextflow run n
 **How to apply**: Any process/module that resolves a path via `${workflow.projectDir}` only works correctly when invoked (directly or via `include`) from a top-level script that lives at the intended project root -- for this repo, that's `nextflow/main.nf`, so `${workflow.projectDir}/bin/...` references are safe in production but will silently resolve wrong in any standalone test script placed elsewhere. Standalone module smoke tests that need this to work correctly must live at the same directory level as the real entry point, not in a nested test subdirectory.
 
 **Tags**: nextflow, workflow-projectdir, genemark, genemark-et, standalone-test-harness, container-migration, T-022
+
+### [2026-08-13] funannotate container beta.5: fasta36 symlink + LD_LIBRARY_PATH bugs fixed; `which` "bug" is a host env leak, not an image bug, and doesn't actually block PASA
+
+**Category**: gotcha / validation (revised same day — initial root-cause was wrong)
+
+**What happened**: Pulled `ghcr.io/nextgenusfs/funannotate:1.9.0-beta.5` (built to fix an unrelated bowtie2/AVX2 issue) and re-checked the 3 packaging bugs found in beta.2/beta.3. Two are now fixed: `funannotate check --show-versions` reports `fasta: 36.3.8g` cleanly (`/venv/bin/fasta36` resolves directly, no more fasta3/fasta36 symlink mismatch), and `LD_LIBRARY_PATH=/venv/lib:/.singularity.d/libs` is now set in-container (confirmed via `ldd $(command -v diamond)` showing no missing libs).
+
+The third looked broken at first — `singularity exec $SIF bash -c 'which perl'` fails with `Illegal option --` / exit 2 — but tracing it further showed **this is not an image defect at all**. `env` inside the container shows `BASH_FUNC_which%%=...` alongside clearly host-only artifacts (`BASH_FUNC_module%%`, `BASH_FUNC_scl%%`, `BASH_FUNC__module_raw%%` — this HPC's environment-modules Tcl wrappers). The broken `which()` function is the **host's own bash function** (Rocky Linux's `which2`-style wrapper, written for GNU `which` v2.21's `--tty-only --read-alias --read-functions --show-tilde --show-dot` flags), leaking into the container via Singularity's default full environment passthrough. The container's actual `/usr/bin/which` is a minimal `debianutils` build that doesn't understand those flags — hence the crash, but only when something explicitly execs `bash`.
+
+Confirmed this has **no practical runtime impact**: `BASH_FUNC_*%%`-style exported functions are a bash-only mechanism — `dash` (Debian's default `/bin/sh`, what Perl's `system()`/backticks spawn) never imports them. `singularity exec $SIF sh -c 'which perl'` → `/venv/bin/perl`, exit 0, clean. PASA's `.dbi` scripts shell out via `system()` → `sh`, not `bash`, so the codepaths that actually run at pipeline execution time are unaffected. Also reconfirmed `--cleanenv` alone makes `bash -c 'which perl'` succeed too, further isolating the host as the source.
+
+Separately confirmed via the same `funannotate check` run: GeneMark is correctly absent with a graceful error (`ERROR: gmes_petap.pl not installed`, no crash), and all three rust-optimized engines report enabled (`EVidenceModeler (Rust): ENABLED`, `PASA (Rust): ENABLED`, `Trinity Rust utilities: ENABLED (4/4 on PATH)`).
+
+**Why it matters**: No Dockerfile change is warranted for this — it would be fixing a problem in the wrong place (the image is fine; the host's bash function is what's incompatible with the image's `which` binary, and only bites interactive/explicit-`bash` use, not the `sh`-based paths PASA/Perl actually use). This also means the earlier concern that beta.4 was supposed to fix this and didn't is moot — there was nothing in the image to fix.
+
+**Resolution**: No image or repo change needed. If it's ever annoying interactively, `singularity exec --cleanenv $SIF ...` or unsetting the function in the calling shell (`unset -f which`) before `singularity exec` clears it — invocation-side, not build-side.
+
+**How to apply**: Before attributing a container behavior to "the Dockerfile," check whether it reproduces with `--cleanenv` and whether it depends on `bash` specifically vs `sh` — `BASH_FUNC_*%%` env-var-exported shell functions are a classic host-environment leak through `singularity exec`'s default passthrough (this project already documented that passthrough happens; this is the first time it produced a false-positive "bug"). Re-run the fasta36/LD_LIBRARY_PATH checks on future betas regardless — those two were genuine image fixes.
+
+**Tags**: funannotate, container-migration, singularity, env-passthrough, packaging-bug, pasa, beta5, false-positive
+
+### [2026-08-13] beta.5 real end-to-end confirm run: `run_sra_fetch=false` silently trains NOBODY, not just "skips fetching new data"
+
+**Category**: gotcha (caught via a real full run, not stub-run)
+
+**What happened**: First real (non-stub) confirmation run of the beta.5-containerized `FUNANNOTATE_TRAIN`/`GENEMARK_RUN` ES/ET wiring, on 4 real strains (2 species) in an isolated `do_container_confirm_test/` launch dir. Set `run_sra_fetch: false` intending only to skip hitting SRA/NCBI network, since both species' normalized reads already existed locally (`rnaseq_reads/Penicillium_citrinum_norm_*.fastq.gz` real data; `rnaseq_reads/Pichia_senei_norm_*.fastq.gz` genuine 0-byte "no data" markers). The run completed successfully (9/9, 0 failed, real `predict_results` with sane gene counts for all 4 strains) — but `genome_annotation_training/` ended up completely empty, and every strain's `predict_results/*.parameters.json` showed `"genemark": "selftraining ES"`, including the two Penicillium citrinum strains that genuinely have RNA-seq. GeneMark never ran ET for anyone.
+
+Root cause: `FUNANNOTATE_RNASEQ.nf`'s own header comment says it plainly (line 9) — "With it \[run_sra_fetch\] off, samples pass straight through untrained." The entire `RNASEQ_PREPARE`/`FUNANNOTATE_TRAIN` pathway construction is inside `if (params.run_sra_fetch.toBoolean())`; when false, `predict_input_ch` is built from the no-training branch unconditionally, regardless of what's already sitting in `rnaseq_reads/`. `skip_sra_query=true` is a sub-flag *inside* that same `if` block (skips only the NCBI query step, reading cached CSVs instead) — it does nothing when `run_sra_fetch` itself is false, since the whole branch it lives in is never entered.
+
+**Why it matters**: This is an easy trap for any future isolated/test run that reuses already-fetched species-level RNA-seq (the common case, since `SRA_FETCH` uses `storeDir` and is naturally idempotent/cheap to re-invoke once cached) — the intuitive "false = don't fetch, but still use what's there" reading is wrong; `run_sra_fetch=false` means "don't train," full stop. A silent, non-erroring wrong answer: the run doesn't fail, it just produces GeneMark-ES-only, Augustus-BUSCO-generic (not PASA-trained) predictions for everyone, which look superficially fine (real gene counts, no errors) unless you specifically check `genome_annotation_training/` or `parameters.json`'s recorded evidence sources.
+
+**Resolution**: Set `run_sra_fetch: true` (with `skip_sra_query: true` to still avoid live NCBI queries) and re-ran. `SRA_FETCH`'s `storeDir "${launchDir}/rnaseq_reads"` recognizes the already-present `*_norm_*.fastq.gz` outputs and should reuse them rather than re-fetching/re-normalizing.
+
+**How to apply**: To reuse already-fetched RNA-seq without hitting SRA, use `run_sra_fetch=true` + `skip_sra_query=true` together — never `run_sra_fetch=false` as a "just use what's cached" shortcut. When validating any run that's supposed to exercise the RNA-seq/training path, don't trust "completed successfully with real gene counts" alone — check `genome_annotation_training/*/training/` is actually populated and spot-check `predict_results/*.parameters.json`'s `genemark`/`augustus` `source` fields, since a fully-untrained fallback path produces plausible-looking output with no error.
+
+**Tags**: funannotate, rnaseq, run_sra_fetch, container-migration, genemark, T-022, silent-misconfiguration, beta5
+
+### [2026-08-14] Correction: `predict_results/*.parameters.json`'s `genemark` field does NOT reveal whether GENEMARK_RUN used ES or ET — it's predict.py's own unrelated internal bookkeeping
+
+**Category**: gotcha (self-correction — the previous learnings entry, same lineage, recommended exactly this check as a validation method)
+
+**What happened**: After fixing the `run_sra_fetch` misconfiguration and re-running the beta.5 confirmation (real training now genuinely happened, `genome_annotation_training/` populated, sibling ab-initio reuse worked correctly end to end), the representative strain (*Penicillium citrinum* B8014, which has real RNA-seq and `genemark_mode=ET` set) still showed `"source": "selftraining ES"` in `parameters.json`. Read `predict.py` directly inside the beta.5 container to find the actual cause before concluding ET was broken:
+
+```python
+if genemarkcheck:
+    if "path" in trainingData["genemark"][0]:
+        RunModes["genemark"] = "pretrained"
+        ...
+    else:
+        RunModes["genemark"] = "selftraining"
+        trainingData["genemark"] = [{
+            ...
+            "source": RunModes["genemark"] + " " + args.genemark_mode,
+            ...
+        }]
+```
+
+`args.genemark_mode` is `funannotate predict`'s **own internal `--genemark_mode` CLI flag** (default `ES`), which `FUNANNOTATE_PREDICT/main.nf` never sets — completely unrelated to the external `GENEMARK_RUN` process's ES/ET choice or the `--genemark_gtf` file it hands to predict. This whole block only runs when `genemarkcheck` is true (gmes_petap.pl present on the host running predict, which it currently is, since predict itself isn't containerized yet) and reflects predict.py's *own* would-be internal genemark training/reuse path — it has no knowledge of what mode produced the externally-supplied GTF. The label is effectively a constant ("selftraining ES") for every run today, regardless of whether `GENEMARK_RUN` actually ran `--ES`, `--ET`, or `--predict_with`.
+
+**Why it matters**: This invalidates a check I had just recommended in the immediately-preceding learnings entry ("spot-check `predict_results/*.parameters.json`'s `genemark`...`source` fields"). That check is fine for confirming training happened *at all* (vs. the fully-untrained fallback with generic BUSCO-lineage Augustus params), but it cannot distinguish ES from ET, and gives false confidence either way. There is currently **no persistent, trustworthy provenance** for which GeneMark mode actually ran for a given strain in a real (non-stub, non-smoke-test) pipeline run — `GENEMARK_RUN`'s own informative `[INFO] ... fresh ET self-training ...` log line only exists in the task's `.command.log`, which `cleanup = true` deletes after a successful run.
+
+**Resolution**: Not yet fixed. The standalone smoke test (`nextflow/genemark_run_smoke.nf`, real end-to-end ET run, 10,780 genes matching the hand-validated recipe) remains the only actual evidence GENEMARK_RUN's ET branch works — this production-shaped confirmation run neither confirms nor refutes whether the *wiring* (`trainingTranscriptBamFor(out)` receiving a non-empty bam at the right time inside `FUNANNOTATE_PREDICTION.nf`) delivered ET correctly for a representative strain with real RNA-seq.
+
+**How to apply**: Don't trust `parameters.json`'s `genemark.source` field for ES-vs-ET provenance — it's not measuring that. Future work should have `GENEMARK_RUN` write its own small persistent provenance marker (e.g. a one-line file alongside its `.genemark.gtf`/`.genemark.mod` output, published rather than left in the ephemeral work dir) so which branch actually ran is directly checkable without disabling `cleanup` or re-deriving it from `.nextflow.log`.
+
+**Tags**: funannotate, genemark, genemark-et, provenance, container-migration, T-022, false-signal, beta5

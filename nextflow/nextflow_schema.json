@@ -123,6 +123,7 @@
                 "pasa_mysql":        { "type": "boolean", "description": "Use MySQL/MariaDB-backed PASA.", "default": true },
                 "rnaseq_trimmer":    { "type": "string", "enum": ["fastp", "trimmomatic"], "description": "RNA-seq read trimmer.", "default": "fastp" },
                 "mariadb_sif":       { "type": "string", "format": "file-path", "description": "MariaDB singularity image for PASA." },
+                "funannotate_sif":   { "type": "string", "format": "file-path", "description": "funannotate-live singularity image (rust-optimized PASA/EVM/Trinity). Used by FUNANNOTATE_TRAIN/UPDATE via singularity exec; GeneMark stays host-side (license), see GENEMARK_RUN_DESIGN.md." },
                 "mysql_datadir":     { "type": "string", "format": "directory-path", "description": "MySQL data dir for PASA." },
                 "pasa_conf_dir":     { "type": "string", "format": "directory-path", "description": "PASA conf dir." },
                 "max_intronlen":     { "type": "integer", "minimum": 0, "description": "Max intron length for prediction.", "default": 3000 },
@@ -137,7 +138,7 @@
                 "predict_scope":     { "type": "string", "enum": ["all", "representative_only"], "description": "FUNANNOTATE_PREDICTION scope: 'all' predicts every strain (representatives first, no waiting); 'representative_only' predicts only representative strains.", "default": "all" },
                 "busco_genome_dir":  { "type": "string", "format": "directory-path", "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection." },
                 "run_genemark":      { "type": "boolean", "description": "Run standalone GENEMARK_RUN before predict and feed it --genemark_gtf. false reproduces predict's own --auto-skip-genemark degradation (host GENEMARK_PATH unavailable/not wanted). See nextflow/docs/GENEMARK_RUN_DESIGN.md.", "default": true },
-                "genemark_mode":     { "type": "string", "enum": ["ES", "ET"], "description": "GeneMark run mode. ET (RNA-seq intron hints) is scoped but not yet implemented -- only ES is wired up.", "default": "ES" },
+                "genemark_mode":     { "type": "string", "enum": ["ES", "ET"], "description": "GeneMark run mode (T-022, both wired). ET uses RNA-seq intron hints (needs a training_bam); GENEMARK_RUN falls back to ES automatically when no RNA-seq is available for a strain.", "default": "ES" },
                 "genemark_force_independent_strains": { "type": "string", "description": "Comma-separated OUT (species_strain dir name) values to always run GeneMark independently (fresh --ES) for, ignoring an otherwise-available shared species .mod. Finer-grained than force_independent_species: lets AUGUSTUS/SNAP reuse stay on for a strain while forcing GeneMark specifically to retrain (e.g. validating reuse on a borderline-ANI strain).", "default": "" }
             }
         },

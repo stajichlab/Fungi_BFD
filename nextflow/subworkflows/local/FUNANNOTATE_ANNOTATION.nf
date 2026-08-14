@@ -138,27 +138,47 @@ workflow FUNANNOTATE_ANNOTATION {
             // UPDATE runs from predict results in parallel with antismash/interpro/signalp.
             // Reads are joined from SRA_FETCH (storeDir-cached, so prior-run reads are reused).
             // The join on upd_signal gates annotate_ready_ch so ANNOTATE waits for UPDATE.
+            //
+            // remainder: true (was a plain combine(by:0), an implicit inner join) -- a
+            // species with no reads_ch entry (RNA-seq acquisition failed/was skipped
+            // upstream for that species_tag) must NOT silently vanish from this join.
+            // combine(by:0) previously dropped such a species from upd_input entirely,
+            // which meant it never got an upd_signal entry either, which meant the
+            // second join below (annotate_ready_ch.join(upd_signal)) ALSO dropped it --
+            // silently removing an otherwise-fully-predicted genome from ANNOTATE too,
+            // not just UPDATE. Found via design review, 2026-08-14.
             def upd_input = predict_meta
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable ->
                     def species_tag = species.replaceAll(/\s+/, '_')
                     tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable)
                 }
-                .combine(reads_ch, by: 0)
-                .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2 ->
+                .join(reads_ch, by: 0, remainder: true)
+                .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2, _se ->
                     tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2)
                 }
-            def upd_todo = upd_input.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _r1, _r2 ->
-                gbkResult("${params.target}/${out}/update_results", out as String) == null
+            def hasReads = { r1 -> r1 != null && file(r1 as String).exists() && file(r1 as String).size() > 0 }
+            def upd_todo = upd_input.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, r1, _r2 ->
+                hasReads.call(r1) && gbkResult("${params.target}/${out}/update_results", out as String) == null
             }
             def upd_done_signal = upd_input
-                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _r1, _r2 ->
-                    gbkResult("${params.target}/${out}/update_results", out as String) != null
+                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, r1, _r2 ->
+                    hasReads.call(r1) && gbkResult("${params.target}/${out}/update_results", out as String) != null
                 }
                 .map { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _r1, _r2 -> tuple(out, 'upd') }
+            // No reads (never fetched for this species, or genuinely RNA-seq-less):
+            // skip UPDATE -- routine, not a fault, so log.warn only (not a report file) --
+            // but still emit an upd_signal entry so ANNOTATE isn't blocked on it.
+            def upd_skip_signal = upd_input
+                .filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, r1, _r2 -> !(hasReads.call(r1)) }
+                .map { out, _a, _sp, _st, _lt, _bl, _hl, _tt, _r1, _r2 ->
+                    log.warn "FUNANNOTATE_UPDATE skipped for ${out}: no RNA-seq reads available"
+                    tuple(out, 'upd')
+                }
             FUNANNOTATE_UPDATE(upd_todo)
             def upd_signal = FUNANNOTATE_UPDATE.out
                 .map { out, _a, _sp, _st, _lt, _bl, _hl, _tt -> tuple(out, 'upd') }
                 .mix(upd_done_signal)
+                .mix(upd_skip_signal)
             annotate_ready_ch = annotate_ready_ch
                 .join(upd_signal)
                 .map { out, asmid, sp, st, lt, bl, hl, tt, _flag -> tuple(out, asmid, sp, st, lt, bl, hl, tt) }

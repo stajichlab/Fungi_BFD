@@ -62,3 +62,6 @@
 | 2026-08-03 | 2026-08-03-006 | fungi-bfd | main | 58m | 142 | CLEAN_MASK_PARAMS_GUIDE.md,CLEAN_MASK_QUICK_START.md,suppress.txt (+9 more) | | complete | | [log](2026-08-03-006-fungi-bfd.md) |
 | 2026-08-12 | 2026-08-11-001 | fungi-bfd | main | 913m | 0 |  | | complete | | [log](2026-08-11-001-fungi-bfd.md) |
 | 2026-08-12 | 2026-08-12-001 | fungi-bfd | main | 0m | 3 |  | | complete | | [log](2026-08-12-001-fungi-bfd.md) |
+| 2026-08-13 | 2026-08-13-001 | fungi-bfd | main | 27m | 3 |  | | complete | | [log](2026-08-13-001-fungi-bfd.md) |
+| 2026-08-13 | 2026-08-13-002 | fungi-bfd | main | 1m | 5 |  | | complete | | [log](2026-08-13-002-fungi-bfd.md) |
+| 2026-08-14 | 2026-08-14-001 | fungi-bfd | main | 0m | 8 |  | | complete | | [log](2026-08-14-001-fungi-bfd.md) |

@@ -24,15 +24,36 @@ process FUNANNOTATE_UPDATE {
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate
+    module load singularity
+    # ── Containerized funannotate ──────────────────────────────────────────────
+    # Same swap as FUNANNOTATE_TRAIN/main.nf: `funannotate update` runs via
+    # `\$SING` (singularity exec \${params.funannotate_sif}), kept WITHOUT a
+    # `container =` directive on this process -- the mysqldb sidecar below is
+    # started via `singularity instance start` from this same host-executed
+    # script, and both .sifs stay siblings launched from the host shell rather
+    # than nesting one Singularity container inside another.
+    #
+    # Same confirmations as FUNANNOTATE_TRAIN/main.nf: Singularity shares the
+    # host network namespace by default, so \$SING reaches the mysqldb instance
+    # via MYHOSTNAME:PORT with no change needed; `singularity exec` passes
+    # through all host-shell env vars (PASACONF etc.) unless --cleanenv is
+    # added, so don't add --cleanenv without converting those to explicit
+    # `--env` flags first; and the `which` failure some tools show under
+    # `bash -c` inside this image is a HOST env leak (Rocky's GNU-which-
+    # flavored bash function via BASH_FUNC_which%%), not an image bug -- it
+    # doesn't affect PASA/funannotate's own Perl system()/backtick calls
+    # (those spawn dash, which never imports BASH_FUNC_*%%). Unset defensively
+    # below anyway.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
     export PASACONF=""
     pasa_db_arg="--pasa_db sqlite"
+    SING_BINDS="--bind ${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
+    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
         MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
@@ -50,11 +71,17 @@ process FUNANNOTATE_UPDATE {
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
         sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
         perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
-        export SINGULARITY_BINDPATH=\$TMPDIR,\$MYSQL_SCRATCH/mysql_db
+        # Bind the WHOLE MYSQL_SCRATCH dir (see FUNANNOTATE_TRAIN/main.nf for
+        # why -- MYSQL_SCRATCH/mysql_db, a prior value, was never created by
+        # anything above and was a dead bind source; \$PASACONF lives under
+        # MYSQL_SCRATCH/conf, which this now correctly covers). Appended to
+        # SING_BINDS rather than a separate SINGULARITY_BINDPATH env var, to
+        # match this project's SING_BINDS/SING convention.
+        SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
+        SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
         stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
-        module load singularity
         singularity instance start --writable-tmpfs \\
             -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
             ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
@@ -71,7 +98,7 @@ process FUNANNOTATE_UPDATE {
     # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
     # funannotate update will still run its internal alignment step against these.
     echo "[INFO] Running funannotate update for ${out}"
-    funannotate update -i ${params.target}/${out} \\
+    \$SING funannotate update -i ${params.target}/${out} \\
         --left ${r1} --right ${r2} \\
         --cpus ${task.cpus} \\
         \$pasa_db_arg
