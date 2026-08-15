@@ -153,7 +153,17 @@ workflow FUNANNOTATE_ANNOTATION {
                     tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable)
                 }
                 .join(reads_ch, by: 0, remainder: true)
-                .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2, _se ->
+                // Nextflow's join(remainder:true) pads a wholly-missing right side with a
+                // SINGLE null, not one null per right-channel field -- a species with no
+                // reads_ch entry at all yields 9 left fields + 1 null (10 total), not
+                // 9 + 3 (12 total) as a fixed-arity closure destructure would assume.
+                // Index into the row instead of destructuring positionally so both the
+                // matched (12-element) and unmatched (10-element) shapes are handled.
+                // Found via real run failure on beta.6 confirm test, 2026-08-15.
+                .map { row ->
+                    def (out, asmid, species, strain, locustag, busco, hlen, ttable) = row[1..8]
+                    def r1 = row.size() > 9 ? row[9] : null
+                    def r2 = row.size() > 10 ? row[10] : null
                     tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2)
                 }
             def hasReads = { r1 -> r1 != null && file(r1 as String).exists() && file(r1 as String).size() > 0 }

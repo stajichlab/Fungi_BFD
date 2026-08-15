@@ -177,6 +177,8 @@
                 "run_predgpi":   { "type": "boolean", "default": true },
                 "pfam_nodes":    { "type": "integer", "minimum": 1, "default": 1 },
                 "pfam_tasks":    { "type": "integer", "minimum": 1, "default": 1 },
+                "pfam_sif":      { "type": "string", "format": "file-path", "description": "HMMER 3.4 Singularity image for RUN_PFAM's hmmsearch." },
+                "aaftf_sif":     { "type": "string", "format": "file-path", "description": "AAFTF Singularity image (genome cleaning, CALC_ASM_STATS)." },
                 "run_aa_freq":     { "type": "boolean", "default": true },
                 "run_codon_freq":  { "type": "boolean", "default": true },
                 "freq_batch_size": { "type": "integer", "minimum": 1, "default": 50 },

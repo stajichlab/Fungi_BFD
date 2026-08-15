@@ -27,12 +27,27 @@ process FUNANNOTATE_PREDICT {
     script:
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate/dev-1.9
+    module load singularity
+    # ── Containerized funannotate ──────────────────────────────────────────────
+    # Same swap/rationale as FUNANNOTATE_TRAIN/main.nf: funannotate predict runs
+    # via \$SING (singularity exec \${params.funannotate_sif}) instead of
+    # `module load funannotate`. GeneMark stays host-side (license) and is
+    # never invoked from inside this container -- it arrives pre-computed via
+    # --genemark_gtf from the upstream GENEMARK_RUN process (see the weight
+    # comment below). No mysql/mariadb sidecar here (PASA-mysql is
+    # train/update-specific); binds cover target/training_target (predict
+    # writes directly into target, reads the training/ symlink target),
+    # augustus_config, funannotate_db, params.proteins (the --protein_evidence
+    # file), and \$TMPDIR. Same `which` false-alarm note as FUNANNOTATE_TRAIN
+    # applies here -- unset defensively anyway.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
+
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind ${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
+    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"
     PREDICT_GBK="\$PREDICTDIR/predict_results/${out}.gbk"
@@ -181,7 +196,7 @@ process FUNANNOTATE_PREDICT {
         WEIGHT_ARGS+=(genemark:1)
     fi
 
-    funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
+    \$SING funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
