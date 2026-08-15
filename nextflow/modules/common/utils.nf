@@ -462,7 +462,7 @@ def resolveGenomeFile(Map genomeIndex, String metaId, String asmid) {
 def gatedGlobIn(sync_ch, String baseDir, String glob) {
     sync_ch
         .filter { it }
-        .flatMap { files("${baseDir}/${glob}") }
+        .flatMap { file("${baseDir}/${glob}", type: 'file').flatten() }
 }
 
 // Collapse a channel of input files into one sorted manifest, TAB-delimited:
