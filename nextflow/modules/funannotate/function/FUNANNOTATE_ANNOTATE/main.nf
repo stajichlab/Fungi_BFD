@@ -17,15 +17,24 @@ process FUNANNOTATE_ANNOTATE {
     def antiSmArg = antiSm.exists() ? "--antismash ${antiSm}" : ""
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate
+    module load singularity
+    # ── Containerized funannotate ──────────────────────────────────────────────
+    # Same swap/rationale as FUNANNOTATE_TRAIN/main.nf: funannotate annotate runs
+    # via \$SING (singularity exec \${params.funannotate_sif}) instead of
+    # `module load funannotate`. No GeneMark/mysql involvement at this stage.
+    # Binds cover target (annotate reads+writes there, incl. the optional
+    # antismash_local GBK), augustus_config, funannotate_db, sbt_template, and
+    # \$TMPDIR.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind ${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.sbt_template}:${params.sbt_template},\$TMPDIR:\$TMPDIR"
+    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
 
-    funannotate annotate -i ${params.target}/${out} -o ${params.target}/${out} \\
+    \$SING funannotate annotate -i ${params.target}/${out} -o ${params.target}/${out} \\
         --species "${species}" --strain "${strain}" \\
         --busco_db ${busco_lineage} --rename ${locustag} \\
         --sbt ${params.sbt_template} \\
