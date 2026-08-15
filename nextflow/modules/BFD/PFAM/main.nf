@@ -25,6 +25,7 @@ process RUN_PFAM {
     // assumed. Only pass --cpu in the non-MPI (threaded) branch.
     def cpu_flag   = params.pfam_tasks > 1 ? "" : "--cpu ${task.cpus}"
     """
+    module load db-pfam
     if [ ! -z "${mpi_flag}" ]; then
         module load hmmer/3.4-mpi
     else
@@ -32,12 +33,17 @@ process RUN_PFAM {
         # HMMER 3.4 SIF, not `module load hmmer/3.4` (mirrors the AAFTF SIF
         # pattern). The MPI branch keeps the host module: the SIF has no MPI
         # runtime and --mpi needs the cluster's OpenMPI/PMI wiring.
+        #
+        # db-pfam must be loaded (above) before this bind-mount is built --
+        # PFAM_DB has to already be set or SING_BINDS captures an empty path
+        # and the container never gets /srv/projects/db/pfam/... mounted,
+        # failing every hmmsearch with "File existence/permissions problem"
+        # even though the path is valid and readable on the host.
         module load singularity
         PFAM_SIF=${params.pfam_sif}
         SING_BINDS="--bind \${PFAM_DB}:\${PFAM_DB}"
         SING="singularity exec \${SING_BINDS} \${PFAM_SIF}"
     fi
-    module load db-pfam
     ${mpi_launch} \${SING} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
         --domtbl    ${meta.locustag}.domtblout \\
         --tblout    ${meta.locustag}.tblout \\
