@@ -209,40 +209,71 @@ workflow FUNANNOTATE_RNASEQ {
 
         def shared_ch = RNASEQ_PREPARE.out.shared.mix(empty_shared_ch)
 
+        // ── ANI-tiered gating for shared-Trinity training ─────────────────────
+        // Non-representative strains reuse the SAME Trinity-GG assembly built
+        // from the representative strain's own reads/genome (RNASEQ_PREPARE), so
+        // PASA validation identity on re-alignment reflects real strain-to-strain
+        // divergence, not assembly error (see FUNANNOTATE_TRAIN module header and
+        // .living/learnings.md 2026-08-17 for the Hansenula_anomala_K955 case
+        // that surfaced this). Tier by the ANI already computed in
+        // PICK_REPRESENTATIVE_STRAIN (abinitioReuseMap[out].ani_to_representative,
+        // 100.0 for the representative itself):
+        //   ANI >= 97%          -> 'stringent' (PASA defaults; near-identical strains)
+        //   90% <= ANI < 97%    -> 'relaxed'   (pasa_shared_* thresholds)
+        //   ANI < 90% / missing -> 'skip'      (skani/mash/sourmash returning no
+        //                          value is itself a divergence signal, not "not
+        //                          yet computed" -- route to ab-initio-only)
+        // Tiering only applies when abinitioReuseMap actually has data for this
+        // run (share_abinitio_params=true and the CSV exists); when the ANI-reuse
+        // feature is off entirely there is no per-strain signal to tier on, so
+        // every shared-Trinity strain falls back to 'relaxed' unconditionally.
+        def aniSystemActive = !abinitioReuseMap.isEmpty()
+        def pasaTierFor = { String out ->
+            if (!aniSystemActive) return 'relaxed'
+            def ani = abinitioReuseMap[out]?.ani_to_representative
+            if (ani == null) return 'skip'
+            if (ani >= 97.0) return 'stringent'
+            if (ani >= 90.0) return 'relaxed'
+            return 'skip'
+        }
+
         // Join shared Trinity from rnaseq_data back to every assembly for FUNANNOTATE_TRAIN.
         // Normalized reads (r1/r2/se) come from SRA_FETCH/SRA_FETCH_SE via assembly_with_reads.
         def train_input = assembly_with_reads
             .combine(shared_ch, by: 0)
             .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa ->
-                tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa)
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa, pasaTierFor.call(out as String))
             }
         // train_input tuple indices: out=0,asmid=1,sp=2,st=3,lt=4,bl=5,hl=6,tt=7,
-        //                            genome_fa=8, r1=9, r2=10, se=11, trinity_fa=12
+        //                            genome_fa=8, r1=9, r2=10, se=11, trinity_fa=12, pasa_tier=13
 
-        // Branch on r1 (idx 9), se (idx 11), or trinity_fa (idx 12) sizes.
-        // Assemblies with no RNA-seq bypass FUNANNOTATE_TRAIN entirely.
+        // Branch on r1 (idx 9), se (idx 11), or trinity_fa (idx 12) sizes; ani_skip
+        // (checked first) catches shared-Trinity rows whose ANI tier says the
+        // representative's transcriptome is too divergent (or unmeasured) to trust --
+        // these bypass FUNANNOTATE_TRAIN exactly like genuinely RNA-seq-less strains.
         def branched = train_input.branch {
+            ani_skip:   it[13] == 'skip' && it[12].size() > 0
             has_rnaseq: it[9].size() > 0 || it[11].size() > 0 || it[12].size() > 0
             no_rnaseq:  true
         }
-        def predict_no_rnaseq = branched.no_rnaseq
-            .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf ->
+        def predict_no_rnaseq = branched.no_rnaseq.mix(branched.ani_skip)
+            .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf, _tier ->
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
 
         // Skip TRAIN at the channel level when pasa.gff3 already exists and is non-empty,
         // UNLESS the rnaseq reads or trinity FASTA is newer than the existing prediction GBK
         // (staleRnaseq), in which case we re-run training so predict can be refreshed too.
-        def train_todo = branched.has_rnaseq.filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _se, _tf ->
+        def train_todo = branched.has_rnaseq.filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _se, _tf, _tier ->
             def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
             !gff3.exists() || gff3.size() == 0 || staleRnaseq(out as String, sp as String)
         }
         def train_done = branched.has_rnaseq
-            .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _se, _tf ->
+            .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _se, _tf, _tier ->
                 def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
                 gff3.exists() && gff3.size() > 0 && !staleRnaseq(out as String, sp as String)
             }
-            .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf ->
+            .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf, _tier ->
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
         FUNANNOTATE_TRAIN(train_todo)

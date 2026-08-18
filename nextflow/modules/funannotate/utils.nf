@@ -148,13 +148,23 @@ def loadAbinitioReuseMap() {
     def iOut          = header.indexOf('out')
     def iEligible     = header.indexOf('reuse_eligible')
     def iIsRep        = header.indexOf('is_representative')
+    def iAni          = header.indexOf('ani_to_representative')
     lines.drop(1).each { line ->
         def f = line.split(',', -1)
         if (f.size() <= [iSpecies, iOut, iEligible].max()) return
+        // ani_to_representative is blank for the representative's own row (implicitly
+        // 100%) and, notably, for any strain skani/mash/sourmash couldn't confidently
+        // compare against the representative -- for sketch-based ANI tools that usually
+        // means the true identity fell below their reliable detection floor (~80-85%),
+        // i.e. a blank value is itself a signal of exceptional divergence, not "not yet
+        // computed". Parsed as null here so callers can distinguish "no signal" from 0.0.
+        def aniStr = iAni >= 0 && f.size() > iAni ? f[iAni].trim() : ''
+        def isRep = iIsRep >= 0 ? f[iIsRep].trim().toLowerCase() == 'true' : false
         m[f[iOut].trim()] = [
             species         : f[iSpecies].trim(),
             reuse_eligible  : f[iEligible].trim().toLowerCase() == 'true',
-            is_representative: iIsRep >= 0 ? f[iIsRep].trim().toLowerCase() == 'true' : false,
+            is_representative: isRep,
+            ani_to_representative: isRep ? 100.0 : (aniStr ? aniStr as Double : null),
         ]
     }
     log.info "Loaded ${m.size()} ab-initio reuse assignments from ${csv} " +

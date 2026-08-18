@@ -205,6 +205,7 @@ workflow BFD {
             BFD_GENOME_STATS.out.asm_stats,
             BFD_GENOME_STATS.out.telomeres,
             BFD_GENOME_STATS.out.busco_genome,
+            BFD_FUNCTIONAL.out.sync,
             use_glob
         )
     }

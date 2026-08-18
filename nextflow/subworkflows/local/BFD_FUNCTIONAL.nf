@@ -77,8 +77,15 @@ def staleGuardBucketed(ch, String type, List relOuts) {
 // gated-glob-vs-live-channel elsewhere in this repo (.living/learnings.md).
 // CAZY is the one exception -- its own pre-existing per-genome-subdirectory
 // layout (not a hash bucket) already uses "*/*.ext" and is unaffected.
+// .collect() is required here: gatedGlobIn's flatMap emits one channel item
+// per matched file, but every MERGE_* process declares its input as a single
+// path(...) collected list (interpolated as a space-separated file list in
+// the script block). Without .collect() Nextflow instead runs the MERGE_*
+// process once per matched file -- each execution seeing only one genome's
+// worth of input, and each racing to overwrite the same publishDir output
+// (e.g. tables/pfam.parquet), leaving only whichever execution finished last.
 def gatedGlob(sync_ch, String glob) {
-    gatedGlobIn(sync_ch, params.outdir, glob)
+    gatedGlobIn(sync_ch, params.outdir, glob).collect()
 }
 
 // Pick the merge input for a tool: this run's collected outputs, or a glob over
@@ -136,9 +143,21 @@ workflow BFD_FUNCTIONAL {
     // In glob mode a tool is merged even when it did not run this session, so
     // previously-computed genomes still make it into the table. In run mode a
     // tool that did not run has nothing to merge and is skipped.
+    //
+    // merge_outs collects one output channel from every MERGE_* process
+    // actually invoked below, emitted as `sync` so BFD_MERGE can gate
+    // BUILD_DUCKDB on it -- otherwise BUILD_DUCKDB's cache key has no
+    // dependency on these tables at all, and -resume can reuse a stale
+    // BFD.duckdb even after e.g. pfam.parquet changed (see 2026-08-15
+    // incident: db/BFD.duckdb:pfam stayed single-strain while
+    // tables/pfam.parquet had all 276 genomes).
+    def merge_outs = []
     if (!skip_merge) {
         def pfam_in = mergeInput(use_glob, run_pfam, run_pfam ? RUN_PFAM.out.domtbl : null, "pfam_hmmscan/**/*.domtblout.gz")
-        if (pfam_in) MERGE_PFAM(pfam_in)
+        if (pfam_in) {
+            MERGE_PFAM(pfam_in)
+            merge_outs << MERGE_PFAM.out.parquet
+        }
 
         if (use_glob || run_cazy) {
             def ov_sync = run_cazy ? RUN_CAZY.out.overview.collect() : Channel.of(true)
@@ -147,13 +166,20 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(ov_sync, "cazy/*/*.overview.tsv.gz") : ov_sync,
                 use_glob ? gatedGlob(ca_sync, "cazy/*/*.cazymes.tsv.gz")  : ca_sync
             )
+            merge_outs << MERGE_CAZY.out.overview_parquet
         }
 
         def merops_in = mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
-        if (merops_in) MERGE_MEROPS(merops_in)
+        if (merops_in) {
+            MERGE_MEROPS(merops_in)
+            merge_outs << MERGE_MEROPS.out.parquet
+        }
 
         def swissprot_in = mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
-        if (swissprot_in) MERGE_SWISSPROT(swissprot_in)
+        if (swissprot_in) {
+            MERGE_SWISSPROT(swissprot_in)
+            merge_outs << MERGE_SWISSPROT.out.parquet
+        }
 
         // One-shot build of the SwissProt accession -> annotation table,
         // independent of the per-genome search engine used above (or of
@@ -162,13 +188,22 @@ workflow BFD_FUNCTIONAL {
             BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
 
         def signalp_in = mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
-        if (signalp_in) MERGE_SIGNALP(signalp_in)
+        if (signalp_in) {
+            MERGE_SIGNALP(signalp_in)
+            merge_outs << MERGE_SIGNALP.out.parquet
+        }
 
         def tmhmm_in = mergeInput(use_glob, run_tmhmm, run_tmhmm ? RUN_TMHMM.out.short_tsv : null, "tmhmm/**/*.tmhmm_short.tsv.gz")
-        if (tmhmm_in) MERGE_TMHMM(tmhmm_in)
+        if (tmhmm_in) {
+            MERGE_TMHMM(tmhmm_in)
+            merge_outs << MERGE_TMHMM.out.parquet
+        }
 
         def targetp_in = mergeInput(use_glob, run_targetp, run_targetp ? RUN_TARGETP.out.summary : null, "targetP/**/*_summary.targetp2.gz")
-        if (targetp_in) MERGE_TARGETP(targetp_in)
+        if (targetp_in) {
+            MERGE_TARGETP(targetp_in)
+            merge_outs << MERGE_TARGETP.out.parquet
+        }
 
         if (use_glob || run_idp) {
             def idp_sync = run_idp ? RUN_IDP.out.idp_csv.collect()         : Channel.of(true)
@@ -177,12 +212,25 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(idp_sync, "aiupred/**/*.idp.csv.gz")         : idp_sync,
                 use_glob ? gatedGlob(sum_sync, "aiupred/**/*.idp_summary.csv.gz") : sum_sync
             )
+            merge_outs << MERGE_IDP.out.idp
         }
 
         def wolf_in = mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/**/*.wolfpsort.results.txt.gz")
-        if (wolf_in) MERGE_WOLFPSORT(wolf_in)
+        if (wolf_in) {
+            MERGE_WOLFPSORT(wolf_in)
+            merge_outs << MERGE_WOLFPSORT.out.parquet
+        }
 
         def predgpi_in = mergeInput(use_glob, run_predgpi, run_predgpi ? RUN_PREDGPI.out.gff3 : null, "predgpi/**/*.predgpi.gff3.gz")
-        if (predgpi_in) MERGE_PREDGPI(predgpi_in)
+        if (predgpi_in) {
+            MERGE_PREDGPI(predgpi_in)
+            merge_outs << MERGE_PREDGPI.out.parquet
+        }
     }
+
+    emit:
+    // Gating channel for BUILD_DUCKDB (see comment above merge_outs). Always
+    // emits at least one item so downstream .collect()/.mix() callers never
+    // stall waiting on an empty channel when skip_merge is set or no tool ran.
+    sync = merge_outs ? merge_outs.inject(Channel.empty()) { acc, ch -> acc.mix(ch) } : Channel.of(true)
 }

@@ -1203,6 +1203,26 @@ Root cause: `FUNANNOTATE_RNASEQ.nf`'s own header comment says it plainly (line 9
 
 **Tags**: funannotate, rnaseq, run_sra_fetch, container-migration, genemark, T-022, silent-misconfiguration, beta5
 
+### [2026-08-14] beta.5 real end-to-end confirm run, take 2: TRAIN + GENEMARK_RUN (ES/ET/reuse) all validated; containerized `funannotate update` hits a real PASA hook-resolution bug
+
+**Category**: validation (positive) + gotcha (new bug, unresolved)
+
+**What happened**: After fixing the `run_sra_fetch` misconfiguration (previous entry) and clearing the stale `predict_results` it produced, a clean rerun (SLURM job 27462389, `do_container_confirm_test/`) genuinely exercised the full wired path: containerized `FUNANNOTATE_TRAIN` (confirmed real `transcript.alignments.bam` + `trinity-GG.fasta` for all 3 *Penicillium citrinum* strains), `GENEMARK_RUN`/`GENEMARK_RUN_SIB`, and `FUNANNOTATE_PREDICT`/`FUNANNOTATE_PREDICT_SIB`. Results: all 4 strains produced sane gene counts (B8014 10,380; NRRL_1841 9,899; NRRL_756 10,351; *Pichia senei* 4,650), and — the key confirmation — both sibling strains' `predict_results/*.parameters.json` show `"genemark": {"source": "ab-initio-reuse", ...}`, proving `GENEMARK_RUN_SIB`'s `--predict_with` shared-`.mod` reuse path genuinely fired against real ANI-driven representative/sibling assignments (B8014 representative, NRRL_1841/NRRL_756 siblings at 99.5% ANI) computed by a real `compare_ani` prerequisite pass, not a stub. (Direct ES-vs-ET proof for the representative/standalone strains isn't recoverable after the fact — `GENEMARK_RUN` has no `publishDir`/`storeDir` and `cleanup=true` wipes successful work dirs — but the branch is a deterministic function of `training_bam` existence, which is independently confirmed present for B8014 and absent for *Pichia senei*, so this is as strong a confirmation as the design allows without adding new instrumentation.)
+
+Two real, unrelated setup/packaging issues surfaced in the same run:
+1. **My own test-dir gap**: `FUNANNOTATE_ANNOTATE` failed — `lib/template.sbt` was never created when the isolated `do_container_confirm_test/lib/` was set up (only `augustus/`, `taxdump`, `swissprot_fungi.faa` were carried over). Fixed with a symlink to the shared production file. Not a pipeline bug.
+2. **Real beta.5/PASA packaging bug, root-caused precisely**: `FUNANNOTATE_UPDATE` failed for good — PASA's `Load_Current_Gene_Annotations.dbi` (invoked during `funannotate update`'s annotation-comparison step; auto-selects the `GFF3::GFF3_annot_retriever::get_annot_retriever` hook whenever its `-P` arg is a `.gff3` file — unconditional, not something the calling conf can opt out of) dies with `Error, couldn't resolve path for GFF3::GFF3_annot_retriever` (`Pasa_conf.pm` line 149/`_get_hook`). Initial read (wrong): assumed the hook `.pm` needed to live under `PerlLib/GFF3/` and was simply missing from the rust-optimized PASA fork's `PerlLib/` tree. **Corrected after checking `~/projects/funannotate/PASApipeline` (the actual fork source, `git@github.com:hyphaltip/PASApipeline.git`, branch `rust_optimize`)**: PASA's hook modules are deliberately NOT in `PerlLib/` — they live in a separate top-level `SAMPLE_HOOKS/` dir (`SAMPLE_HOOKS/GFF3/GFF3_annot_retriever.pm`, `SAMPLE_HOOKS/GTF/Gtf_annot_retriever.pm`), loaded dynamically via a dedicated `HOOK_PERL_LIBS` config key that `Pasa_conf.pm::_load_hook_perl_libs()` reads and pushes onto `@INC` before hook resolution. This project's own `~/.pasa/pasa_conf/conf.txt` already has `HOOK_PERL_LIBS=__PASAHOME__/SAMPLE_HOOKS` set correctly (matches upstream's own `Docker/conf.txt` reference) — the config side is NOT the bug. **Actual root cause**: `PASApipeline/scripts/install.sh` copies `PerlLib`, `Launch_PASA_pipeline.pl`, `pasa_conf`, `schema`, `scripts`, `pasa-plugins`, and `misc_utilities` into the install prefix (lines ~160-195) but has **no line copying `SAMPLE_HOOKS/`** — confirmed `/venv/opt/pasa/src/SAMPLE_HOOKS` is entirely absent in the built beta.5 image, so `HOOK_PERL_LIBS` points at a directory that was never installed. This was the first-ever real (non-stub) test of containerized `funannotate update`; the identical bug would hit `.gtf`-based updates too (`GTF::Gtf_annot_retriever`, same missing directory).
+
+**Why it matters**: The core migration goal for this session (containerized TRAIN + standalone GeneMark ES/ET + ANI-driven species-level reuse) is now genuinely validated end-to-end on real data, not just stub-run/unit-tested. `funannotate update`'s container path is NOT ready, but the fix is precise and tiny (one `install.sh` block), not a deep PASA/container incompatibility.
+
+**Resolution**: TRAIN/GENEMARK_RUN/PREDICT confirmed working, no further action needed there. `FUNANNOTATE_UPDATE` containerization is blocked on a one-line fix to `hyphaltip/PASApipeline`'s `scripts/install.sh` (add a `cp -r "${PASA_ROOT}/SAMPLE_HOOKS" "${SRC_DIR}/"` block alongside the existing `PerlLib`/`pasa_conf`/etc. copies, ~line 162) — `pixi_install_pasa.sh` delegates entirely to `install.sh`, so no Dockerfile change is needed once that lands; just rebuild. Tracked as T-028. `run_update`/`FUNANNOTATE_ANNOTATE` were only just wired to the container in this same session (previously module-load only, untested even on host) — recommend leaving `run_update` off in production configs until the fork is patched and a new beta is built.
+
+**How to apply (meta)**: When a "the config must be wrong" hypothesis is tempting, check the actual upstream source tree before proposing a fix — the first-pass diagnosis here (move `.pm` into `PerlLib/`) would have been a wrong, wasted fix; the real bug was one directory away, in the install script, not the Perl module layout or the Nextflow-side config.
+
+**How to apply**: When containerizing a tool with multiple sub-modes (train/predict/update/annotate), validate each mode with a REAL run, not just a syntax/stub-run — this PASA hook bug and the earlier `run_sra_fetch` staleness gotcha were both invisible to `-stub-run` and both only surfaced by actually executing the pipeline against real strains with a genuinely dirty prior-run state.
+
+**Tags**: funannotate, container-migration, genemark, T-022, pasa, funannotate-update, packaging-bug, beta5, ani-reuse, species-level-reuse-validated
+
 ### [2026-08-14] Correction: `predict_results/*.parameters.json`'s `genemark` field does NOT reveal whether GENEMARK_RUN used ES or ET — it's predict.py's own unrelated internal bookkeeping
 
 **Category**: gotcha (self-correction — the previous learnings entry, same lineage, recommended exactly this check as a validation method)
@@ -1232,3 +1252,66 @@ if genemarkcheck:
 **How to apply**: Don't trust `parameters.json`'s `genemark.source` field for ES-vs-ET provenance — it's not measuring that. Future work should have `GENEMARK_RUN` write its own small persistent provenance marker (e.g. a one-line file alongside its `.genemark.gtf`/`.genemark.mod` output, published rather than left in the ephemeral work dir) so which branch actually ran is directly checkable without disabling `cleanup` or re-deriving it from `.nextflow.log`.
 
 **Tags**: funannotate, genemark, genemark-et, provenance, container-migration, T-022, false-signal, beta5
+
+### [2026-08-14] Verified `-w genemark:1` weight override works correctly when `gmes_petap.pl` is genuinely absent (the real containerized-predict scenario)
+
+**Category**: validation (positive result)
+
+**What happened**: Before wiring `FUNANNOTATE_PREDICT` into the beta.5 container, needed to verify the previously-uncertain safety net: `predict.py:567` unconditionally zeroes `StartWeights["genemark"]` when `gmes_petap.pl` isn't found on the host running predict, and `FUNANNOTATE_PREDICT/main.nf` passes an explicit `-w ... genemark:1` to force it back on — but this had never been tested against an environment where `gmes_petap.pl` is genuinely absent (predict has always run via the host module, which has it).
+
+Ran `funannotate predict` for real, directly via `singularity exec` against the beta.5 image (no Nextflow/SLURM needed for this — a standalone test), on a small real genome (*Pichia senei*, 10 Mb) with a real precomputed `--genemark_gtf` (generated via the existing `GENEMARK_RUN` module in ES mode) and the exact `-w codingquarry:0 glimmerhmm:0 genemark:1` flags `FUNANNOTATE_PREDICT` uses. Confirmed `gmes_petap.pl`/`$GENEMARK_PATH` genuinely absent in the container first.
+
+Traced the code path in `predict.py` before running: `StartWeights["genemark"]` initializes to 0 when `not genemarkcheck` (true here), then the `-w` argparse block runs *after* that and unconditionally sets `StartWeights[predictor.lower()] = weight` for anything the user passed explicitly — so `-w genemark:1` should survive. A second, later re-zero check (tied to `--auto-skip-genemark` on fragmented assemblies) is guarded by `if not GeneMark and ...` — and `GeneMark` (the variable) gets set truthy as soon as `--genemark_gtf` is processed, earlier in the script, so that check is skipped entirely when `--genemark_gtf` is supplied.
+
+Real run confirmed both the debug-log `StartWeights` dict (`{'genemark': 1, ...}`, right after argparse) and the final `predict_misc/weights.evm.txt` (`ABINITIO_PREDICTION\tGeneMark\t1`) show weight 1, not 0. More importantly, the "Summary of gene models" log line showed **real GeneMark evidence flowed through**: `{'total': 12296, 'Augustus': 3404, 'HiQ': 47, 'GeneMark': 4957, 'snap': 3888}` — a substantial, plausible model count, not a non-zero weight applied to zero actual predictions. EVM produced 4,561 final consensus models.
+
+**Why it matters**: This was the single named risk blocking `FUNANNOTATE_PREDICT`'s containerization — confirmed with real evidence, not just code-reading, that GeneMark's precomputed evidence is correctly weighted and consumed once `gmes_petap.pl` is genuinely absent from predict's own environment (the exact state predict will be in once containerized).
+
+**Side findings while running this test** (both closed same day, see `todo/TODO_REGISTRY.md` T-027): `/opt/databases` (the container's baked-in default `$FUNANNOTATE_DB`) doesn't actually exist inside the image — confirms our explicit `export FUNANNOTATE_DB=<bind-mounted host path>` correctly takes precedence, no hidden bundled DB to worry about. Separately, all `*_odb12` BUSCO lineages in the shared `FUNANNOTATE_DB` were missing `lengths_cutoff` (funannotate's vendored old BUSCO2 script needs the legacy dataset layout; `*_odb10` and older are fine) — turned out to have zero production impact since real `samples.csv` rows all use bare/unsuffixed lineage names resolving to separate, complete legacy directories; the `*_odb12` dirs were moved out of `FUNANNOTATE_DB`'s top level afterward so nobody can select one by accident.
+
+**Resolution**: `FUNANNOTATE_PREDICT/main.nf` wired into the container (`singularity exec` via `SING`/`SING_BINDS`, mirroring `FUNANNOTATE_TRAIN`), same day. Tagged `pre-funannotatepredimage` beforehand as a rollback point.
+
+**How to apply**: When a safety-net code path (like a weight override) has never actually been exercised in the target environment, don't assume code-reading is sufficient before flipping a production switch that depends on it — run the real command in the real target environment first, and check for a persistent, literal, environment-derived artifact (`weights.evm.txt`, not a log line that could be a leftover/unrelated default) plus a plausible non-zero model count as positive evidence, not just "didn't error."
+
+**Tags**: funannotate, genemark, evm-weights, container-migration, predict, validation, beta5
+
+### [2026-08-14] `FUNANNOTATE_PREDICT` and `FUNANNOTATE_ANNOTATE` wired into beta.5, `PREDICT` validated end-to-end via Nextflow
+
+**Category**: implementation / validation
+
+**What happened**: With the `-w genemark:1` weight override confirmed working with real evidence (previous entry), wired `FUNANNOTATE_PREDICT/main.nf` and `FUNANNOTATE_ANNOTATE/main.nf` into the beta.5 container, mirroring `FUNANNOTATE_TRAIN`'s `SING`/`SING_BINDS` pattern exactly (binds: `target`, `training_target` for the `training/` symlink, `augustus_config`, `funannotate_db`, plus `proteins` for predict and `sbt_template` for annotate; defensive `unset -f which`). GeneMark logic left untouched -- it was already fully externalized via `GENEMARK_RUN` + `--genemark_gtf`.
+
+Tagged `pre-funannotatepredimage` (annotated git tag) as a rollback point immediately before this change, per explicit request, since PREDICT had never run via container before and the weight-override risk was the one thing standing in the way.
+
+Validated `-stub-run` clean for both, then forced a real re-predict for `Pichia_senei_UFMG-CM-Y531` (deleted its existing host-module `predict_results`/`predict_misc`, reran with `-resume` so only that one strain re-executed) through the real Nextflow-driven wiring -- not just the hand-rolled `singularity exec` test from the previous entry. Confirmed via the persistent predict log: `/venv/bin/funannotate predict ...` (the container binary path, not the host module's `/opt/linux/.../pixi/envs/default/bin/funannotate`), 4,647 genes (vs. 4,646 from the earlier host-module run of the same strain -- consistent, real).
+
+**Runtime comparison** (real data, same strain/inputs, `Penicillium_citrinum_B8014` TRAIN): container **3,141s** (13:26:06-14:18:27, from the persistent `funannotate-train.log` timestamps) vs. host-module historical **3,788s** (`analysis/funannotate_train_stage_timing/outputs/per_run_summary.csv`) -- **container ~17% faster**, consistent with the rust-optimized Trinity/PASA build this image was made for.
+
+**Resolution**: `FUNANNOTATE_UPDATE` (wired earlier, never exercised) and `FUNANNOTATE_ANNOTATE` (just wired, never exercised at all, containerized or not) both need a real test before calling container migration complete -- queued as a follow-up run (`run_update: true`, `run_annotate: true` added to `params_confirm.yaml`) against the same 4-strain isolated test dir.
+
+**Tags**: funannotate, container-migration, predict, annotate, beta5, git-tag, runtime-comparison, validation
+
+### [2026-08-18] LZ-ANI 1.2.3 is unusable as a genome-level ANI method for fungal genomes — silent failures + OOM quirks
+
+**Category**: tool-evaluation / negative result
+
+**What happened**: Evaluating `lz-ani all2all` (quay.io biocontainers `lz-ani:1.2.3--h9ee0642_0`, needs `module load singularity/3.9.3` or `4.3.2` — `singularity` is NOT on PATH by default) against real fungal scaffold files (32–52 MB) revealed hard failure modes with no clean way to detect them:
+
+- `--multisample-fasta true` (the tool's default): produces a clean 3-column query/reference/ANI TSV, but at **scaffold level** — every scaffold becomes a sample (`NW_022983500.1`-style contig IDs), so it is semantically wrong for genome ANI and NOT comparable to skani/fastani/mash genome ANI.
+- `--multisample-fasta false` (correct genome-level mode): **silently writes NO output on real fungal genomes, even single-genome runs** — `exit 0`, normal logs, ~4.9 GB RSS, nothing emitted. This is the worst failure class: silent data absence with no distinguishable log line. (On tiny synthetic contigs it does produce output, so tests that only use small inputs look green.)
+- Thread-scaled genome-level runs OOM-kill (`exit 137`) at `-t >= 4` even for 1–2 genomes on the 4-core / 503 GB test host; ~5 GB peak RSS per 1–2 genomes.
+- `--out-format` is ignored on small inputs — the tool emits a **sectioned `[lz_similarities]` file** indexed by sample number instead of a plain table.
+
+**Resolution**: LZ-ANI de-scoped from the compare_ANI pipeline (module, config, schema, params, README all cleaned); evidence + reproduction recipe kept in `analysis/ani_method_evaluation/LZANI_PERFORMANCE.md`; the method-agnostic `scripts/compare_ani_methods.py` was kept. Container SIF left in the shared cache.
+
+**Tags**: lz-ani, ani, container, singularity, tool-evaluation, negative-result, oom, silent-failure, de-scope
+
+### [2026-08-18] `pathlib.Path.glob()` raises `NotImplementedError` on absolute patterns — use `glob.glob()` for absolute globs
+
+**Category**: python gotcha
+
+**What happened**: In `scripts/compare_ani_methods.py`, `Path(trace_dir).glob('/var/lib/.../ANI_trace.*.txt')` (absolute pattern) crashed with `NotImplementedError: Non-relative patterns are unsupported` — an easy-to-miss break when plumbing an absolute `--trace-glob` through a configurable parameter (stdlib `glob.glob()` handles both relative and absolute patterns).
+
+**Resolution**: switched to `glob.glob(os.path.expanduser(trace_glob))` so the same code path serves relative CWD-relative globs, `~/`-expansion, and absolute globs. (Note: `nextflow_schema.json` uses the top-level `$defs` key, *not* `definitions` — the schema's param groups live under `$defs/ani_options/properties`.)
+
+**Tags**: python, pathlib, glob, gotcha, compare-ani-methods

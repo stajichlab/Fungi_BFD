@@ -12,7 +12,7 @@ process FUNANNOTATE_TRAIN {
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), path(r1), path(r2), path(se), path(trinity_fa)
+          val(genome_fa), path(r1), path(r2), path(se), path(trinity_fa), val(pasa_tier)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -155,9 +155,25 @@ process FUNANNOTATE_TRAIN {
     esac
 
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
+    # Shared-Trinity rows only ever reach this process with pasa_tier
+    # 'stringent' or 'relaxed' -- FUNANNOTATE_RNASEQ.nf filters 'skip'-tier rows
+    # (ANI < 90% to the representative, or unmeasured) out before FUNANNOTATE_TRAIN
+    # is even invoked, routing them to ab-initio-only like a genuinely
+    # RNA-seq-less strain. 'relaxed' rows are non-representative strains whose
+    # ANI to the representative (90-97%) says the shared Trinity-GG transcripts
+    # -- assembled from a DIFFERENT strain's own RNA-seq (see RNASEQ_PREPARE) --
+    # are real but somewhat diverged, so PASA's stringent defaults (95% identity
+    # / 90% aligned) would reject most of it; PASA_TIER_ARGS relaxes those
+    # specifically for this run. 'stringent' rows (ANI >= 97%, or the
+    # representative itself at ANI=100) keep PASA's defaults untouched.
+    PASA_TIER_ARGS=""
+    if [ "${pasa_tier}" = "relaxed" ]; then
+        PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_shared_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_shared_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_shared_num_bp_splice}"
+    fi
+
     if [ -s "${trinity_fa}" ]; then
         if [ -s "${r1}" ]; then
-            echo "[INFO] Running funannotate train (PASA+PE) for ${out} using shared Trinity"
+            echo "[INFO] Running funannotate train (PASA+PE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
             \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
                 --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
                 --species "${species}" --strain "${strain}" \\
@@ -165,9 +181,10 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
+                \$PASA_TIER_ARGS \\
                 \$pasa_db_arg
         elif [ -s "${se}" ]; then
-            echo "[INFO] Running funannotate train (PASA+SE) for ${out} using shared Trinity"
+            echo "[INFO] Running funannotate train (PASA+SE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
             \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
                 --trinity ${trinity_fa} --single_norm ${se} \\
                 --species "${species}" --strain "${strain}" \\
@@ -175,9 +192,10 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
+                \$PASA_TIER_ARGS \\
                 \$pasa_db_arg
         else
-            echo "[INFO] Running funannotate train (PASA only, no reads) for ${out} using shared Trinity"
+            echo "[INFO] Running funannotate train (PASA only, no reads) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
             \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
                 --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
                 --species "${species}" --strain "${strain}" \\
@@ -185,6 +203,7 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
+                \$PASA_TIER_ARGS \\
                 \$pasa_db_arg
         fi
     elif [ -s "${r1}" ]; then

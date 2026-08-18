@@ -612,3 +612,19 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Immediate/short-term**: production launches proceed on current (unfixed) code using a documented-safe params recipe (`run_sra_fetch=true`, `skip_sra_query=true`, `share_abinitio_params=true`, `run_ani_reuse=true` set explicitly) rather than blocking on this restructuring landing first.
 
 **Tags**: funannotate, rnaseq, sra, nextflow, container-migration, design-review, fable, grilling, T-025, silent-misconfiguration
+
+## D: De-scope LZ-ANI from compare_ANI after empirical evaluation (2026-08-18)
+
+**Context**: While building `scripts/compare_ani_methods.py` (post-hoc join + timing comparison of any two `--ani_method` result trees), evaluated LZ-ANI 1.2.3 (`docker://quay.io/biocontainers/lz-ani:1.2.3--h9ee0642_0`, cached at `/bigdata/stajichlab/shared/lib/singularity_cache/lz-ani_1.2.3--h9ee0642_0.sif`) as a candidate fifth ANI method for the `compare_ANI` workflow. Real-genome probes on 1–2 fungal genomes (Aaosphaeria_arxii / Abortiporus_biennis / Absidia_cylindrospora scaffolds, 32–52 MB) in both container modes exposed hard failure modes (full ledger in `analysis/ani_method_evaluation/LZANI_PERFORMANCE.md`).
+
+**Decision**:
+1. Remove LZ-ANI from the pipeline entirely: delete `nextflow/modules/ani/compare/LZANI_COMPARE/`, drop the `withLabel:lzani` block in `profile_ANI.config`, strip `lzani` from the `ani_method` enum + `lzani_min_af`/`lzani_container` params in `nextflow_schema.json`, from both `params_ani.yaml`/`params_unified_ani.yaml`, and from `README_ANI.md` (methods/params/container tables + the `skani,lzani` comparison example). Remaining `ani_method` values: `skani | mash | sourmash | fastani`.
+2. Keep `scripts/compare_ani_methods.py` — it is method-agnostic and still useful (e.g. `--methods skani,fastani`); default/help/examples updated off `skani,lzani`.
+3. Keep the evidence: `analysis/ani_method_evaluation/LZANI_PERFORMANCE.md` documents the measurements, failure modes, and reproduction recipe; README now points to it.
+4. Keep the LZ-ANI SIF in the shared Singularity cache (other projects may pull the same image; harmless to leave).
+
+**Alternatives considered**: (a) Ship LZ-ANI in its default mode — rejected: scaffold-level pairs (contigs-as-samples) are semantically wrong for genome-level ANI and would silently corrupt cross-method comparisons. (b) Ship it in genome-level mode despite the bugs — rejected: silent no-output on real genomes (exit 0, nothing to grep for) is the worst failure class (silent data absence) for a tool whose job is to *detect* relationships; OOM-kill at `-t>=4` on even 2 genomes makes clade-level use impossible. (c) Patch/report upstream — not a near-term path (closed-source binary from refresh-bio; no fix available in 1.2.3).
+
+**Consequences**: compare_ANI supports 4 methods; doc/tooling consistent; LZ-ANI remains as a documented negative result rather than an unmaintained pipeline branch.
+
+**Tags**: ani, lz-ani, de-scope, container, singularity, nextflow, tool-evaluation, decision, negative-result

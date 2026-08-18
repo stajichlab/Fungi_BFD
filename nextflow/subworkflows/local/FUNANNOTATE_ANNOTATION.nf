@@ -147,25 +147,43 @@ workflow FUNANNOTATE_ANNOTATION {
             // second join below (annotate_ready_ch.join(upd_signal)) ALSO dropped it --
             // silently removing an otherwise-fully-predicted genome from ANNOTATE too,
             // not just UPDATE. Found via design review, 2026-08-14.
-            def upd_input = predict_meta
+            // join(by:0, remainder:true) turned out to be the wrong operator here, not
+            // just awkward to destructure: Nextflow's join pairs by key like a 1:1
+            // zipper, not a broadcast. When multiple strains of the same species (a
+            // normal case -- RNA-seq is fetched once per species, shared across
+            // strains) hit this join against reads_ch's single per-species entry, only
+            // the FIRST matching predict_meta row actually paired with the real reads;
+            // the rest silently got remainder-null padding and were logged as "no
+            // RNA-seq reads available" even though the species' reads genuinely exist.
+            // Caught for real: NRRL_1841 got real reads (and a real UPDATE) while
+            // sibling strains B8014/NRRL_756 of the SAME species did not, on a run
+            // where rnaseq_reads/Penicillium_citrinum_norm_R1.fastq.gz was present and
+            // non-empty for all three. combine(by:0) is the correct operator for
+            // fan-out (broadcasts the single reads_ch item to every matching left-side
+            // row) but is an inner join -- it drops a species with no reads_ch entry at
+            // all, which is exactly the silent-vanishing bug the remainder:true was
+            // added for in the first place (see note above). So: use combine(by:0) for
+            // the broadcast-matched case, and separately preserve genuinely-unmatched
+            // species via an explicit collected-keys membership check rather than
+            // relying on join's remainder semantics. Found via real run, 2026-08-18.
+            def reads_species_ch = reads_ch.map { st, _r1, _r2, _se -> st }.toList()
+            def upd_input_base = predict_meta
                 .map { out, asmid, species, strain, locustag, busco, hlen, ttable ->
                     def species_tag = species.replaceAll(/\s+/, '_')
                     tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable)
                 }
-                .join(reads_ch, by: 0, remainder: true)
-                // Nextflow's join(remainder:true) pads a wholly-missing right side with a
-                // SINGLE null, not one null per right-channel field -- a species with no
-                // reads_ch entry at all yields 9 left fields + 1 null (10 total), not
-                // 9 + 3 (12 total) as a fixed-arity closure destructure would assume.
-                // Index into the row instead of destructuring positionally so both the
-                // matched (12-element) and unmatched (10-element) shapes are handled.
-                // Found via real run failure on beta.6 confirm test, 2026-08-15.
-                .map { row ->
-                    def (out, asmid, species, strain, locustag, busco, hlen, ttable) = row[1..8]
-                    def r1 = row.size() > 9 ? row[9] : null
-                    def r2 = row.size() > 10 ? row[10] : null
+            def upd_input_matched = upd_input_base
+                .combine(reads_ch, by: 0)
+                .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2, _se ->
                     tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, r1, r2)
                 }
+            def upd_input_nomatch = upd_input_base
+                .combine(reads_species_ch)
+                .filter { species_tag, _out, _a, _sp, _st, _lt, _bl, _hl, _tt, matchedKeys -> !(species_tag in matchedKeys) }
+                .map { _st, out, asmid, species, strain, locustag, busco, hlen, ttable, _keys ->
+                    tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, null, null)
+                }
+            def upd_input = upd_input_matched.mix(upd_input_nomatch)
             def hasReads = { r1 -> r1 != null && file(r1 as String).exists() && file(r1 as String).size() > 0 }
             def upd_todo = upd_input.filter { out, _a, _sp, _st, _lt, _bl, _hl, _tt, r1, _r2 ->
                 hasReads.call(r1) && gbkResult("${params.target}/${out}/update_results", out as String) == null

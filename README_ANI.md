@@ -10,6 +10,12 @@ clade level (CLASS / PHYLUM = thousands of genomes). The workflow now supports f
 methods; **skani is the default**. All sketch-based methods sketch each genome
 **once** into a shared cache, so the expensive step is linear in N.
 
+> **LZ-ANI was evaluated as a fifth method and rejected.** LZ-ANI 1.2.3's
+> genome-level mode (`--multisample-fasta false`) silently writes no output on
+> fungal-sized genomes and OOM-kills at higher thread counts; its clean-format
+> mode is scaffold-level only. See
+> [`analysis/ani_method_evaluation/LZANI_PERFORMANCE.md`](analysis/ani_method_evaluation/LZANI_PERFORMANCE.md).
+
 | `--ani_method` | Tool | Speed | Notes |
 |---|---|---|---|
 | `skani` *(default)* | [skani](https://github.com/bluenote-1577/skani) | fast | Accurate ANI down to ~80%; sketch-once + sparse `triangle`. Best for clades. |
@@ -19,7 +25,9 @@ methods; **skani is the default**. All sketch-based methods sketch each genome
 
 Every method emits a normalized `query⇥reference⇥ANI` table and runs through the
 same report step, so clustering/outlier output is identical in format regardless of
-method.
+method. To compare two methods on the same groupings, run the workflow once per
+method (results are segregated under `results/ANI/<method>/<RANK>/`) and join them
+with `scripts/compare_ani_methods.py` (see below).
 
 ### Sketch cache
 
@@ -148,6 +156,52 @@ results/ANI/
 For fastANI, when batching (`--ani_batch_size > 0`) or the prefilter cascade is
 enabled, the `batches/` subfolder holds the per-batch / per-component TSVs and a
 merged `<GROUP>.ani.tsv` is written at the group root.
+
+---
+
+## Comparing ANI Methods
+
+To compare two `--ani_method`s (e.g. `skani` vs `fastani`) on the **same** groupings,
+run the workflow once per method — output is segregated by method, so nothing is
+overwritten — then post-hoc join the two result trees:
+
+```bash
+# Run 1: skani (default)
+nextflow run nextflow/main.nf \
+    -c nextflow/nextflow.config \
+    -profile ani --pipeline compare_ani \
+    --compare GENUS --ani_method skani -resume
+
+# Run 2: fastANI
+nextflow run nextflow/main.nf \
+    -c nextflow/nextflow.config \
+    -profile ani --pipeline compare_ani \
+    --compare GENUS --ani_method fastani -resume
+
+# Post-hoc join + timing comparison
+python3 scripts/compare_ani_methods.py \
+    --ani-dir results/ANI --compare GENUS \
+    --methods skani,fastani \
+    --thresholds 95.0,98.0
+```
+
+This writes per-pair `%ID` comparison tables under
+`results/ANI/method_comparison/GENUS/` — one shared pairs table, a per-group
+breakdown (deltas, per-threshold agreement, Pearson r), and a wall-clock timing
+table pulled from the runs' Nextflow trace files:
+```
+results/ANI/method_comparison/
+└── GENUS/
+    ├── comparison_pairs.tsv        # group, query, reference, skani_%ID, fastani_%ID, delta_%ID
+    ├── comparison_summary.tsv      # per group: n_pairs, mean/max |delta|, threshold agreement, pearson_r
+    ├── method_timing.tsv           # per group: skani_sec, fastani_sec, speedup
+    └── Fusarium/                   # per-group pair tables (one file per group present in BOTH runs)
+        └── Fusarium.pairs.tsv
+```
+
+Timing is read from `logs/nextflow/ANI_trace.*.txt` (each method's compare task
+is attributed by its process name), so both runs must have completed with the
+default trace config enabled.
 
 ---
 

@@ -49,6 +49,9 @@ workflow BFD_MERGE {
     asm_stats
     telomeres
     busco_genome
+    functional_sync // BFD_FUNCTIONAL.out.sync -- gates BUILD_DUCKDB on the
+                     // pfam/cazy/merops/... merges too, not just genome_stats
+                     // (see comment above merge_outs in BFD_FUNCTIONAL.nf)
     use_glob
 
     main:
@@ -62,7 +65,10 @@ workflow BFD_MERGE {
     // enabled) waits for all of this run's merges to publish before it globs
     // tables/ -- same purpose as gatedGlobIn's sync_ch, just fanned in from
     // process outputs instead of an upstream file-existence channel.
-    def merge_outs = [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species]
+    // functional_sync carries the same signal for BFD_FUNCTIONAL's merges
+    // (pfam/cazy/merops/swissprot/signalp/tmhmm/targetp/idp/wolfpsort/predgpi)
+    // -- without it BUILD_DUCKDB's cache key never depends on those tables.
+    def merge_outs = [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species, functional_sync]
 
     if (use_glob) {
         // In glob mode a table is rebuilt even when its producer did not run this

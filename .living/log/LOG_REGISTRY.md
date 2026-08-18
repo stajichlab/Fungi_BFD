@@ -65,3 +65,6 @@
 | 2026-08-13 | 2026-08-13-001 | fungi-bfd | main | 27m | 3 |  | | complete | | [log](2026-08-13-001-fungi-bfd.md) |
 | 2026-08-13 | 2026-08-13-002 | fungi-bfd | main | 1m | 5 |  | | complete | | [log](2026-08-13-002-fungi-bfd.md) |
 | 2026-08-14 | 2026-08-14-001 | fungi-bfd | main | 0m | 8 |  | | complete | | [log](2026-08-14-001-fungi-bfd.md) |
+| 2026-08-14 | 2026-08-14-002 | fungi-bfd | main | 43m | 5 | nextflow_schema.json | | complete | | [log](2026-08-14-002-fungi-bfd.md) |
+| 2026-08-15 | 2026-08-15-001 | fungi-bfd | main | 1m | 9 | params_confirm.yaml | | complete | | [log](2026-08-15-001-fungi-bfd.md) |
+| 2026-08-15 | 2026-08-15-002 | fungi-bfd | main | 9m | 9 | params_confirm.yaml | | complete | | [log](2026-08-15-002-fungi-bfd.md) |

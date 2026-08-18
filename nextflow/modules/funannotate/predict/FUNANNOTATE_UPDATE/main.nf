@@ -51,6 +51,17 @@ process FUNANNOTATE_UPDATE {
     export FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
     export PASACONF=""
+    # PASA's hook loader (Pasa_conf.pm::_get_hook) resolves
+    # HOOK_EXISTING_GENE_ANNOTATION_LOADER (GFF3::GFF3_annot_retriever, used by
+    # funannotate update's annotation-comparison step) by searching @INC for
+    # GFF3/GFF3_annot_retriever.pm. The container's default PERL5LIB is empty
+    # and SAMPLE_HOOKS isn't on the default @INC, so this crashes with
+    # "Error, couldn't resolve path for GFF3::GFF3_annot_retriever" on every
+    # real update run. singularity exec passes host env through by default, so
+    # exporting PERL5LIB here (before the singularity exec call) reaches the
+    # container. Confirmed
+    # via direct `singularity exec ... perl -e '...@INC...'` test, 2026-08-15.
+    export PERL5LIB="/venv/opt/pasa/src/SAMPLE_HOOKS:/venv/opt/pasa/src/PerlLib"
     pasa_db_arg="--pasa_db sqlite"
     SING_BINDS="--bind ${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
     SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
@@ -93,6 +104,16 @@ process FUNANNOTATE_UPDATE {
     mkdir -p ${out}
     if [ -d "${params.training_target}/${out}/training" ]; then
         ln -sfn "${params.training_target}/${out}/training" "${out}/training"
+    fi
+
+    # A prior crashed update run can leave an empty update_results/ dir (mkdir
+    # happens before funannotate writes anything into it). funannotate annotate's
+    # directory-detection is `if isdir(update_results): use it` -- unconditional,
+    # no content check -- so a stale empty dir permanently poisons annotate even
+    # though predict_results/ is intact. Clear it before retrying so a failed
+    # attempt doesn't leave annotate stuck. Found via real run, 2026-08-15.
+    if [ -d "${params.target}/${out}/update_results" ] && [ ! -f "${params.target}/${out}/update_results/${out}.gbk" ]; then
+        rm -rf "${params.target}/${out}/update_results"
     fi
 
     # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).

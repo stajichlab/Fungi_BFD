@@ -93,6 +93,7 @@
                 "seqcenter":         { "type": "string", "description": "Sequencing center label for GenBank submission.", "default": "NCBI" },
                 "augustus_config":   { "type": "string", "format": "directory-path", "description": "AUGUSTUS_CONFIG_PATH." },
                 "funannotate_db":    { "type": "string", "format": "directory-path", "description": "FUNANNOTATE_DB dir." },
+                "eggnog_data_dir":   { "type": "string", "format": "directory-path", "description": "EGGNOG_DATA_DIR (eggnog-mapper DB, e.g. /srv/projects/db/eggNOG/LATEST). Required for FUNANNOTATE_ANNOTATE's containerized funannotate annotate -- without it, EggNOG-mapper's DB-not-found stderr output confuses funannotate's version check and crashes annotate." },
                 "min_contig_len":    { "type": "integer", "minimum": 0, "description": "Minimum contig length to retain when cleaning.", "default": 2000 },
                 "clean_script":      { "type": "string", "format": "file-path", "description": "Genome FASTA cleaning script." },
                 "fastq_hdr_script":  { "type": "string", "format": "file-path", "description": "FASTQ header fix script for Trinity." },

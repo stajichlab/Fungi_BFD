@@ -289,3 +289,30 @@ that includes the real module file directly. All 3 tests (fresh ES, fast
 reuse, predict consumption) pass. Reproduce:
 `nextflow run analysis/genemark_run_validation/scripts/test_genemark_run.nf ...`
 (see report for exact invocations).
+
+### ani_method_evaluation
+
+```yaml
+name: ani-method-evaluation-lz-ani
+type: tool-evaluation
+status: complete
+created: 2026-08-18
+last_updated: 2026-08-18
+datasets: [genome_annotation/{Aaosphaeria_arxii_CBS_175.79,Abortiporus_biennis_CIRM-BRFM_1778,Absidia_cylindrospora}/predict_results/*.scaffolds.fa]
+algorithms: []
+parent_analysis: null
+key_findings:
+  - "LZ-ANI 1.2.3 (quay.io biocontainers container) is rejected as a genome-level ANI method for fungal genomes."
+  - "Genome-level mode (--multisample-fasta false) silently writes NO output on real fungal genomes (even single-genome runs, exit 0, ~4.9 GB RSS) and OOM-kills (exit 137) at -t>=4 on the 4-core/503 GB host."
+  - "Default mode (--multisample-fasta true) outputs scaffold-level pairs (contigs as samples), semantically wrong for genome ANI; --out-format is ignored and tiny inputs emit a sectioned [lz_similarities] file instead."
+  - "LZ-ANI de-scoped from compare_ANI (module + config + schema + params + README cleaned); container kept in shared cache; method-agnostic compare_ani_methods.py retained for skani-vs-fastani/mash comparisons."
+report: analysis/ani_method_evaluation/LZANI_PERFORMANCE.md
+tags: [ani, lz-ani, tool-evaluation, container, negative-result, de-scope, singularity]
+```
+
+Empirical evaluation of LZ-ANI 1.2.3 as a candidate fifth `--ani_method` for
+`compare_ANI`, driven by a `compare_ani_methods.py` tooling build (post-hoc
+join + timing comparison of any two methods). Real-genome probes on 1–2 fungal
+genomes (32–52 MB scaffolds) in both container modes established the silent
+no-output and OOM failure modes that led to de-scoping LZ-ANI from the
+pipeline. Evidence + reproduction recipe in `LZANI_PERFORMANCE.md`.

@@ -23,15 +23,25 @@ process FUNANNOTATE_ANNOTATE {
     # via \$SING (singularity exec \${params.funannotate_sif}) instead of
     # `module load funannotate`. No GeneMark/mysql involvement at this stage.
     # Binds cover target (annotate reads+writes there, incl. the optional
-    # antismash_local GBK), augustus_config, funannotate_db, sbt_template, and
-    # \$TMPDIR.
+    # antismash_local GBK), augustus_config, funannotate_db, sbt_template,
+    # eggnog_data_dir, and \$TMPDIR.
     unset -f which 2>/dev/null || true
     unset which_declare 2>/dev/null || true
 
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export FUNANNOTATE_DB=${params.funannotate_db}
+    # EggNOG-mapper's DB (used by funannotate annotate's auto-run of emapper.py --
+    # see get_emapper_version()/annotate.py) is not baked into the funannotate-live
+    # image (too large -- same reason the upstream Docker image omits it). Without
+    # EGGNOG_DATA_DIR set, emapper.py --version prints a "couldn't find eggnog.db"
+    # warning to stderr ahead of its actual version line, which funannotate's naive
+    # stderr-prefix parse misreads as no version at all (LooseVersion(False) has no
+    # .version attribute), crashing annotate outright. Matches the same
+    # EGGNOG_DATA_DIR value the host funannotate/dev-1.9 module already sets.
+    # Confirmed against a real beta.6 run, 2026-08-18.
+    export EGGNOG_DATA_DIR=${params.eggnog_data_dir}
     TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind ${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.sbt_template}:${params.sbt_template},\$TMPDIR:\$TMPDIR"
+    SING_BINDS="--bind ${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.sbt_template}:${params.sbt_template},${params.eggnog_data_dir}:${params.eggnog_data_dir},\$TMPDIR:\$TMPDIR"
     SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
 
     \$SING funannotate annotate -i ${params.target}/${out} -o ${params.target}/${out} \\

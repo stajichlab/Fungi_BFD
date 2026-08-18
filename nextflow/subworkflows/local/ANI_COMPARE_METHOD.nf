@@ -2,7 +2,7 @@
 // ANI_COMPARE_METHOD — sketch + compare a group of genomes with the selected
 // --ani_method, emitting one normalized ANI table per group.
 //
-// All four methods converge on the same output contract:
+// All methods converge on the same output contract:
 //     tuple( group_name, path(<group>.ani.tsv) )   cols: query <TAB> reference <TAB> ANI
 //
 // Isolating the dispatch here keeps workflows/compare_ANI.nf to channel
