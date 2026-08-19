@@ -31,9 +31,10 @@ process FUNANNOTATE_PREDICT {
     # ── Containerized funannotate ──────────────────────────────────────────────
     # Same swap/rationale as FUNANNOTATE_TRAIN/main.nf: funannotate predict runs
     # via \$SING (singularity exec \${params.funannotate_sif}) instead of
-    # `module load funannotate`. GeneMark stays host-side (license) and is
-    # never invoked from inside this container -- it arrives pre-computed via
-    # --genemark_gtf from the upstream GENEMARK_RUN process (see the weight
+    # `module load funannotate`. GeneMark is never invoked from inside this
+    # container -- it arrives pre-computed via --genemark_gtf from the
+    # upstream GENEMARK_RUN process, which runs it from its own separate,
+    # privately-built (non-redistributable) container (see the weight
     # comment below). No mysql/mariadb sidecar here (PASA-mysql is
     # train/update-specific); binds cover target/training_target (predict
     # writes directly into target, reads the training/ symlink target),
@@ -160,8 +161,8 @@ process FUNANNOTATE_PREDICT {
         ABINITIO_REUSE_FLAG=(-p "${shared_params_json}")
     fi
 
-    # GeneMark now runs as its own upstream GENEMARK_RUN process (host module
-    # only -- GeneMark can't be containerized, see nextflow/docs/
+    # GeneMark now runs as its own upstream GENEMARK_RUN process (own
+    # privately-built, non-redistributable container -- see nextflow/docs/
     # GENEMARK_RUN_DESIGN.md), which hands predict a pre-computed GTF here.
     # --genemark_gtf makes predict skip its internal GeneMark call entirely
     # (verified in funannotate-live/funannotate/predict.py: the --genemark_gtf
@@ -175,13 +176,13 @@ process FUNANNOTATE_PREDICT {
     # predict.py:567 unconditionally zeroes StartWeights["genemark"] when
     # gmes_petap.pl isn't on the host running predict (`if not genemarkcheck:
     # StartWeights["genemark"] = 0`), with NO check for whether --genemark_gtf
-    # was supplied as an alternative. On the host module today gmes_petap.pl
-    # IS present, so this is currently a no-op safety net; the moment predict
-    # moves onto the container (no gmes_petap.pl at all), genemarkcheck goes
-    # False and a correctly-supplied --genemark_gtf would silently get EVM
-    # weight 0 -- the precomputed evidence consumed but then discarded --
-    # unless this override forces the weight back on. Confirmed by reading
-    # predict.py, not yet re-tested against an actual container run.
+    # was supplied as an alternative. This process already runs funannotate
+    # predict from the funannotate_sif container, which has no gmes_petap.pl
+    # at all, so genemarkcheck is always False here -- without this override,
+    # a correctly-supplied --genemark_gtf would silently get EVM weight 0
+    # (the precomputed evidence consumed but then discarded). Confirmed by
+    # reading predict.py and validated end-to-end (Test 3,
+    # GENEMARK_RUN_DESIGN.md: final gene count 11,202 vs. baseline 11,198).
     #
     # All -w values MUST go in a single -w group, not two separate -w flags:
     # funannotate's argparse `-w/--weights` (nargs='+', no action='append')

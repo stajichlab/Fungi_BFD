@@ -30,9 +30,25 @@ The rust-optimized `ghcr.io/nextgenusfs/funannotate` container (see
 **GeneMark is deliberately absent** (its license forbids redistribution in a
 public image). To eventually move `FUNANNOTATE_TRAIN` and `FUNANNOTATE_PREDICT`
 onto the container, GeneMark has to come out of `funannotate predict` and
-become its own step, running on the host module (where the licensed GeneMark
-install already lives), producing a GTF that gets handed to the
-container-based predict via `--genemark_gtf`.
+become its own step, producing a GTF that gets handed to the container-based
+predict via `--genemark_gtf`.
+
+**Update (2026-08-18)**: GeneMark itself now also runs from a container.
+`GENEMARK_RUN` execs into `params.genemark_sif`, which defaults to a local
+conversion of the **public** `docker://teambraker/braker3:v3.1.1` image --
+it happens to bundle GeneMark-ES/ET 4.72 (same version this project's prior
+host module used) alongside AUGUSTUS's `bam2hints`/`join_mult_hints.pl`, all
+already on `PATH` inside the image. Confirmed 2026-08-18: tools present,
+and the same `--bind /opt/linux:/opt/linux` trick resolves this host's
+`~/.gm_key` symlink chain to the license key inside this image too. Note the
+image being public does not change GeneMark's own licensing -- a
+user-obtained `~/.gm_key` is still required either way; the image just ships
+the (redistributable) binary. A privately-built, GeneMark-only alternative
+(`genemark-4.72_lic.sif`, built via
+[hyphaltip/genemark-container](https://github.com/hyphaltip/genemark-container),
+kept out of any public registry) remains available in this lab's cache for a
+smaller image. The previous host-module (`module load funannotate/dev-1.9`,
+host `$GENEMARK_PATH`) invocation is retired.
 
 Before committing to this, `.living/findings/funannotate-genemark-contribution.md`
 (F-008) validated that GeneMark is worth keeping — its contribution to the
