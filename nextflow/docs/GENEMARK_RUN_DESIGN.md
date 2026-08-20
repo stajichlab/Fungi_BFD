@@ -451,24 +451,41 @@ Still worth a final real confirmation specifically against the container
 `FUNANNOTATE_PREDICT` itself moves onto it, but the code-path behavior this
 question was actually about is now settled.
 
-## Known gap: `species_reuse_clusters.py`'s own backfill is not wired to GENEMARK_RUN
+## Known gap (RESOLVED 2026-08-19): disk-only backfill consumers missed genemark.mod
 
-`nextflow/bin/species_reuse_clusters.py` has its own **separate, undeduplicated**
-`backfill_species_store()` — different signature from the one in
-`backfill_abinitio_params.py` (which `pick_representative_strain.py` and
-`BACKFILL_ABINITIO_PARAMS` both correctly import and share), always derives
-`genemark.mod` from `predict_misc/ab_initio_parameters/`, no `genemark_mod`
-override param. It's only referenced from `nextflow/legacy/funannotate.nf`
-(the inactive legacy pipeline) — an offline maintenance script, run manually,
-not part of the active DAG this design wires into, so left untouched here.
-**Consequence**: for a representative predicted through the new
-`GENEMARK_RUN`-wired path, `genemark.mod` no longer lands in
-`predict_misc/ab_initio_parameters/` at all (see main wiring section above),
-so if someone runs `species_reuse_clusters.py` against such a representative,
-it will silently backfill augustus+snap only, missing genemark — same
-"missing component" degradation the script already has for any component
-that isn't present, not a crash, but a real behavior gap worth fixing before
-this script sees regular use again post-migration.
+`nextflow/bin/species_reuse_clusters.py` has its own **separate,
+undeduplicated** `backfill_species_store()` — different signature from the
+one in `backfill_abinitio_params.py` (which `pick_representative_strain.py`
+and `BACKFILL_ABINITIO_PARAMS` both correctly import and share), always
+derives `genemark.mod` from `predict_misc/ab_initio_parameters/`, no
+`genemark_mod` override param. It's only referenced from
+`nextflow/legacy/funannotate.nf` (the inactive legacy pipeline) — an offline
+maintenance script, run manually, not part of the active DAG this design
+wires into.
+
+A second, previously-undocumented instance of the same gap: the standalone
+`--pipeline backfill_abinitio` sweep (`workflows/backfill_abinitio.nf`) is
+part of the active DAG, and it *also* always passes `genemark_mod=''` for
+every candidate (it has no `GENEMARK_RUN` call of its own — it only reacts to
+representatives already predicted on disk), so it hits the exact same
+`predict_misc/` fallback in `backfill_abinitio_params.py`.
+
+**Consequence** for both: since `GENEMARK_RUN` moved GeneMark out of
+funannotate predict's own internal call, `genemark.mod` stopped landing in
+`predict_misc/ab_initio_parameters/` at all for anything predicted through
+the new path — so either consumer would silently backfill augustus+snap
+only, missing genemark ("missing component" degradation, not a crash, but a
+real behavior gap).
+
+**Fix**: `GENEMARK_RUN` now also copies its fresh `.mod` to
+`${params.target}/${out}/predict_misc/ab_initio_parameters/<lower_out>.genemark.mod`
+itself (Option B persistence, same pattern `FUNANNOTATE_PREDICT` already uses
+for that directory) whenever it does a fresh train — see the process script's
+tail. This restores the on-disk artifact both disk-only consumers already
+know how to find, with no changes needed to either of them. The wired path
+(`FUNANNOTATE_PREDICTION.nf` → `BACKFILL_ABINITIO_PARAMS`) is unaffected — it
+still takes the `.mod` from the explicit channel value, which takes priority
+over the `predict_misc/` fallback in `backfill_species_store()` regardless.
 
 ## Real end-to-end validation (2026-08-12, `analysis/genemark_run_validation/`)
 

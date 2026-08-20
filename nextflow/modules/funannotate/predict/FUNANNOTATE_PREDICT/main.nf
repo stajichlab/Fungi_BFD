@@ -126,29 +126,25 @@ process FUNANNOTATE_PREDICT {
     # Assemblies that are both small AND fragmented cannot yield funannotate's
     # required 30 training models; predict would run for hours then abort with
     # "Not enough gene models N to train Augustus (30 required), exiting". Detect
-    # that up front from cheap contig stats and skip cleanly (flag, no crash).
+    # that up front from cheap contig stats (bin/asm_preflight_stats.py -- shared
+    # with GENEMARK_RUN, which needs the identical policy upstream of this
+    # process; see GENEMARK_RUN_DESIGN.md) and skip cleanly (flag, no crash).
     # Requires BOTH gates so complete small genomes (e.g. Malassezia) are unaffected.
     # See analysis/funannotate_model_failures/. Disabled when predict_min_asm_bp=0.
     SKIP_REPORT="${params.target}/predict_skipped_too_small.tsv"
-    if [ "${params.predict_min_asm_bp}" -gt 0 ]; then
-        # Per-contig lengths -> sort descending -> N50 (portable; no gawk asort).
-        read ASM_BP ASM_CTG ASM_N50 < <(
-            awk '/^>/{if(len)print len;len=0;next}{len+=length(\$0)}END{if(len)print len}' "\$GENOME_IN" \\
-            | sort -rn \\
-            | awk '{L[NR]=\$1;tot+=\$1}END{half=tot/2;run=0;n50=0;for(i=1;i<=NR;i++){run+=L[i];if(run>=half){n50=L[i];break}}print tot, NR, n50}')
-        echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
-        SMALL=0; FRAG=0
-        [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ] && SMALL=1
-        { [ "\$ASM_N50" -lt "${params.predict_frag_max_n50}" ] || [ "\$ASM_CTG" -gt "${params.predict_frag_max_contigs}" ]; } && FRAG=1
-        if [ "\$SMALL" -eq 1 ] && [ "\$FRAG" -eq 1 ]; then
-            echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
-            mkdir -p "${params.target}"
-            [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50" >> "\$SKIP_REPORT"
-            touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
-            touch ${out}.predict.done
-            exit 0
-        fi
+    read ASM_BP ASM_CTG ASM_N50 ASM_VERDICT < <(
+        python "${workflow.projectDir}/bin/asm_preflight_stats.py" "\$GENOME_IN" \\
+            --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
+            --max-contigs ${params.predict_frag_max_contigs})
+    echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
+    if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
+        echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
+        mkdir -p "${params.target}"
+        [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50" >> "\$SKIP_REPORT"
+        touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
+        touch ${out}.predict.done
+        exit 0
     fi
 
     # Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md):
@@ -191,7 +187,12 @@ process FUNANNOTATE_PREDICT {
     # silently drop codingquarry:0/glimmerhmm:0 entirely.
     GENEMARK_GTF_FLAG=()
     WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
-    if [ -n "${genemark_gtf}" ]; then
+    # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
+    # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf), so a
+    # non-empty-string check on the path would still pass --genemark_gtf
+    # <0-byte file> -w genemark:1 -- weight-1 evidence that contributes
+    # nothing while claiming to.
+    if [ -s "${genemark_gtf}" ]; then
         echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
         GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
         WEIGHT_ARGS+=(genemark:1)
