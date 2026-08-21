@@ -9,7 +9,7 @@ process ANTISMASH_RUN {
 
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
-          val(busco_lineage), val(header_length), val(transl_table)
+          val(busco_lineage), val(header_length), val(transl_table), val(antismash_db_dir)
 
     output:
     tuple val(out), path("${out}/antismash_local/**")
@@ -29,11 +29,17 @@ process ANTISMASH_RUN {
         exit 1
     fi
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load antismash
+    module load singularity
     mkdir -p ${out}/antismash_local
-    antismash --taxon ${params.antismash_taxon} \\
+    # ${antismash_db_dir} is bind-mounted read-only and pointed at via --databases --
+    # see SETUP_ANTISMASH_DB/main.nf for the version-match assumption this relies on
+    # when antismash_databases is pointed at a pre-existing (not pipeline-downloaded)
+    # database directory.
+    singularity exec \\
+        --bind ${antismash_db_dir}:${antismash_db_dir} \\
+        ${params.antismash_sif} \\
+        antismash --taxon ${params.antismash_taxon} \\
+        --databases ${antismash_db_dir} \\
         --output-dir ${out}/antismash_local \\
         --genefinding-tool none \\
         --fullhmmer --clusterhmmer --cb-general --pfam2go \\

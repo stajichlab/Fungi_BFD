@@ -14,6 +14,7 @@
 //
 
 include { ANTISMASH_RUN        } from '../../modules/funannotate/function/ANTISMASH_RUN/main.nf'
+include { SETUP_ANTISMASH_DB   } from '../../modules/funannotate/setup/SETUP_ANTISMASH_DB/main.nf'
 include { INTERPROSCAN_RUN     } from '../../modules/funannotate/function/INTERPROSCAN_RUN/main.nf'
 include { SIGNALP_RUN          } from '../../modules/funannotate/function/SIGNALP_RUN/main.nf'
 include { FUNANNOTATE_ANNOTATE } from '../../modules/funannotate/function/FUNANNOTATE_ANNOTATE/main.nf'
@@ -95,7 +96,13 @@ workflow FUNANNOTATE_ANNOTATION {
             def asDir = file("${params.target}/${out}/antismash_local")
             asDir.isDirectory() && asDir.list()?.any { it.endsWith('.json') || it.endsWith('.json.gz') }
         }
-        ANTISMASH_RUN(as_todo)
+        // SETUP_ANTISMASH_DB uses storeDir so it runs at most once across all pipeline
+        // runs (skipped entirely if params.antismash_databases already holds a
+        // populated DB -- see that module's header comment for the version-match
+        // assumption when reusing a pre-existing directory).
+        SETUP_ANTISMASH_DB()
+        def antismash_db_ch = SETUP_ANTISMASH_DB.out.ready.map { params.antismash_databases }
+        ANTISMASH_RUN(as_todo.combine(antismash_db_ch))
         def as_completed = ANTISMASH_RUN.out
             .map { out, _files -> tuple(out, 'done') }
             .join(predict_meta)
