@@ -1,0 +1,26 @@
+pfam_acc,pfam_name,tf_family
+PF00172,Zn_clus,Zn(II)2Cys6 zinc cluster
+PF04082,Fungal_trans,Fungal-specific transcription factor domain (C-terminal to Zn_clus)
+PF00096,zf-C2H2,C2H2 zinc finger
+PF13465,zf-H2C2_2,C2H2 zinc finger variant
+PF13894,zf-C2H2_4,C2H2 zinc finger variant
+PF00170,bZIP_1,Basic leucine zipper
+PF07716,bZIP_2,Basic leucine zipper variant
+PF00010,HLH,Basic helix-loop-helix
+PF00320,GATA,GATA zinc finger
+PF00046,Homeodomain,Homeodomain
+PF05920,Homeobox_KN,Homeobox KN domain
+PF00447,HSF_DNA-bind,Heat shock factor DNA-binding domain
+PF00319,SRF-TF,MADS-box (SRF-type)
+PF11951,zf-C6H2,C6H2-type zinc finger
+PF00250,Forkhead,Forkhead / winged-helix domain
+PF00505,HMG_box,High mobility group box
+PF00446,SBP,SBP zinc finger
+PF00249,Myb_DNA-binding,Myb-like DNA-binding domain
+PF13921,Myb_DNA-bind_6,Myb-like DNA-binding domain variant
+PF04844,DNA_binding_1,Fungal APSES-type DNA-binding domain (e.g. Swi4/Mbp1)
+PF11955,WOPR,WOPR DNA-binding domain (fungal, e.g. Wor1/Ryp1)
+PF00105,zf-C4,Nuclear hormone receptor C4 zinc finger
+PF00157,Pou,POU-specific domain
+PF08880,Rrn7,RNA Pol I transcription factor Rrn7-type
+PF00642,zf-CCCH,CCCH zinc finger

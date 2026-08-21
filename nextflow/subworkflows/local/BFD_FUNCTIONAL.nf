@@ -25,6 +25,18 @@ include { RUN_WOLFPSORT } from '../../modules/BFD/WOLFPSORT/main.nf'
 include { RUN_PREDGPI   } from '../../modules/BFD/PREDGPI/main.nf'
 include { RUN_SWISSPROT } from '../../modules/BFD/SWISSPROT/main.nf'
 
+// ── New functional-annotation tools (2026-08-20 followup) ──────────────────
+include { RUN_EGGNOG      } from '../../modules/BFD/EGGNOG/main.nf'
+include { RUN_PHOBIUS     } from '../../modules/BFD/PHOBIUS/main.nf'
+include { RUN_DEEPTMHMM   } from '../../modules/BFD/DEEPTMHMM/main.nf'
+include { SETUP_TCDB_DB   } from '../../modules/BFD/SETUP_TCDB_DB/main.nf'
+include { RUN_TCDB        } from '../../modules/BFD/TCDB/main.nf'
+include { RUN_ANTISMASH   } from '../../modules/BFD/ANTISMASH/main.nf'
+include { RUN_TRNASCAN    } from '../../modules/BFD/TRNASCAN/main.nf'
+include { RUN_INFERNAL    } from '../../modules/BFD/INFERNAL/main.nf'
+include { SETUP_DBCAN_DB  } from '../../modules/BFD/SETUP_DBCAN_DB/main.nf'
+include { RUN_CAZY_CGC    } from '../../modules/BFD/CAZY_CGC/main.nf'
+
 include { MERGE_PFAM      } from '../../modules/BFD/MERGE_PFAM/main.nf'
 include { MERGE_CAZY      } from '../../modules/BFD/MERGE_CAZY/main.nf'
 include { MERGE_MEROPS    } from '../../modules/BFD/MERGE_MEROPS/main.nf'
@@ -36,6 +48,16 @@ include { MERGE_TARGETP   } from '../../modules/BFD/MERGE_TARGETP/main.nf'
 include { MERGE_IDP       } from '../../modules/BFD/MERGE_IDP/main.nf'
 include { MERGE_WOLFPSORT } from '../../modules/BFD/MERGE_WOLFPSORT/main.nf'
 include { MERGE_PREDGPI   } from '../../modules/BFD/MERGE_PREDGPI/main.nf'
+
+include { MERGE_EGGNOG    } from '../../modules/BFD/MERGE_EGGNOG/main.nf'
+include { MERGE_PHOBIUS   } from '../../modules/BFD/MERGE_PHOBIUS/main.nf'
+include { MERGE_DEEPTMHMM } from '../../modules/BFD/MERGE_DEEPTMHMM/main.nf'
+include { MERGE_TCDB      } from '../../modules/BFD/MERGE_TCDB/main.nf'
+include { MERGE_TF        } from '../../modules/BFD/MERGE_TF/main.nf'
+include { MERGE_ANTISMASH } from '../../modules/BFD/MERGE_ANTISMASH/main.nf'
+include { MERGE_TRNASCAN  } from '../../modules/BFD/MERGE_TRNASCAN/main.nf'
+include { MERGE_INFERNAL  } from '../../modules/BFD/MERGE_INFERNAL/main.nf'
+include { MERGE_CAZY_CGC  } from '../../modules/BFD/MERGE_CAZY_CGC/main.nf'
 
 include { clearIfStale; gatedGlobIn; hashBucketForType } from '../../modules/common/utils.nf'
 
@@ -70,6 +92,35 @@ def staleGuardBucketed(ch, String type, List relOuts) {
     }
 }
 
+// Same idea as staleGuardBucketed, but for the genome-level tools (antiSMASH,
+// tRNAscan-SE) whose channel carries (meta, gff3, genome) instead of a single
+// protein file, and whose output/bucket keys off meta.id (species+strain, the
+// primary key those tools name outputs after) rather than meta.locustag.
+def staleGuardBucketedGenome(ch, String type, List relOuts) {
+    ch.map { meta, gff, dna ->
+        def bucket = hashBucketForType(type, meta.id)
+        clearIfStale(dna, relOuts.collect { rel ->
+            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.id)}")
+        })
+        tuple(meta, gff, dna)
+    }
+}
+
+// Same as staleGuardBucketed, but keyed on meta.id (not meta.locustag) for
+// genome-level tools whose channel is (meta, file) -- RUN_INFERNAL names its
+// storeDir/output after meta.id like the other genome-level tools above, not
+// meta.locustag (the protein-tool convention), so it needs its own bucket key
+// to match, or clearIfStale()/storeDir would silently look in the wrong path.
+def staleGuardBucketedById(ch, String type, List relOuts) {
+    ch.map { meta, f ->
+        def bucket = hashBucketForType(type, meta.id)
+        clearIfStale(f, relOuts.collect { rel ->
+            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.id)}")
+        })
+        tuple(meta, f)
+    }
+}
+
 // Root a gated glob in params.outdir. Globs for the hash-bucketed tools use
 // "**/*.ext", not "*.ext" -- these directories are hash-bucketed one level
 // deep (T-014); a flat glob would silently match nothing for any bucketed
@@ -101,6 +152,8 @@ def mergeInput(boolean useGlob, boolean ran, out_ch, String glob) {
 workflow BFD_FUNCTIONAL {
     take:
     proteins_ch   // tuple(meta, proteins)
+    genome_ch     // tuple(meta, gff3, genome) -- antiSMASH, tRNAscan-SE, Infernal
+    cgc_ch        // tuple(meta, gff3, proteins) -- dbCAN CGC/PUL
     use_glob      // merge_all is set and no --taxon narrowing is active
     skip_merge
 
@@ -116,6 +169,15 @@ workflow BFD_FUNCTIONAL {
     def run_predgpi   = params.run_predgpi.toBoolean()
     def run_swissprot = params.run_swissprot.toBoolean()
     def run_swissprot_annot = params.run_swissprot_annot.toBoolean()
+    def run_eggnog    = params.run_eggnog.toBoolean()
+    def run_phobius   = params.run_phobius.toBoolean()
+    def run_deeptmhmm = params.run_deeptmhmm.toBoolean()
+    def run_tcdb      = params.run_tcdb.toBoolean()
+    def run_tf        = params.run_tf.toBoolean()
+    def run_antismash = params.run_antismash.toBoolean()
+    def run_trnascan  = params.run_trnascan.toBoolean()
+    def run_infernal  = params.run_infernal.toBoolean()
+    def run_cazy_cgc  = params.run_cazy_cgc.toBoolean()
 
     // ── Per-species RUN steps ────────────────────────────────────────────────
     if (run_pfam)
@@ -138,6 +200,28 @@ workflow BFD_FUNCTIONAL {
         RUN_WOLFPSORT(staleGuardBucketed(proteins_ch, 'wolfpsort', ['@.wolfpsort.results.txt.gz']))
     if (run_predgpi)
         RUN_PREDGPI(staleGuardBucketed(proteins_ch, 'predgpi', ['@.predgpi.gff3.gz']))
+
+    // ── New per-species RUN steps (2026-08-20 followup) ─────────────────────
+    if (run_eggnog)
+        RUN_EGGNOG(staleGuardBucketed(proteins_ch, 'eggnog', ['@.emapper.annotations.gz']))
+    if (run_phobius)
+        RUN_PHOBIUS(staleGuardBucketed(proteins_ch, 'phobius', ['@.phobius.short.txt.gz']))
+    if (run_deeptmhmm)
+        RUN_DEEPTMHMM(staleGuardBucketed(proteins_ch, 'deeptmhmm', ['@.deeptmhmm.gff3.gz']))
+    if (run_tcdb) {
+        SETUP_TCDB_DB()
+        RUN_TCDB(staleGuardBucketed(proteins_ch, 'tcdb', ['@.blasttab.gz']), SETUP_TCDB_DB.out.fasta, SETUP_TCDB_DB.out.blastdb)
+    }
+    if (run_antismash)
+        RUN_ANTISMASH(staleGuardBucketedGenome(genome_ch, 'antismash', ['@.antismash.json.gz']))
+    if (run_trnascan)
+        RUN_TRNASCAN(staleGuardBucketedGenome(genome_ch, 'trnascan', ['@.trnascan.no-overlaps.gff3.gz']))
+    if (run_infernal)
+        RUN_INFERNAL(staleGuardBucketedById(genome_ch.map { meta, gff, dna -> tuple(meta, dna) }, 'infernal', ['@.rfam.tblout.gz']))
+    if (run_cazy_cgc) {
+        SETUP_DBCAN_DB()
+        RUN_CAZY_CGC(cgc_ch, SETUP_DBCAN_DB.out.db)
+    }
 
     // ── MERGE steps ──────────────────────────────────────────────────────────
     // In glob mode a tool is merged even when it did not run this session, so
@@ -225,6 +309,63 @@ workflow BFD_FUNCTIONAL {
         if (predgpi_in) {
             MERGE_PREDGPI(predgpi_in)
             merge_outs << MERGE_PREDGPI.out.parquet
+        }
+
+        // ── New tools' MERGE steps (2026-08-20 followup) ────────────────────
+        def eggnog_in = mergeInput(use_glob, run_eggnog, run_eggnog ? RUN_EGGNOG.out.annotations : null, "eggnog/**/*.emapper.annotations.gz")
+        if (eggnog_in) {
+            MERGE_EGGNOG(eggnog_in)
+            merge_outs << MERGE_EGGNOG.out.parquet
+        }
+
+        def phobius_in = mergeInput(use_glob, run_phobius, run_phobius ? RUN_PHOBIUS.out.short_txt : null, "phobius/**/*.phobius.short.txt.gz")
+        if (phobius_in) {
+            MERGE_PHOBIUS(phobius_in)
+            merge_outs << MERGE_PHOBIUS.out.parquet
+        }
+
+        def deeptmhmm_in = mergeInput(use_glob, run_deeptmhmm, run_deeptmhmm ? RUN_DEEPTMHMM.out.gff3 : null, "deeptmhmm/**/*.deeptmhmm.gff3.gz")
+        if (deeptmhmm_in) {
+            MERGE_DEEPTMHMM(deeptmhmm_in)
+            merge_outs << MERGE_DEEPTMHMM.out.parquet
+        }
+
+        def tcdb_in = mergeInput(use_glob, run_tcdb, run_tcdb ? RUN_TCDB.out.blasttab : null, "tcdb/**/*.blasttab.gz")
+        if (tcdb_in) {
+            MERGE_TCDB(tcdb_in)
+            merge_outs << MERGE_TCDB.out.parquet
+        }
+
+        // TF inventory is derived from the same domtblout files as MERGE_PFAM
+        // (see bin/merge_tf_domains.py) -- gated on run_tf, but reuses pfam_in
+        // computed above rather than re-globbing.
+        if (run_tf && pfam_in) {
+            MERGE_TF(pfam_in)
+            merge_outs << MERGE_TF.out.parquet
+        }
+
+        def antismash_in = mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.json : null, "antismash/**/*.antismash.json.gz")
+        if (antismash_in) {
+            MERGE_ANTISMASH(antismash_in)
+            merge_outs << MERGE_ANTISMASH.out.parquet
+        }
+
+        def trnascan_in = mergeInput(use_glob, run_trnascan, run_trnascan ? RUN_TRNASCAN.out.gff3 : null, "trnascan/**/*.trnascan.no-overlaps.gff3.gz")
+        if (trnascan_in) {
+            MERGE_TRNASCAN(trnascan_in)
+            merge_outs << MERGE_TRNASCAN.out.parquet
+        }
+
+        def infernal_in = mergeInput(use_glob, run_infernal, run_infernal ? RUN_INFERNAL.out.tblout : null, "infernal/**/*.rfam.tblout.gz")
+        if (infernal_in) {
+            MERGE_INFERNAL(infernal_in)
+            merge_outs << MERGE_INFERNAL.out.parquet
+        }
+
+        def cazy_cgc_in = mergeInput(use_glob, run_cazy_cgc, run_cazy_cgc ? RUN_CAZY_CGC.out.cgc : null, "cazy_cgc/**/*.cgc.tsv.gz")
+        if (cazy_cgc_in) {
+            MERGE_CAZY_CGC(cazy_cgc_in)
+            merge_outs << MERGE_CAZY_CGC.out.parquet
         }
     }
 

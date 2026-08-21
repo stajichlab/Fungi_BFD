@@ -74,7 +74,17 @@
                 },
                 "pipeline": {
                     "type": "string",
-                    "enum": ["BFD", "compare_ani", "query_ani", "funannotate", "earlgrey_mask", "comparative", "phyling", "backfill_abinitio", "setup_symlinks"],
+                    "enum": [
+                        "BFD",
+                        "compare_ani",
+                        "query_ani",
+                        "funannotate",
+                        "earlgrey_mask",
+                        "comparative",
+                        "phyling",
+                        "backfill_abinitio",
+                        "setup_symlinks"
+                    ],
                     "description": "Selects which pipeline main.nf includes/runs (case-insensitive; see main.nf).",
                     "default": "BFD"
                 }
@@ -85,63 +95,318 @@
             "type": "object",
             "description": "Genome cleaning, RNA-seq fetch, training, prediction and annotation controls.",
             "properties": {
-                "target":            { "type": "string", "format": "directory-path", "description": "Output dir for genome annotation." },
-                "training_target":   { "type": "string", "format": "directory-path", "description": "Output dir for funannotate training." },
-                "taxondb":           { "type": "string", "format": "directory-path", "description": "Local persistent NCBI taxdump cache dir; auto-provisioned by SETUP_TAXONDB (md5-verified download), so this rarely needs to be set. Defaults to lib/taxdump/ under launchDir." },
-                "proteins":          { "type": "string", "format": "file-path", "description": "Protein evidence FASTA for prediction." },
-                "source":            { "type": "string", "format": "directory-path", "description": "Source genome assembly dir." },
-                "seqcenter":         { "type": "string", "description": "Sequencing center label for GenBank submission.", "default": "NCBI" },
-                "augustus_config":   { "type": "string", "format": "directory-path", "description": "AUGUSTUS_CONFIG_PATH." },
-                "funannotate_db":    { "type": "string", "format": "directory-path", "description": "FUNANNOTATE_DB dir." },
-                "eggnog_data_dir":   { "type": "string", "format": "directory-path", "description": "EGGNOG_DATA_DIR (eggnog-mapper DB, e.g. /srv/projects/db/eggNOG/LATEST). Required for FUNANNOTATE_ANNOTATE's containerized funannotate annotate -- without it, EggNOG-mapper's DB-not-found stderr output confuses funannotate's version check and crashes annotate." },
-                "min_contig_len":    { "type": "integer", "minimum": 0, "description": "Minimum contig length to retain when cleaning.", "default": 2000 },
-                "clean_script":      { "type": "string", "format": "file-path", "description": "Genome FASTA cleaning script." },
-                "fastq_hdr_script":  { "type": "string", "format": "file-path", "description": "FASTQ header fix script for Trinity." },
-                "sbt_template":      { "type": "string", "format": "file-path", "description": "GenBank submission template (.sbt)." },
-                "debug":             { "type": "boolean", "description": "Enable verbose debug output.", "default": false },
-                "max_cpus":          { "type": "integer", "minimum": 1, "description": "Upper CPU bound for funannotate sub-tools.", "default": 64 },
-                "suppress":          { "type": "string", "description": "Filename of ASMID suppress list (one ASMID per line).", "default": "suppress.txt" },
-                "max_rnaseq_runs":   { "type": "integer", "minimum": 0, "description": "Max paired-end SRA runs to fetch per species.", "default": 2 },
-                "max_rnaseq_spot":   { "type": "integer", "minimum": 0, "description": "Max spots per SRA run (0 = no cap).", "default": 0 },
-                "max_rnaseq_reads":  { "type": "integer", "minimum": 0, "description": "Max reads to keep after normalization.", "default": 40000000 },
-                "enable_single_end": { "type": "boolean", "description": "Allow single-end RNA-seq fallback.", "default": false },
-                "max_rnaseq_se_runs":{ "type": "integer", "minimum": 0, "description": "Max single-end SRA runs per species.", "default": 3 },
-                "only_clean":        { "type": "boolean", "description": "Stop after genome cleaning.", "default": false },
-                "clean_batch_size":  { "type": "integer", "minimum": 0, "description": "Genomes per GENOME_CLEAN_BATCH job (0 = one job per genome).", "default": 1000 },
-                "stop_after_sra_fetch": { "type": "boolean", "description": "Halt after SRA_FETCH.", "default": false },
-                "stop_after_sra_query": { "type": "boolean", "description": "Halt after SRA_QUERY.", "default": false },
-                "skip_sra_query":    { "type": "boolean", "description": "Reuse existing sra_query CSVs; skip SRA_QUERY_BATCH.", "default": false },
-                "run_sra_fetch":     { "type": "boolean", "description": "Run the SRA fetch/normalize stage.", "default": true },
-                "sra_query_batch_size": { "type": "integer", "minimum": 1, "description": "Species per SRA_QUERY_BATCH job.", "default": 10 },
-                "run_repeatmasker":  { "type": "boolean", "description": "Run repeat masking.", "default": true },
-                "run_update":        { "type": "boolean", "description": "Run funannotate update.", "default": false },
-                "run_annotate":      { "type": "boolean", "description": "Run funannotate annotate.", "default": false },
-                "run_antismash":     { "type": "boolean", "description": "Run antiSMASH.", "default": false },
-                "rnaseq_data":       { "type": "string", "format": "directory-path", "description": "Trinity-GG cache dir." },
-                "run_interpro":      { "type": "boolean", "description": "Run InterProScan in annotate.", "default": false },
-                "run_signalp":       { "type": "boolean", "description": "Run SignalP.", "default": false },
-                "antismash_taxon":   { "type": "string", "enum": ["fungi", "bacteria", "plants"], "description": "antiSMASH taxon mode.", "default": "fungi" },
-                "pasa_mysql":        { "type": "boolean", "description": "Use MySQL/MariaDB-backed PASA.", "default": true },
-                "rnaseq_trimmer":    { "type": "string", "enum": ["fastp", "trimmomatic"], "description": "RNA-seq read trimmer.", "default": "fastp" },
-                "mariadb_sif":       { "type": "string", "format": "file-path", "description": "MariaDB singularity image for PASA." },
-                "funannotate_sif":   { "type": "string", "format": "file-path", "description": "funannotate-live singularity image (rust-optimized PASA/EVM/Trinity). Used by FUNANNOTATE_TRAIN/UPDATE via singularity exec; GeneMark stays host-side (license), see GENEMARK_RUN_DESIGN.md." },
-                "mysql_datadir":     { "type": "string", "format": "directory-path", "description": "MySQL data dir for PASA." },
-                "pasa_conf_dir":     { "type": "string", "format": "directory-path", "description": "PASA conf dir." },
-                "max_intronlen":     { "type": "integer", "minimum": 0, "description": "Max intron length for prediction.", "default": 3000 },
-                "min_intronlen":     { "type": "integer", "minimum": 0, "description": "Min intron length for prediction.", "default": 10 },
-                "predict_min_asm_bp":       { "type": "integer", "minimum": 0, "description": "Pre-flight: assembled bp below this counts as 'small' (0 disables the guard).", "default": 8000000 },
-                "predict_frag_max_n50":     { "type": "integer", "minimum": 0, "description": "Pre-flight: N50 below this counts as 'fragmented'.", "default": 10000 },
-                "predict_frag_max_contigs": { "type": "integer", "minimum": 0, "description": "Pre-flight: contig count above this counts as 'fragmented'.", "default": 1000 },
-                "share_abinitio_params":    { "type": "boolean", "description": "Reuse trained AUGUSTUS/SNAP/GeneMark-ES parameters from a species' ANI-qualified representative instead of retraining per strain. See todo/species_level_abinitio_reuse.md.", "default": false },
-                "abinitio_reuse_csv":       { "type": "string", "format": "file-path", "description": "species_reuse_clusters.py output CSV (species,out,is_representative,representative_out,ani_to_representative,reuse_eligible)." },
-                "gene_prediction_shared_abinitio": { "type": "string", "format": "directory-path", "description": "Root of the species_reuse_clusters.py-backfilled shared ab-initio parameter stores (top-level, not nested under target)." },
-                "force_independent_species":{ "type": "string", "description": "Comma-separated SPECIES values to always train independently, overriding reuse_eligible.", "default": "" },
-                "predict_scope":     { "type": "string", "enum": ["all", "representative_only"], "description": "FUNANNOTATE_PREDICTION scope: 'all' predicts every strain (representatives first, no waiting); 'representative_only' predicts only representative strains.", "default": "all" },
-                "busco_genome_dir":  { "type": "string", "format": "directory-path", "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection." },
-                "run_genemark":      { "type": "boolean", "description": "Run standalone GENEMARK_RUN before predict and feed it --genemark_gtf. false reproduces predict's own --auto-skip-genemark degradation (host GENEMARK_PATH unavailable/not wanted). See nextflow/docs/GENEMARK_RUN_DESIGN.md.", "default": true },
-                "genemark_sif":      { "type": "string", "format": "file-path", "description": "Path to the Singularity image GENEMARK_RUN execs gmes_petap.pl/bam2hints/join_mult_hints.pl from. Default is a local conversion of docker://teambraker/braker3 (public, bundles GeneMark-ES/ET 4.72). GeneMark still requires a user-obtained license key (~/.gm_key) independent of which image runs it. A privately-built GeneMark-only alternative (https://github.com/hyphaltip/genemark-container) is also available in this lab's Singularity cache." },
-                "genemark_mode":     { "type": "string", "enum": ["ES", "ET"], "description": "GeneMark run mode (T-022, both wired). ET uses RNA-seq intron hints (needs a training_bam); GENEMARK_RUN falls back to ES automatically when no RNA-seq is available for a strain.", "default": "ES" },
-                "genemark_force_independent_strains": { "type": "string", "description": "Comma-separated OUT (species_strain dir name) values to always run GeneMark independently (fresh --ES) for, ignoring an otherwise-available shared species .mod. Finer-grained than force_independent_species: lets AUGUSTUS/SNAP reuse stay on for a strain while forcing GeneMark specifically to retrain (e.g. validating reuse on a borderline-ANI strain).", "default": "" }
+                "target": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Output dir for genome annotation."
+                },
+                "training_target": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Output dir for funannotate training."
+                },
+                "taxondb": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Local persistent NCBI taxdump cache dir; auto-provisioned by SETUP_TAXONDB (md5-verified download), so this rarely needs to be set. Defaults to lib/taxdump/ under launchDir."
+                },
+                "proteins": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Protein evidence FASTA for prediction."
+                },
+                "source": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Source genome assembly dir."
+                },
+                "seqcenter": {
+                    "type": "string",
+                    "description": "Sequencing center label for GenBank submission.",
+                    "default": "NCBI"
+                },
+                "augustus_config": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "AUGUSTUS_CONFIG_PATH."
+                },
+                "funannotate_db": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "FUNANNOTATE_DB dir."
+                },
+                "eggnog_data_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "EGGNOG_DATA_DIR (eggnog-mapper DB, e.g. /srv/projects/db/eggNOG/LATEST). Required for FUNANNOTATE_ANNOTATE's containerized funannotate annotate -- without it, EggNOG-mapper's DB-not-found stderr output confuses funannotate's version check and crashes annotate."
+                },
+                "min_contig_len": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Minimum contig length to retain when cleaning.",
+                    "default": 2000
+                },
+                "clean_script": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "Genome FASTA cleaning script."
+                },
+                "fastq_hdr_script": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "FASTQ header fix script for Trinity."
+                },
+                "sbt_template": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "GenBank submission template (.sbt)."
+                },
+                "debug": {
+                    "type": "boolean",
+                    "description": "Enable verbose debug output.",
+                    "default": false
+                },
+                "max_cpus": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Upper CPU bound for funannotate sub-tools.",
+                    "default": 64
+                },
+                "suppress": {
+                    "type": "string",
+                    "description": "Filename of ASMID suppress list (one ASMID per line).",
+                    "default": "suppress.txt"
+                },
+                "max_rnaseq_runs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max paired-end SRA runs to fetch per species.",
+                    "default": 2
+                },
+                "max_rnaseq_spot": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max spots per SRA run (0 = no cap).",
+                    "default": 0
+                },
+                "max_rnaseq_reads": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max reads to keep after normalization.",
+                    "default": 40000000
+                },
+                "enable_single_end": {
+                    "type": "boolean",
+                    "description": "Allow single-end RNA-seq fallback.",
+                    "default": false
+                },
+                "max_rnaseq_se_runs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max single-end SRA runs per species.",
+                    "default": 3
+                },
+                "only_clean": {
+                    "type": "boolean",
+                    "description": "Stop after genome cleaning.",
+                    "default": false
+                },
+                "clean_batch_size": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Genomes per GENOME_CLEAN_BATCH job (0 = one job per genome).",
+                    "default": 1000
+                },
+                "stop_after_sra_fetch": {
+                    "type": "boolean",
+                    "description": "Halt after SRA_FETCH.",
+                    "default": false
+                },
+                "stop_after_sra_query": {
+                    "type": "boolean",
+                    "description": "Halt after SRA_QUERY.",
+                    "default": false
+                },
+                "skip_sra_query": {
+                    "type": "boolean",
+                    "description": "Reuse existing sra_query CSVs; skip SRA_QUERY_BATCH.",
+                    "default": false
+                },
+                "run_sra_fetch": {
+                    "type": "boolean",
+                    "description": "Run the SRA fetch/normalize stage.",
+                    "default": true
+                },
+                "sra_query_batch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Species per SRA_QUERY_BATCH job.",
+                    "default": 10
+                },
+                "run_repeatmasker": {
+                    "type": "boolean",
+                    "description": "Run repeat masking.",
+                    "default": true
+                },
+                "run_update": {
+                    "type": "boolean",
+                    "description": "Run funannotate update.",
+                    "default": false
+                },
+                "run_annotate": {
+                    "type": "boolean",
+                    "description": "Run funannotate annotate.",
+                    "default": false
+                },
+                "run_antismash": {
+                    "type": "boolean",
+                    "description": "Run antiSMASH.",
+                    "default": false
+                },
+                "rnaseq_data": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Trinity-GG cache dir."
+                },
+                "run_interpro": {
+                    "type": "boolean",
+                    "description": "Run InterProScan in annotate.",
+                    "default": false
+                },
+                "run_signalp": {
+                    "type": "boolean",
+                    "description": "Run SignalP.",
+                    "default": false
+                },
+                "antismash_taxon": {
+                    "type": "string",
+                    "enum": [
+                        "fungi",
+                        "bacteria",
+                        "plants"
+                    ],
+                    "description": "antiSMASH taxon mode.",
+                    "default": "fungi"
+                },
+                "pasa_mysql": {
+                    "type": "boolean",
+                    "description": "Use MySQL/MariaDB-backed PASA.",
+                    "default": true
+                },
+                "rnaseq_trimmer": {
+                    "type": "string",
+                    "enum": [
+                        "fastp",
+                        "trimmomatic"
+                    ],
+                    "description": "RNA-seq read trimmer.",
+                    "default": "fastp"
+                },
+                "mariadb_sif": {
+                    "type": "string",
+                    "description": "MariaDB singularity image for PASA."
+                },
+                "funannotate_sif": {
+                    "type": "string",
+                    "description": "funannotate-live singularity image (rust-optimized PASA/EVM/Trinity). Used by FUNANNOTATE_TRAIN/UPDATE via singularity exec; GeneMark stays host-side (license), see GENEMARK_RUN_DESIGN.md."
+                },
+                "mysql_datadir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "MySQL data dir for PASA."
+                },
+                "pasa_conf_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "PASA conf dir."
+                },
+                "max_intronlen": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max intron length for prediction.",
+                    "default": 3000
+                },
+                "min_intronlen": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Min intron length for prediction.",
+                    "default": 10
+                },
+                "predict_min_asm_bp": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Pre-flight: assembled bp below this counts as 'small' (0 disables the guard).",
+                    "default": 8000000
+                },
+                "predict_frag_max_n50": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Pre-flight: N50 below this counts as 'fragmented'.",
+                    "default": 10000
+                },
+                "predict_frag_max_contigs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Pre-flight: contig count above this counts as 'fragmented'.",
+                    "default": 1000
+                },
+                "share_abinitio_params": {
+                    "type": "boolean",
+                    "description": "Reuse trained AUGUSTUS/SNAP/GeneMark-ES parameters from a species' ANI-qualified representative instead of retraining per strain. See todo/species_level_abinitio_reuse.md.",
+                    "default": false
+                },
+                "abinitio_reuse_csv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "species_reuse_clusters.py output CSV (species,out,is_representative,representative_out,ani_to_representative,reuse_eligible)."
+                },
+                "gene_prediction_shared_abinitio": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Root of the species_reuse_clusters.py-backfilled shared ab-initio parameter stores (top-level, not nested under target)."
+                },
+                "force_independent_species": {
+                    "type": "string",
+                    "description": "Comma-separated SPECIES values to always train independently, overriding reuse_eligible.",
+                    "default": ""
+                },
+                "predict_scope": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "representative_only"
+                    ],
+                    "description": "FUNANNOTATE_PREDICTION scope: 'all' predicts every strain (representatives first, no waiting); 'representative_only' predicts only representative strains.",
+                    "default": "all"
+                },
+                "busco_genome_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "BUSCO genome-mode results dir, consulted by ANI_REPRESENTATIVE_SELECT for representative selection."
+                },
+                "run_genemark": {
+                    "type": "boolean",
+                    "description": "Run standalone GENEMARK_RUN before predict and feed it --genemark_gtf. false reproduces predict's own --auto-skip-genemark degradation (host GENEMARK_PATH unavailable/not wanted). See nextflow/docs/GENEMARK_RUN_DESIGN.md.",
+                    "default": true
+                },
+                "genemark_sif": {
+                    "type": "string",
+                    "description": "Path to the Singularity image GENEMARK_RUN execs gmes_petap.pl/bam2hints/join_mult_hints.pl from. Default is a local conversion of docker://teambraker/braker3 (public, bundles GeneMark-ES/ET 4.72). GeneMark still requires a user-obtained license key (~/.gm_key) independent of which image runs it. A privately-built GeneMark-only alternative (https://github.com/hyphaltip/genemark-container) is also available in this lab's Singularity cache."
+                },
+                "genemark_mode": {
+                    "type": "string",
+                    "enum": [
+                        "ES",
+                        "ET"
+                    ],
+                    "description": "GeneMark run mode (T-022, both wired). ET uses RNA-seq intron hints (needs a training_bam); GENEMARK_RUN falls back to ES automatically when no RNA-seq is available for a strain.",
+                    "default": "ES"
+                },
+                "genemark_force_independent_strains": {
+                    "type": "string",
+                    "description": "Comma-separated OUT (species_strain dir name) values to always run GeneMark independently (fresh --ES) for, ignoring an otherwise-available shared species .mod. Finer-grained than force_independent_species: lets AUGUSTUS/SNAP reuse stay on for a strain while forcing GeneMark specifically to retrain (e.g. validating reuse on a borderline-ANI strain).",
+                    "default": ""
+                }
             }
         },
         "bfd_functional_options": {
@@ -149,61 +414,387 @@
             "type": "object",
             "description": "Input/output dirs and per-tool toggles for the functional annotation pipeline.",
             "properties": {
-                "pep_dir":             { "type": "string", "format": "directory-path", "description": "Protein FASTA input dir." },
-                "cds_dir":             { "type": "string", "format": "directory-path", "description": "CDS FASTA input dir." },
-                "gff_dir":             { "type": "string", "format": "directory-path", "description": "GFF3 input dir." },
-                "trna_dir":            { "type": "string", "format": "directory-path", "description": "tRNA input dir." },
-                "genome_dir":          { "type": "string", "format": "directory-path", "description": "Genome DNA input dir." },
-                "genome_annotation":   { "type": "string", "format": "directory-path", "description": "Annotation source dir." },
-                "tables":              { "type": "string", "format": "directory-path", "description": "Consolidated table output dir." },
-                "outdir":              { "type": "string", "format": "directory-path", "description": "Functional results dir." },
-                "stats_outdir":        { "type": "string", "format": "directory-path", "description": "Sequence-stats results dir." },
-                "genome_stats_outdir": { "type": "string", "format": "directory-path", "description": "Genome-stats results dir." },
-                "run_setup":     { "type": "boolean", "default": true },
-                "run_pfam":      { "type": "boolean", "default": true },
-                "run_cazy":      { "type": "boolean", "default": true },
-                "run_merops":    { "type": "boolean", "default": true },
-                "run_swissprot": { "type": "boolean", "default": true, "description": "Run SwissProt homology search (RUN_SWISSPROT)." },
-                "run_swissprot_annot": { "type": "boolean", "default": true, "description": "Build the SwissProt accession -> annotation table (BUILD_SWISSPROT_ANNOT)." },
-                "swissprot_search": { "type": "string", "enum": ["diamond", "blastp"], "default": "diamond", "description": "SwissProt search engine: 'diamond' (diamond blastp --sensitive container) or 'blastp' (NCBI blastp container)." },
-                "swissprot_max_targets": { "type": "integer", "minimum": 1, "default": 20, "description": "Max alignments per query (diamond -k / blastp -max_target_seqs)." },
-                "swissprot_evalue": { "type": "number", "minimum": 0, "default": 1e-05, "description": "E-value cutoff for RUN_SWISSPROT." },
-                "diamond_sif": { "type": "string", "format": "file-path", "description": "DIAMOND 2.2.5 Singularity image (default engine)." },
-                "blastp_sif": { "type": "string", "format": "file-path", "description": "NCBI BLAST+ 2.16.0 Singularity image (blastp engine and RUN_MEROPS)." },
-                "swissprot_dbdir": { "type": "string", "format": "directory-path", "description": "Dir holding uniprot_sprot.{dmnd,blastDB}." },
-                "swissprot_dat": { "type": "string", "format": "file-path", "description": "uniprot_sprot.dat.gz flatfile consumed by BUILD_SWISSPROT_ANNOT." },
-                "run_tmhmm":     { "type": "boolean", "default": true },
-                "run_targetp":   { "type": "boolean", "default": true },
-                "run_idp":       { "type": "boolean", "default": true },
-                "run_wolfpsort": { "type": "boolean", "default": true },
-                "run_predgpi":   { "type": "boolean", "default": true },
-                "pfam_nodes":    { "type": "integer", "minimum": 1, "default": 1 },
-                "pfam_tasks":    { "type": "integer", "minimum": 1, "default": 1 },
-                "pfam_sif":      { "type": "string", "format": "file-path", "description": "HMMER 3.4 Singularity image for RUN_PFAM's hmmsearch." },
-                "aaftf_sif":     { "type": "string", "format": "file-path", "description": "AAFTF Singularity image (genome cleaning, CALC_ASM_STATS)." },
-                "run_aa_freq":     { "type": "boolean", "default": true },
-                "run_codon_freq":  { "type": "boolean", "default": true },
-                "freq_batch_size": { "type": "integer", "minimum": 1, "default": 50 },
-                "run_intergenic":  { "type": "boolean", "default": true },
-                "run_gene_stats":  { "type": "boolean", "default": true },
-                "run_asm_stats":   { "type": "boolean", "default": true },
-                "run_chrom_info":  { "type": "boolean", "default": true },
-                "run_telomeres":   { "type": "boolean", "default": true },
-                "telomere_patterns":       { "type": "array", "items": { "type": "string" }, "description": "List of telomere monomer patterns to search (IUPAC allowed).", "default": ["TTAGGG"] },
-                "telomere_min_repeats":    { "type": "integer", "minimum": 1, "description": "Minimum tandem repeat count to report a tract.", "default": 3 },
-                "telomere_min_length":     { "type": "integer", "minimum": 1, "description": "Minimum tract length (bp) to report.", "default": 36 },
-                "telomere_flank_window":   { "type": "integer", "minimum": 0, "description": "Inward flanking sequence length (bp) to report.", "default": 500 },
-                "telomere_search_window":  { "type": "integer", "minimum": 1, "description": "Terminal window (bp) in which to search for telomeres.", "default": 5000 },
-                "telomere_fuzzy":          { "type": "boolean", "default": false, "description": "Use fuzzy (approximate) repeat matching instead of exact regex." },
-                "telomere_max_mismatch":   { "type": "integer", "minimum": 0, "description": "Max mismatches per monomer in fuzzy mode.", "default": 1 },
-                "telomere_max_indel":      { "type": "integer", "minimum": 0, "description": "Max indels per monomer in fuzzy mode.", "default": 0 },
-                "telomere_both_ends":      { "type": "boolean", "default": false, "description": "Search every pattern at both 5' and 3' ends (default: canonical orientation only)." },
-                "telomere_allow_internal": { "type": "boolean", "default": false, "description": "Report non-terminal tracts inside the search window." },
-                "telomere_terminal_tolerance": { "type": "integer", "minimum": 0, "description": "A tract is 'terminal' if within this many bp of the literal scaffold edge (assemblies often carry a few non-canonical bases before the repeat locks into register).", "default": 10 },
-                "run_busco_genome":{ "type": "boolean", "default": false },
-                "run_busco_pep":   { "type": "boolean", "default": false },
-                "busco_lineage":   { "type": "string", "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).", "default": "fungi_odb12" },
-                "bfd_debug":       { "type": "boolean", "description": "Emit warnings when input files are missing (e.g. 'Skipping protein file'). Useful for debugging; set to false to suppress noisy skips during routine runs.", "default": false }
+                "pep_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Protein FASTA input dir."
+                },
+                "cds_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "CDS FASTA input dir."
+                },
+                "gff_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "GFF3 input dir."
+                },
+                "trna_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "tRNA input dir."
+                },
+                "genome_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Genome DNA input dir."
+                },
+                "genome_annotation": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Annotation source dir."
+                },
+                "tables": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Consolidated table output dir."
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Functional results dir."
+                },
+                "stats_outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Sequence-stats results dir."
+                },
+                "genome_stats_outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Genome-stats results dir."
+                },
+                "run_setup": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_pfam": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_cazy": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_merops": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_swissprot": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Run SwissProt homology search (RUN_SWISSPROT)."
+                },
+                "run_swissprot_annot": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Build the SwissProt accession -> annotation table (BUILD_SWISSPROT_ANNOT)."
+                },
+                "swissprot_search": {
+                    "type": "string",
+                    "enum": [
+                        "diamond",
+                        "blastp"
+                    ],
+                    "default": "diamond",
+                    "description": "SwissProt search engine: 'diamond' (diamond blastp --sensitive container) or 'blastp' (NCBI blastp container)."
+                },
+                "swissprot_max_targets": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 20,
+                    "description": "Max alignments per query (diamond -k / blastp -max_target_seqs)."
+                },
+                "swissprot_evalue": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 1e-05,
+                    "description": "E-value cutoff for RUN_SWISSPROT."
+                },
+                "diamond_sif": {
+                    "type": "string",
+                    "description": "DIAMOND 2.2.5 Singularity image (default engine)."
+                },
+                "blastp_sif": {
+                    "type": "string",
+                    "description": "NCBI BLAST+ 2.16.0 Singularity image (blastp engine and RUN_MEROPS)."
+                },
+                "swissprot_dbdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Dir holding uniprot_sprot.{dmnd,blastDB}."
+                },
+                "swissprot_dat": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "uniprot_sprot.dat.gz flatfile consumed by BUILD_SWISSPROT_ANNOT."
+                },
+                "run_tmhmm": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_targetp": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_idp": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_wolfpsort": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_predgpi": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_eggnog": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run eggnog-mapper (RUN_EGGNOG) for GO/KEGG/orthology annotation."
+                },
+                "run_phobius": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run Phobius (RUN_PHOBIUS) for combined signal-peptide/TM prediction."
+                },
+                "run_deeptmhmm": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run DeepTMHMM (RUN_DEEPTMHMM) for deep-learning TM-topology calling."
+                },
+                "run_tcdb": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run TCDB transporter classification (RUN_TCDB)."
+                },
+                "run_tf": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Derive a transcription-factor inventory from RUN_PFAM's domtblout hits (MERGE_TF)."
+                },
+                "run_antismash": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run antiSMASH (RUN_ANTISMASH) for secondary-metabolite BGC prediction."
+                },
+                "run_trnascan": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run tRNAscan-SE (RUN_TRNASCAN) with gene-overlap filtering, mirroring funannotate's own tRNA handling."
+                },
+                "run_infernal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run Infernal cmscan against Rfam (RUN_INFERNAL) for structured ncRNA calling."
+                },
+                "run_cazy_cgc": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Run full run_dbcan CGC/PUL clustering (RUN_CAZY_CGC) -- unvalidated, see module comment."
+                },
+                "eggnog_data_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "eggNOG-mapper data dir (reused from the funannotate profile's own eggnog_data_dir)."
+                },
+                "eggnog_sif": {
+                    "type": "string",
+                    "description": "eggnog-mapper Singularity image."
+                },
+                "deeptmhmm_sif": {
+                    "type": "string",
+                    "description": "DeepTMHMM Singularity image."
+                },
+                "deeptmhmm_gpu": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Route RUN_DEEPTMHMM to a GPU node."
+                },
+                "tcdb_dbdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "SETUP_TCDB_DB's storeDir for tcdb.fasta + BLAST db."
+                },
+                "tcdb_evalue": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 1e-10,
+                    "description": "E-value cutoff for RUN_TCDB."
+                },
+                "antismash_dbdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Populated antiSMASH reference database dir."
+                },
+                "antismash_sif": {
+                    "type": "string",
+                    "description": "antiSMASH Singularity image."
+                },
+                "antismash_taxon": {
+                    "type": "string",
+                    "default": "fungi",
+                    "description": "antiSMASH --taxon."
+                },
+                "trnascan_sif": {
+                    "type": "string",
+                    "description": "tRNAscan-SE Singularity image."
+                },
+                "infernal_sif": {
+                    "type": "string",
+                    "description": "Infernal Singularity image."
+                },
+                "rfam_dbdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "cmpress'd Rfam.cm + Rfam.clanin dir."
+                },
+                "dbcan_cgc_sif": {
+                    "type": "string",
+                    "description": "run_dbcan (full, not dbcanlight) Singularity image for CGC/PUL clustering."
+                },
+                "dbcan_dbdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "SETUP_DBCAN_DB's storeDir for the full run_dbcan reference set."
+                },
+                "pfam_nodes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1
+                },
+                "pfam_tasks": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1
+                },
+                "pfam_sif": {
+                    "type": "string",
+                    "description": "HMMER 3.4 Singularity image for RUN_PFAM's hmmsearch."
+                },
+                "aaftf_sif": {
+                    "type": "string",
+                    "description": "AAFTF Singularity image (genome cleaning, CALC_ASM_STATS)."
+                },
+                "run_aa_freq": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_codon_freq": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "freq_batch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 50
+                },
+                "run_intergenic": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_gene_stats": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_asm_stats": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_chrom_info": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "run_telomeres": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "telomere_patterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of telomere monomer patterns to search (IUPAC allowed).",
+                    "default": [
+                        "TTAGGG"
+                    ]
+                },
+                "telomere_min_repeats": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Minimum tandem repeat count to report a tract.",
+                    "default": 3
+                },
+                "telomere_min_length": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Minimum tract length (bp) to report.",
+                    "default": 36
+                },
+                "telomere_flank_window": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Inward flanking sequence length (bp) to report.",
+                    "default": 500
+                },
+                "telomere_search_window": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Terminal window (bp) in which to search for telomeres.",
+                    "default": 5000
+                },
+                "telomere_fuzzy": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use fuzzy (approximate) repeat matching instead of exact regex."
+                },
+                "telomere_max_mismatch": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max mismatches per monomer in fuzzy mode.",
+                    "default": 1
+                },
+                "telomere_max_indel": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max indels per monomer in fuzzy mode.",
+                    "default": 0
+                },
+                "telomere_both_ends": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Search every pattern at both 5' and 3' ends (default: canonical orientation only)."
+                },
+                "telomere_allow_internal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Report non-terminal tracts inside the search window."
+                },
+                "telomere_terminal_tolerance": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "A tract is 'terminal' if within this many bp of the literal scaffold edge (assemblies often carry a few non-canonical bases before the repeat locks into register).",
+                    "default": 10
+                },
+                "run_busco_genome": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "run_busco_pep": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "busco_lineage": {
+                    "type": "string",
+                    "description": "BUSCO lineage dataset (e.g. fungi_odb12, ascomycota_odb12).",
+                    "default": "fungi_odb12"
+                },
+                "bfd_debug": {
+                    "type": "boolean",
+                    "description": "Emit warnings when input files are missing (e.g. 'Skipping protein file'). Useful for debugging; set to false to suppress noisy skips during routine runs.",
+                    "default": false
+                }
             }
         },
         "ani_options": {
@@ -213,7 +804,15 @@
             "properties": {
                 "compare": {
                     "type": "string",
-                    "enum": ["KINGDOM", "PHYLUM", "CLASS", "ORDER", "FAMILY", "GENUS", "SPECIES"],
+                    "enum": [
+                        "KINGDOM",
+                        "PHYLUM",
+                        "CLASS",
+                        "ORDER",
+                        "FAMILY",
+                        "GENUS",
+                        "SPECIES"
+                    ],
                     "description": "Taxonomic rank to group genomes for comparison.",
                     "default": "GENUS"
                 },
@@ -225,7 +824,12 @@
                 },
                 "ani_method": {
                     "type": "string",
-                    "enum": ["skani", "mash", "sourmash", "fastani"],
+                    "enum": [
+                        "skani",
+                        "mash",
+                        "sourmash",
+                        "fastani"
+                    ],
                     "description": "ANI comparison tool.",
                     "default": "skani"
                 },
@@ -262,7 +866,11 @@
                 },
                 "skani_preset": {
                     "type": "string",
-                    "enum": ["fast", "medium", "slow"],
+                    "enum": [
+                        "fast",
+                        "medium",
+                        "slow"
+                    ],
                     "description": "skani sketch preset.",
                     "default": "medium"
                 },
@@ -340,7 +948,15 @@
                 },
                 "query_rank": {
                     "type": "string",
-                    "enum": ["KINGDOM", "PHYLUM", "CLASS", "ORDER", "FAMILY", "GENUS", "SPECIES"],
+                    "enum": [
+                        "KINGDOM",
+                        "PHYLUM",
+                        "CLASS",
+                        "ORDER",
+                        "FAMILY",
+                        "GENUS",
+                        "SPECIES"
+                    ],
                     "description": "Taxonomic rank for query_ANI grouping.",
                     "default": "GENUS"
                 },
@@ -371,11 +987,23 @@
         }
     },
     "allOf": [
-        { "$ref": "#/$defs/input_output_options" },
-        { "$ref": "#/$defs/run_scope_filters" },
-        { "$ref": "#/$defs/generic_options" },
-        { "$ref": "#/$defs/funannotate_options" },
-        { "$ref": "#/$defs/bfd_functional_options" },
-        { "$ref": "#/$defs/ani_options" }
+        {
+            "$ref": "#/$defs/input_output_options"
+        },
+        {
+            "$ref": "#/$defs/run_scope_filters"
+        },
+        {
+            "$ref": "#/$defs/generic_options"
+        },
+        {
+            "$ref": "#/$defs/funannotate_options"
+        },
+        {
+            "$ref": "#/$defs/bfd_functional_options"
+        },
+        {
+            "$ref": "#/$defs/ani_options"
+        }
     ]
 }

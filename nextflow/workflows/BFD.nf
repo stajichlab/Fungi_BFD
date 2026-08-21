@@ -178,6 +178,20 @@ workflow BFD {
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
+    // Genome-level functional-annotation input (antiSMASH, tRNAscan-SE,
+    // Infernal): same (meta, gff3, genome) shape gene_stats_ch already builds,
+    // reused as-is rather than re-resolving the same two indexes again.
+    def genome_func_ch = gene_stats_ch
+
+    // dbCAN CGC/PUL input: needs both the gene models (gff3) and the protein
+    // FASTA (not the genome DNA), so it's its own small channel rather than
+    // reusing gene_stats_ch or proteins_ch alone.
+    def cgc_ch = ready_ch.map { meta ->
+        def gff  = gffIndex["${meta.id}.gff3"]
+        def prot = pepIndex["${meta.id}.proteins.fa"]
+        (gff && prot) ? tuple(meta, gff, prot) : null
+    }.filter { it != null }
+
     // ── Run ──────────────────────────────────────────────────────────────────
     // merge_all globs the whole results dir (every genome ever processed). Under
     // --taxon that would pull in genomes outside the requested clade, so fall
@@ -185,7 +199,7 @@ workflow BFD {
     def use_glob   = params.merge_all.toBoolean() && !params.taxon
     def skip_merge = params.skip_merge.toBoolean()
 
-    BFD_FUNCTIONAL(proteins_ch, use_glob, skip_merge)
+    BFD_FUNCTIONAL(proteins_ch, genome_func_ch, cgc_ch, use_glob, skip_merge)
 
     BFD_GENOME_STATS(
         aa_freq_ch, codon_freq_ch, intergenic_ch, gene_stats_ch,
