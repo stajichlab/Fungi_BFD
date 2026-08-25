@@ -27,10 +27,10 @@ process FUNANNOTATE_PREDICT {
     script:
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     # ── Containerized funannotate ──────────────────────────────────────────────
     # Same swap/rationale as FUNANNOTATE_TRAIN/main.nf: funannotate predict runs
-    # via \$SING (singularity exec \${params.funannotate_sif}) instead of
+    # via \$SING (apptainer exec \${params.funannotate_sif}) instead of
     # `module load funannotate`. GeneMark is never invoked from inside this
     # container -- it arrives pre-computed via --genemark_gtf from the
     # upstream GENEMARK_RUN process, which runs it from its own separate,
@@ -44,11 +44,31 @@ process FUNANNOTATE_PREDICT {
     unset -f which 2>/dev/null || true
     unset which_declare 2>/dev/null || true
 
+    # APPTAINERENV_ prefix is REQUIRED here, not a plain export: the
+    # funannotate-live image bakes its own ENV defaults for these vars
+    # (AUGUSTUS_CONFIG_PATH=/venv/config, FUNANNOTATE_DB=/opt/databases/...),
+    # which apptainer sources from the image's /.singularity.d/env/ scripts
+    # AFTER inheriting the host shell env -- so a plain `export` alone is
+    # silently overwritten inside the container (confirmed empirically
+    # 2026-08-24: host FUNANNOTATE_DB was ignored, predict looked for the
+    # repeat DB under /opt/databases instead). APPTAINERENV_/SINGULARITYENV_-
+    # prefixed vars are applied last and always win. Also keep the plain
+    # (unprefixed) AUGUSTUS_CONFIG_PATH export -- this script's own
+    # --AUGUSTUS_CONFIG_PATH CLI arg below reads it as a HOST shell
+    # variable, not through the container, so it needs both.
     export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind ${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
-    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
+    # \$PWD (the task workdir, where genome_input.fa is inflated below) is NOT
+    # covered by any of the other binds -- confirmed empirically (2026-08-24):
+    # predict got through startup/training-file parsing (those paths are
+    # bound via target/training_target) but then failed with "genome_input.fa
+    # is not a valid file" once it actually needed the raw genome FASTA. Same
+    # missing-bind bug class as GENEMARK_RUN; manually-built \$SING commands
+    # get none of Nextflow's automatic task-workdir binding.
+    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"
     PREDICT_GBK="\$PREDICTDIR/predict_results/${out}.gbk"

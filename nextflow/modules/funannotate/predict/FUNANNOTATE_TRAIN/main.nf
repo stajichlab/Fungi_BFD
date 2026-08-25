@@ -68,10 +68,10 @@ process FUNANNOTATE_TRAIN {
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     # ── Containerized funannotate ──────────────────────────────────────────────
     # funannotate-live's Docker image (Rust-optimized PASA/EVM/Trinity + AVX2
-    # bowtie2) run via `singularity exec \${params.funannotate_sif}`. Kept
+    # bowtie2) run via `apptainer exec \${params.funannotate_sif}`. Kept
     # WITHOUT a `container =` directive on this process -- the mysqldb sidecar
     # below is started via `singularity instance start` from this same
     # host-executed script, and both .sifs stay siblings launched from the
@@ -82,7 +82,7 @@ process FUNANNOTATE_TRAIN {
     #     --net in use anywhere here), so `singularity instance start` and the
     #     separate `\$SING` exec below reach each other via MYHOSTNAME:PORT
     #     exactly as the host-module funannotate did.
-    #   - Env passthrough: `singularity exec` passes through ALL host-shell env
+    #   - Env passthrough: `apptainer exec` passes through ALL host-shell env
     #     vars by default -- do not add `--cleanenv` without converting
     #     PASACONF/AUGUSTUS_CONFIG_PATH/FUNANNOTATE_DB/TMPDIR to explicit
     #     `--env` flags first, or PASA loses its mysql connection info silently.
@@ -102,13 +102,26 @@ process FUNANNOTATE_TRAIN {
     unset -f which 2>/dev/null || true
     unset which_declare 2>/dev/null || true
 
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    # APPTAINERENV_ prefix is REQUIRED here, not a plain export: the
+    # funannotate-live image bakes its own ENV defaults for these vars
+    # (AUGUSTUS_CONFIG_PATH=/venv/config, FUNANNOTATE_DB=/opt/databases/...),
+    # sourced from the image's /.singularity.d/env/ scripts AFTER the host
+    # shell env is inherited, so a plain `export` is silently overwritten
+    # inside the container (confirmed empirically 2026-08-24 against
+    # FUNANNOTATE_PREDICT's identical setup). PASACONF is unaffected (the
+    # image has no conflicting default) so stays a plain export.
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
     export PASACONF=""
     pasa_db_arg="--pasa_db sqlite"
-    SING_BINDS="--bind ${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
-    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
+    # \$PWD (the task workdir) holds genome_input.fa (inflated below) plus the
+    # Nextflow-staged r1/r2/se/trinity_fa read files passed directly into
+    # `funannotate train` -- none of those are under target/training_target,
+    # so \$PWD needs its own explicit bind. Same missing-bind bug class as
+    # GENEMARK_RUN/FUNANNOTATE_PREDICT (confirmed 2026-08-24).
+    SING_BINDS="--bind \$PWD:\$PWD,${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
         MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
@@ -135,8 +148,14 @@ process FUNANNOTATE_TRAIN {
         # SINGULARITY_BINDPATH env var) so it's visible in the one \$SING exec
         # command below, matching this project's SING_BINDS/SING convention.
         SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
-        SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
-        stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
+        SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+        # >/dev/null too, not just stderr: apptainer/singularity prints its
+        # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
+        # the named instance is already gone, which happens on every run here
+        # -- the EXIT trap below always re-fires this after the explicit
+        # stop_mysqldb call a few lines from the end of the script already
+        # stopped it, so the second, redundant call is expected and silenced.
+        stop_mysqldb() { singularity instance stop mysqldb_${asmid} >/dev/null 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
         singularity instance start --writable-tmpfs \\
@@ -171,11 +190,40 @@ process FUNANNOTATE_TRAIN {
         PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_shared_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_shared_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_shared_num_bp_splice}"
     fi
 
+    # ── Local, per-attempt working directory for the funannotate run itself ────
+    # `-o` points at a fresh local dir instead of the persistent, retry-reused
+    # training_target path -- funannotate's own --left_norm/--right_norm symlink
+    # logic (SafeRemove + os.symlink in funannotate/train.py) collides with a
+    # leftover normalize/*.norm.fq.gz from a prior attempt when `-o` is the
+    # reused persistent dir (FileExistsError), and separately its dirname-based
+    # skip-check can leave that symlink never created at all ("does not exist")
+    # depending on how tmpdir's path relates to the read path. A fresh local dir
+    # avoids both. Published into training_target below via rsync, which
+    # preserves symlinks as-is rather than copying the data they point to.
+    LOCAL_TRAIN="\$PWD/train_local"
+    mkdir -p "\$LOCAL_TRAIN"
+
+    # Resolve the read paths to their canonical location (rnaseq_reads/
+    # rnaseq_data) before handing them to funannotate. Nextflow stages
+    # r1/r2/se as symlinks directly in this task's own workdir (\$PWD) -- the
+    # same directory \$LOCAL_TRAIN sits inside -- so passing them as-is makes
+    # funannotate's dirname(tmpdir) != dirname(left_norm) check (train.py)
+    # compare \$PWD to \$PWD and evaluate equal, which skips creating
+    # normalize/*.norm.fq.gz entirely. Resolving first also means the symlink
+    # funannotate does create (and rsync later publishes) points straight at
+    # the canonical file, never at this ephemeral workdir.
+    R1_REAL="${r1}"
+    [ -e "\$R1_REAL" ] && R1_REAL="\$(readlink -f "\$R1_REAL")"
+    R2_REAL="${r2}"
+    [ -e "\$R2_REAL" ] && R2_REAL="\$(readlink -f "\$R2_REAL")"
+    SE_REAL="${se}"
+    [ -e "\$SE_REAL" ] && SE_REAL="\$(readlink -f "\$SE_REAL")"
+
     if [ -s "${trinity_fa}" ]; then
         if [ -s "${r1}" ]; then
             echo "[INFO] Running funannotate train (PASA+PE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
-            \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
-                --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
+            \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
+                --trinity ${trinity_fa} --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" \\
                 --species "${species}" --strain "${strain}" \\
                 --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
                 --header_length ${header_length} \\
@@ -185,8 +233,8 @@ process FUNANNOTATE_TRAIN {
                 \$pasa_db_arg
         elif [ -s "${se}" ]; then
             echo "[INFO] Running funannotate train (PASA+SE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
-            \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
-                --trinity ${trinity_fa} --single_norm ${se} \\
+            \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
+                --trinity ${trinity_fa} --single_norm "\$SE_REAL" \\
                 --species "${species}" --strain "${strain}" \\
                 --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
                 --header_length ${header_length} \\
@@ -196,8 +244,8 @@ process FUNANNOTATE_TRAIN {
                 \$pasa_db_arg
         else
             echo "[INFO] Running funannotate train (PASA only, no reads) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
-            \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
-                --trinity ${trinity_fa} --left_norm ${r1} --right_norm ${r2} \\
+            \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
+                --trinity ${trinity_fa} --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" \\
                 --species "${species}" --strain "${strain}" \\
                 --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
                 --header_length ${header_length} \\
@@ -208,8 +256,8 @@ process FUNANNOTATE_TRAIN {
         fi
     elif [ -s "${r1}" ]; then
         echo "[INFO] Running funannotate train (full PE, no shared Trinity) for ${out}"
-        \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
-            --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
+        \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
+            --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
@@ -218,8 +266,8 @@ process FUNANNOTATE_TRAIN {
             \$pasa_db_arg
     else
         echo "[INFO] Running funannotate train (full SE, no shared Trinity) for ${out}"
-        \$SING funannotate train -i "\$GENOME_IN" -o ${params.training_target}/${out} \\
-            --single_norm ${se} --aligners minimap2 \\
+        \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
+            --single_norm "\$SE_REAL" --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
@@ -228,18 +276,31 @@ process FUNANNOTATE_TRAIN {
             \$pasa_db_arg
     fi
 
-    # ── Remove large intermediates not needed for predict or update ─────────────
-    # Keeps: *.bam, *.bai, *.pasa.gff3, *.stringtie.gtf, *.transcripts.gff3
+    # ── Publish the local run into the persistent, retry-reused training dir ───
+    # rsync preserves symlinks as-is rather than following them, so
+    # normalize/{left,right,single}.norm.fq.gz -- which funannotate wrote as
+    # symlinks to the realpath()'d canonical rnaseq_reads/rnaseq_data fastq --
+    # arrive in TRAINDIR still pointing straight at rnaseq_reads/rnaseq_data,
+    # never at \$LOCAL_TRAIN/work. trinity_gg/ and hisat2/ are large per-run
+    # intermediates nothing downstream needs (predict reads the *.bam/*.gff3
+    # files funannotate leaves alongside them, not these subdirs), so they're
+    # excluded from the copy entirely rather than copied then deleted.
+    # mysql_db/ is excluded too -- it was never written under \$LOCAL_TRAIN (the
+    # sidecar above binds it straight from TRAINDIR) -- and --delete would
+    # otherwise wipe it from TRAINDIR since it's absent from the local source.
     TRAINDIR="${params.training_target}/${out}/training"
-    echo "[INFO] Removing large training intermediates in \$TRAINDIR"
-    rm -rf "\$TRAINDIR/hisat2"
-    rm -rf "\$TRAINDIR/trinity_gg"
+    mkdir -p "${params.training_target}/${out}"
+    echo "[INFO] Publishing local training run for ${out} to \$TRAINDIR"
+    rsync -a --delete \\
+        --exclude 'trinity_gg/' --exclude 'hisat2/' --exclude 'mysql_db/' \\
+        "\$LOCAL_TRAIN/training/" "\$TRAINDIR/"
+    rm -rf "\$LOCAL_TRAIN"
 
     # ── Make funannotate's convenience symlinks local ──────────────────────────
     # funannotate writes funannotate_train.{coordSorted.bam,transcripts.gff3,
     # trinity-GG.fasta} and transcript.alignments.bam as absolute paths into
-    # whatever tree it ran under, which breaks the moment the directory is moved
-    # or the source project is retired. Repoint them at the sibling files.
+    # whatever tree it ran under -- now the just-deleted \$LOCAL_TRAIN -- so every
+    # publish leaves these needing a repoint, not just a moved/retired project.
     ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet "\$TRAINDIR" || true
 
     echo "[INFO] Training cleanup complete for ${out}"

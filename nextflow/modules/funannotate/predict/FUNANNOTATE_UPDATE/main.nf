@@ -24,10 +24,10 @@ process FUNANNOTATE_UPDATE {
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     # ── Containerized funannotate ──────────────────────────────────────────────
     # Same swap as FUNANNOTATE_TRAIN/main.nf: `funannotate update` runs via
-    # `\$SING` (singularity exec \${params.funannotate_sif}), kept WITHOUT a
+    # `\$SING` (apptainer exec \${params.funannotate_sif}), kept WITHOUT a
     # `container =` directive on this process -- the mysqldb sidecar below is
     # started via `singularity instance start` from this same host-executed
     # script, and both .sifs stay siblings launched from the host shell rather
@@ -35,7 +35,7 @@ process FUNANNOTATE_UPDATE {
     #
     # Same confirmations as FUNANNOTATE_TRAIN/main.nf: Singularity shares the
     # host network namespace by default, so \$SING reaches the mysqldb instance
-    # via MYHOSTNAME:PORT with no change needed; `singularity exec` passes
+    # via MYHOSTNAME:PORT with no change needed; `apptainer exec` passes
     # through all host-shell env vars (PASACONF etc.) unless --cleanenv is
     # added, so don't add --cleanenv without converting those to explicit
     # `--env` flags first; and the `which` failure some tools show under
@@ -47,8 +47,15 @@ process FUNANNOTATE_UPDATE {
     unset -f which 2>/dev/null || true
     unset which_declare 2>/dev/null || true
 
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    # APPTAINERENV_ prefix is REQUIRED here, not a plain export: the
+    # funannotate-live image bakes its own ENV defaults for these vars
+    # (AUGUSTUS_CONFIG_PATH=/venv/config, FUNANNOTATE_DB=/opt/databases/...),
+    # sourced from the image's /.singularity.d/env/ scripts AFTER the host
+    # shell env is inherited, so a plain `export` is silently overwritten
+    # inside the container (confirmed empirically 2026-08-24 against
+    # FUNANNOTATE_PREDICT's identical setup).
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     TMPDIR=\${SCRATCH:-/tmp}
     export PASACONF=""
     # PASA's hook loader (Pasa_conf.pm::_get_hook) resolves
@@ -57,14 +64,19 @@ process FUNANNOTATE_UPDATE {
     # GFF3/GFF3_annot_retriever.pm. The container's default PERL5LIB is empty
     # and SAMPLE_HOOKS isn't on the default @INC, so this crashes with
     # "Error, couldn't resolve path for GFF3::GFF3_annot_retriever" on every
-    # real update run. singularity exec passes host env through by default, so
-    # exporting PERL5LIB here (before the singularity exec call) reaches the
+    # real update run. apptainer exec passes host env through by default, so
+    # exporting PERL5LIB here (before the apptainer exec call) reaches the
     # container. Confirmed
-    # via direct `singularity exec ... perl -e '...@INC...'` test, 2026-08-15.
+    # via direct `apptainer exec ... perl -e '...@INC...'` test, 2026-08-15.
     export PERL5LIB="/venv/opt/pasa/src/SAMPLE_HOOKS:/venv/opt/pasa/src/PerlLib"
     pasa_db_arg="--pasa_db sqlite"
-    SING_BINDS="--bind ${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
-    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
+    # \$PWD (the task workdir) holds the Nextflow-staged r1/r2 read files passed
+    # directly into `funannotate update`, plus the \${out}/training symlink
+    # created below -- neither is under target/training_target, so \$PWD needs
+    # its own explicit bind. Same missing-bind bug class as GENEMARK_RUN/
+    # FUNANNOTATE_PREDICT (confirmed 2026-08-24).
+    SING_BINDS="--bind \$PWD:\$PWD,${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
         MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
@@ -89,7 +101,7 @@ process FUNANNOTATE_UPDATE {
         # SING_BINDS rather than a separate SINGULARITY_BINDPATH env var, to
         # match this project's SING_BINDS/SING convention.
         SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
-        SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
+        SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
         stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT

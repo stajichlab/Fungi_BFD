@@ -75,21 +75,43 @@ process GENEMARK_RUN {
     OUT_GTF="${out}.genemark.gtf"
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     # ── Containerized GeneMark ───────────────────────────────────────────────
     # gmes_petap.pl/bam2hints/join_mult_hints.pl are all already on \$PATH
     # inside the image, so no hardcoded GENEMARK_PATH/binary path is needed
     # (default image: docker://teambraker/braker3, whose PATH includes
     # /opt/ETP/bin/gmes and /opt/Augustus/bin -- see ENVIRONMENTS_INSTALLATIONS.md).
-    # --bind /opt/linux:/opt/linux resolves the license key: gmes_petap.pl
-    # reads ~/.gm_key, which on this host is \$HOME/.gm_key ->
-    # /opt/linux/rocky/8.x/x86_64/pkgs/genemarkESET/4.72_lic/gm_key ->
-    # gm_key_64 (a *relative* symlink resolved against /bigdata, which is
-    # already auto-bound) -- without /opt/linux bound, that chain 404s inside
-    # the container even though the final target under /bigdata is reachable.
-    # \$HOME itself is auto-bound by singularity, so no separate bind is
-    # needed for the symlink's starting point.
-    SING="singularity exec --bind /opt/linux:/opt/linux,${workflow.projectDir}:${workflow.projectDir} ${params.genemark_sif}"
+    #
+    # IMPORTANT: Nextflow's apptainer.autoMounts/runOptions ONLY apply when
+    # Nextflow itself launches the container via a process `container =`
+    # directive. This process builds \$SING manually in the script body, so
+    # NONE of that automatic binding applies here -- every path the
+    # container needs to read/write must be bound explicitly below.
+    # Confirmed empirically (2026-08-24): without the task workdir bound,
+    # genome.fa is invisible inside the container even though `apptainer
+    # exec ... pwd` reports the correct path (the string matches, but the
+    # filesystem isn't mounted). Built from Nextflow context vars and
+    # dynamic resolution rather than a hardcoded filesystem prefix (e.g.
+    # /bigdata) so this stays portable across HPC systems.
+    export TMPDIR=\${SCRATCH:-/tmp}
+
+    # GeneMark's license resolution (gmes_petap.pl reads ~/.gm_key) can hop
+    # through host-specific symlinks that land outside \$HOME/\$PWD (e.g. a
+    # module-installed license landing under this cluster's /opt/linux
+    # package tree) -- resolve the real target dynamically and bind its
+    # parent dir instead of hardcoding a host-specific prefix.
+    GM_KEY_REAL=\$(readlink -f "\$HOME/.gm_key" 2>/dev/null || echo "\$HOME/.gm_key")
+    GM_KEY_DIR=\$(dirname "\$GM_KEY_REAL")
+
+    SING_BINDS="--bind \$PWD:\$PWD,${workflow.projectDir}:${workflow.projectDir},\$GM_KEY_DIR:\$GM_KEY_DIR,\$TMPDIR:\$TMPDIR"
+    # training_bam (ET mode only) lives outside the task workdir -- it's
+    # read directly by the containerized bam2hints call below, not staged
+    # into \$PWD first, so its directory needs its own bind.
+    TRAINING_BAM="${training_bam}"
+    if [ -n "\$TRAINING_BAM" ]; then
+        SING_BINDS="\$SING_BINDS,\$(dirname "\$TRAINING_BAM"):\$(dirname "\$TRAINING_BAM")"
+    fi
+    SING="apptainer exec \$SING_BINDS ${params.genemark_sif}"
 
     GENOME_GZ="${genome_fa}"
     case "\$GENOME_GZ" in
