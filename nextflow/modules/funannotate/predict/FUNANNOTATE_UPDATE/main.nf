@@ -102,12 +102,27 @@ process FUNANNOTATE_UPDATE {
         # match this project's SING_BINDS/SING convention.
         SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
         SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
-        stop_mysqldb() { singularity instance stop mysqldb_${asmid} 2>/dev/null || true; }
+        # >/dev/null too, not just stderr: apptainer/singularity prints its
+        # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
+        # the named instance is already gone -- happens every run here since
+        # the EXIT trap always re-fires this after the explicit stop_mysqldb
+        # call near the end of the script already stopped it (see
+        # FUNANNOTATE_TRAIN/main.nf, same pattern).
+        stop_mysqldb() { singularity instance stop mysqldb_${asmid} >/dev/null 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
+        # No trailing "/usr/bin/mysqld_safe" here: `instance start` only runs
+        # trailing args THROUGH the image's %startscript (see --help), and
+        # Docker's ENTRYPOINT/CMD populate %runscript, not %startscript --
+        # mariadb_sif is a custom build (nextflow/docs/mariadb-10.3.9.def)
+        # whose %startscript itself execs mysqld_safe, so it needs no args.
+        # Same fix as FUNANNOTATE_TRAIN/main.nf, confirmed 2026-08-25: a plain
+        # docker://mariadb:10.3.9 (or an `apptainer pull`-cached sif of it,
+        # both lacking a real %startscript) starts an empty instance that
+        # never launches mysqld at all -- PASA then fails to connect.
         singularity instance start --writable-tmpfs \\
             -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
-            ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
+            ${params.mariadb_sif} mysqldb_${asmid}
         pasa_db_arg="--pasa_db mysql"
         sleep 5
     fi

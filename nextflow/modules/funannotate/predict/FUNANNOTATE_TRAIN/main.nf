@@ -21,6 +21,20 @@ process FUNANNOTATE_TRAIN {
 
     script:
     def pasa_db_arg = "--pasa_db sqlite"
+    // Real, symlink-resolved locations of rnaseq_reads/ and rnaseq_data/ (both
+    // are themselves top-level symlinks into ../rnaseq_reads, ../rnaseq_data
+    // from launchDir) -- these are NOT in SING_BINDS below, so funannotate's
+    // --left_norm/--right_norm/--trinity handling, which always resolves its
+    // read/Trinity arguments to their realpath() before symlinking them into
+    // its own output tree, silently produces a dangling symlink: the bind is
+    // missing, so the container can create the symlink (doesn't require the
+    // target to exist) but can never stat through it, and every
+    // `funannotate train` invocation has been failing with "Read
+    // normalization failed, .../left.norm.fq.gz does not exist" as a result
+    // -- confirmed 2026-08-25 by reproducing train.py's exact symlink logic
+    // both with and without this bind present.
+    def rnaseqReadsDir = file("${launchDir}/rnaseq_reads").toRealPath()
+    def rnaseqDataDir  = file("${params.rnaseq_data}").toRealPath()
     """
     # ── Skip if no RNA-seq data at all ────────────────────────────────────────
     if [ ! -s "${r1}" ] && [ ! -s "${se}" ] && [ ! -s "${trinity_fa}" ]; then
@@ -120,7 +134,7 @@ process FUNANNOTATE_TRAIN {
     # `funannotate train` -- none of those are under target/training_target,
     # so \$PWD needs its own explicit bind. Same missing-bind bug class as
     # GENEMARK_RUN/FUNANNOTATE_PREDICT (confirmed 2026-08-24).
-    SING_BINDS="--bind \$PWD:\$PWD,${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
+    SING_BINDS="--bind \$PWD:\$PWD,${params.training_target}:${params.training_target},${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${rnaseqReadsDir}:${rnaseqReadsDir},${rnaseqDataDir}:${rnaseqDataDir},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
@@ -158,9 +172,18 @@ process FUNANNOTATE_TRAIN {
         stop_mysqldb() { singularity instance stop mysqldb_${asmid} >/dev/null 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
+        # No trailing "/usr/bin/mysqld_safe" here: `instance start` only runs
+        # trailing args THROUGH the image's %startscript (see --help), and
+        # Docker's ENTRYPOINT/CMD populate %runscript, not %startscript --
+        # mariadb_sif is a custom build (nextflow/docs/mariadb-10.3.9.def)
+        # whose %startscript itself execs mysqld_safe, so it needs no args.
+        # Confirmed 2026-08-25: passing mysqld_safe as a trailing arg to a
+        # plain docker://mariadb:10.3.9 (or an `apptainer pull`-cached sif of
+        # it, both lacking a real %startscript) starts an empty instance that
+        # never launches mysqld at all -- PASA then fails to connect.
         singularity instance start --writable-tmpfs \\
             -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
-            ${params.mariadb_sif} mysqldb_${asmid} /usr/bin/mysqld_safe
+            ${params.mariadb_sif} mysqldb_${asmid}
         pasa_db_arg="--pasa_db mysql"
         sleep 5
     fi
