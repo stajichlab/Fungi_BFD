@@ -29,16 +29,21 @@ process GENOME_CLEAN_BATCH {
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load miniconda3
     eval "\$(conda shell.bash hook)"
-    module load singularity
+    module load apptainer
     AAFTF_SIF=${params.aaftf_sif}
+    SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     # AAFTF + taxonkit now come from the AAFTF SIF (replaces `module load AAFTF`
     # and `module load taxonkit`). The image hardcodes AAFTF_DB=/opt/aaaftf_db and
     # AAFTF fcs_gx_purge needs the host-staged FCS-GX db (/dev/shm/gxdb) visible,
-    # so bind the host DB + /dev/shm for every in-container call.
-    SING_BINDS="--bind ${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"
-    SING="singularity exec \${SING_BINDS} \${AAFTF_SIF}"
+    # so bind the host DB + /dev/shm for every in-container call. \$SCRATCH (node-
+    # local, NOT under /bigdata) also needs an explicit bind -- fcs_gx_purge reads/
+    # writes \$SCRATCH/\${asmid}.*.fa[sta] directly per-genome in the loop below,
+    # and manually-built \$SING commands get none of Nextflow's automatic
+    # task-workdir binding (same missing-bind bug class as GENEMARK_RUN, confirmed
+    # 2026-08-24).
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"
+    SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
 
-    SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     TAXONKIT_DB=${taxondb}
     DEST=${launchDir}/input_clean_genomes
     mkdir -p \$DEST/clean
