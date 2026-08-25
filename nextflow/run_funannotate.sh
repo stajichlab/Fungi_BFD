@@ -1,5 +1,5 @@
 #!/usr/bin/bash -l
-#SBATCH -N 1 -n 1 -c 2 --mem 8gb --time 7-00:00:00
+#SBATCH -N 1 -n 1 -c 2 --mem 8gb --time 7-00:00:00 -p batch
 #SBATCH --job-name=nxf_funannotate
 #SBATCH --output=logs/funannotate_launch.%j.log
 

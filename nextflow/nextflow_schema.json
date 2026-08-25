@@ -288,6 +288,11 @@
                     "description": "antiSMASH taxon mode.",
                     "default": "fungi"
                 },
+                "antismash_databases": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "antiSMASH database directory. Defaults to reusing this cluster's antismash/8.0.4 module's own populated database dir; override for a portable off-cluster run (see profile_funannotate.config comment)."
+                },
                 "pasa_mysql": {
                     "type": "boolean",
                     "description": "Use MySQL/MariaDB-backed PASA.",
@@ -331,6 +336,32 @@
                     "minimum": 0,
                     "description": "Min intron length for prediction.",
                     "default": 10
+                },
+                "min_assembly_len": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Cleaned assemblies below this total length (bp) are logged to TO_ADD_TO_SUPRESS.csv and dropped, rather than fed downstream.",
+                    "default": 1000000
+                },
+                "pasa_shared_min_avg_per_id": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Relaxed PASA --pasa_min_avg_per_id used only in FUNANNOTATE_TRAIN's shared-Trinity (cross-strain) branches, where alignment reflects real strain-to-strain divergence, not assembly error.",
+                    "default": 85
+                },
+                "pasa_shared_min_pct_aligned": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Relaxed PASA --pasa_min_pct_aligned used only in FUNANNOTATE_TRAIN's shared-Trinity (cross-strain) branches.",
+                    "default": 70
+                },
+                "pasa_shared_num_bp_splice": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Relaxed PASA --NUM_BP_PERFECT_SPLICE_BOUNDARY used only in FUNANNOTATE_TRAIN's shared-Trinity (cross-strain) branches.",
+                    "default": 1
                 },
                 "predict_min_asm_bp": {
                     "type": "integer",

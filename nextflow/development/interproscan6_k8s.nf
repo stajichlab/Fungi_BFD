@@ -33,7 +33,7 @@ include { makeSampleTag } from '../modules/common/utils.nf'
  *   4. samples.csv copied to the PVC or passed via --samples.
  *
  * Key differences from the HPC version:
- *   - No `module load singularity`; Docker is the container runtime.
+ *   - No `module load apptainer`; Docker is the container runtime.
  *   - interproscan.sh is called directly (it is the container ENTRYPOINT).
  *   - NXF_OFFLINE / nested nextflow run removed entirely.
  *   - SCRATCH replaced with a task-local tmpdir inside the pod workDir.

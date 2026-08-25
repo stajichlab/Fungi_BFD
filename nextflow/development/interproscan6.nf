@@ -41,7 +41,7 @@ process INTERPROSCAN6_RUN {
         exit 1
     fi
 
-    module load singularity
+    module load apptainer
     export NXF_SINGULARITY_CACHEDIR=${params.singularity_cache}
     export NXF_OFFLINE=true
 
