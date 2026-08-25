@@ -17,10 +17,10 @@ process FUNANNOTATE_ANNOTATE {
     def antiSmArg = antiSm.exists() ? "--antismash ${antiSm}" : ""
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     # ── Containerized funannotate ──────────────────────────────────────────────
     # Same swap/rationale as FUNANNOTATE_TRAIN/main.nf: funannotate annotate runs
-    # via \$SING (singularity exec \${params.funannotate_sif}) instead of
+    # via \$SING (apptainer exec \${params.funannotate_sif}) instead of
     # `module load funannotate`. No GeneMark/mysql involvement at this stage.
     # Binds cover target (annotate reads+writes there, incl. the optional
     # antismash_local GBK), augustus_config, funannotate_db, sbt_template,
@@ -28,8 +28,17 @@ process FUNANNOTATE_ANNOTATE {
     unset -f which 2>/dev/null || true
     unset which_declare 2>/dev/null || true
 
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    # APPTAINERENV_ prefix is REQUIRED for these three, not a plain export:
+    # the funannotate-live image bakes its own ENV defaults
+    # (AUGUSTUS_CONFIG_PATH=/venv/config, FUNANNOTATE_DB=/opt/databases/...,
+    # EGGNOG_DATA_DIR=/opt/databases/eggnog_db), sourced from the image's
+    # /.singularity.d/env/ scripts AFTER the host shell env is inherited, so
+    # a plain `export` is silently overwritten inside the container
+    # (confirmed empirically 2026-08-24 against FUNANNOTATE_PREDICT's
+    # identical setup). APPTAINERENV_/SINGULARITYENV_-prefixed vars are
+    # applied last and always win.
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     # EggNOG-mapper's DB (used by funannotate annotate's auto-run of emapper.py --
     # see get_emapper_version()/annotate.py) is not baked into the funannotate-live
     # image (too large -- same reason the upstream Docker image omits it). Without
@@ -39,10 +48,10 @@ process FUNANNOTATE_ANNOTATE {
     # .version attribute), crashing annotate outright. Matches the same
     # EGGNOG_DATA_DIR value the host funannotate/dev-1.9 module already sets.
     # Confirmed against a real beta.6 run, 2026-08-18.
-    export EGGNOG_DATA_DIR=${params.eggnog_data_dir}
+    export APPTAINERENV_EGGNOG_DATA_DIR=${params.eggnog_data_dir}
     TMPDIR=\${SCRATCH:-/tmp}
     SING_BINDS="--bind ${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.sbt_template}:${params.sbt_template},${params.eggnog_data_dir}:${params.eggnog_data_dir},\$TMPDIR:\$TMPDIR"
-    SING="singularity exec \${SING_BINDS} ${params.funannotate_sif}"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     \$SING funannotate annotate -i ${params.target}/${out} -o ${params.target}/${out} \\
         --species "${species}" --strain "${strain}" \\

@@ -29,14 +29,16 @@ process ANTISMASH_RUN {
         exit 1
     fi
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
+    module load apptainer
     mkdir -p ${out}/antismash_local
     # ${antismash_db_dir} is bind-mounted read-only and pointed at via --databases --
     # see SETUP_ANTISMASH_DB/main.nf for the version-match assumption this relies on
     # when antismash_databases is pointed at a pre-existing (not pipeline-downloaded)
     # database directory.
-    singularity exec \\
-        --bind ${antismash_db_dir}:${antismash_db_dir} \\
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind ${antismash_db_dir}:${antismash_db_dir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \\
+        \${SING_BINDS} \\
         ${params.antismash_sif} \\
         antismash --taxon ${params.antismash_taxon} \\
         --databases ${antismash_db_dir} \\
