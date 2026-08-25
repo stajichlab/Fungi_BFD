@@ -42,8 +42,10 @@ process SETUP_ANTISMASH_DB {
     """
     set -euo pipefail
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load singularity
-    singularity exec ${params.antismash_sif} download-antismash-databases --database-dir \$(pwd)
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.antismash_sif} download-antismash-databases --database-dir \$(pwd)
     """
 
     stub:
