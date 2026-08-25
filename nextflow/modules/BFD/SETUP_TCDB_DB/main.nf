@@ -15,8 +15,10 @@ process SETUP_TCDB_DB {
     """
     set -euo pipefail
     curl -fsSL https://tcdb.org/public/tcdb -o tcdb.fasta
-    module load singularity
-    singularity exec ${params.blastp_sif} makeblastdb -in tcdb.fasta -dbtype prot -out tcdb
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.blastp_sif} makeblastdb -in tcdb.fasta -dbtype prot -out tcdb
     """
 
     stub:

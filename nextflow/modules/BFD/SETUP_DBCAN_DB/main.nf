@@ -20,8 +20,10 @@ process SETUP_DBCAN_DB {
     script:
     """
     set -euo pipefail
-    module load singularity
-    singularity exec ${params.dbcan_cgc_sif} run_dbcan database --db_dir . --aws_s3
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan database --db_dir . --aws_s3
     """
 
     stub:

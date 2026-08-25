@@ -31,9 +31,11 @@ process RUN_CAZY_CGC {
 
     script:
     """
-    module load singularity
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
-    singularity exec ${params.dbcan_cgc_sif} run_dbcan easy_CGC \\
+    apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan easy_CGC \\
         --input_raw_data ${proteins} \\
         --mode protein \\
         --input_gff ${gff3} \\

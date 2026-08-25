@@ -23,9 +23,10 @@ process RUN_INFERNAL {
 
     script:
     """
-    module load singularity
-    SING_BINDS="--bind ${params.rfam_dbdir}:${params.rfam_dbdir}"
-    singularity exec \${SING_BINDS} ${params.infernal_sif} cmscan \\
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind ${params.rfam_dbdir}:${params.rfam_dbdir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.infernal_sif} cmscan \\
         --cut_ga --rfam --nohmmonly \\
         --clanin ${params.rfam_dbdir}/Rfam.clanin \\
         --tblout ${meta.id}.rfam.tblout \\

@@ -13,8 +13,10 @@ process CALC_ASM_STATS {
 
     script:
     """
-    module load singularity
-    singularity exec ${params.aaftf_sif} \\
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.aaftf_sif} \\
         AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
     """
 

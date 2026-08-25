@@ -21,9 +21,11 @@ process RUN_ANTISMASH {
 
     script:
     """
-    module load singularity
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
-    singularity exec --bind ${params.antismash_dbdir}:${params.antismash_dbdir} ${params.antismash_sif} \\
+    apptainer exec \${SING_BINDS} ${params.antismash_sif} \\
         antismash --taxon ${params.antismash_taxon} \\
             --databases ${params.antismash_dbdir} \\
             --output-dir \${OUTD} \\

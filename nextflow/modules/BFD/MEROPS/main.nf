@@ -18,9 +18,10 @@ process RUN_MEROPS {
     // module env; the DB directory is bound so the container can read it.
     """
     module load db-merops/124
-    module load singularity
-    SING_BINDS="--bind \${MEROPS_DB}:\${MEROPS_DB}"
-    SING="singularity exec \${SING_BINDS} ${params.blastp_sif}"
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\${MEROPS_DB}:\${MEROPS_DB},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.blastp_sif}"
     \${SING} blastp -query ${proteins} \\
         -db \$MEROPS_DB/merops_scan.lib \\
         -out ${meta.locustag}.blasttab \\

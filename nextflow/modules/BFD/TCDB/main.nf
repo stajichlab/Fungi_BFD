@@ -18,8 +18,10 @@ process RUN_TCDB {
 
     script:
     """
-    module load singularity
-    singularity exec ${params.blastp_sif} blastp -query ${proteins} \\
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.blastp_sif} blastp -query ${proteins} \\
         -db tcdb \\
         -out ${meta.locustag}.blasttab \\
         -num_threads ${task.cpus} \\

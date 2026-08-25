@@ -20,8 +20,10 @@ process RUN_DEEPTMHMM {
 
     script:
     """
-    module load singularity
-    SING="singularity exec ${params.deeptmhmm_gpu ? '--nv' : ''} ${params.deeptmhmm_sif}"
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec ${params.deeptmhmm_gpu ? '--nv' : ''} \${SING_BINDS} ${params.deeptmhmm_sif}"
     OUTD=\$(mktemp -d)
     \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta \${PWD}/${proteins} --output-dir \${OUTD}" || \\
     \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta ${proteins} --output-dir \${OUTD}"

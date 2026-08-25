@@ -27,13 +27,15 @@ process RUN_TRNASCAN {
 
     script:
     """
-    module load singularity
-    singularity exec ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome}
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},${projectDir}:${projectDir},\$TMPDIR:\$TMPDIR"
+    apptainer exec \${SING_BINDS} ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome}
 
     awk -F'\\t' 'NR<=3 {print; next} {len=(\$3>\$4)?\$3-\$4:\$4-\$3; if (len>=50 && len<=150) print}' \\
         ${meta.id}.tRNAscan.out > ${meta.id}.tRNAscan.len-filtered.out
 
-    singularity exec ${params.trnascan_sif} perl ${projectDir}/bin/trnascan2gff3.pl \\
+    apptainer exec \${SING_BINDS} ${params.trnascan_sif} perl ${projectDir}/bin/trnascan2gff3.pl \\
         --input ${meta.id}.tRNAscan.len-filtered.out > ${meta.id}.trnascan.raw.gff3
 
     module load bedtools/2.30.0

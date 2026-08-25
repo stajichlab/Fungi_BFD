@@ -39,10 +39,11 @@ process RUN_PFAM {
         # and the container never gets /srv/projects/db/pfam/... mounted,
         # failing every hmmsearch with "File existence/permissions problem"
         # even though the path is valid and readable on the host.
-        module load singularity
+        module load apptainer
         PFAM_SIF=${params.pfam_sif}
-        SING_BINDS="--bind \${PFAM_DB}:\${PFAM_DB}"
-        SING="singularity exec \${SING_BINDS} \${PFAM_SIF}"
+        export TMPDIR=\${SCRATCH:-/tmp}
+        SING_BINDS="--bind \${PWD}:\${PWD},\${PFAM_DB}:\${PFAM_DB},\$TMPDIR:\$TMPDIR"
+        SING="apptainer exec \${SING_BINDS} \${PFAM_SIF}"
     fi
     ${mpi_launch} \${SING} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
         --domtbl    ${meta.locustag}.domtblout \\

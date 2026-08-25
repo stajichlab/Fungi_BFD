@@ -20,9 +20,10 @@ process RUN_EGGNOG {
 
     script:
     """
-    module load singularity
-    SING_BINDS="--bind \${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}:\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}"
-    SING="singularity exec \${SING_BINDS} ${params.eggnog_sif}"
+    module load apptainer
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}:\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.eggnog_sif}"
     \${SING} emapper.py -i ${proteins} \\
         --itype proteins -m diamond \\
         --data_dir ${params.eggnog_data_dir} \\

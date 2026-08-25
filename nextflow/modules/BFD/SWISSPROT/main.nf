@@ -24,11 +24,12 @@ process RUN_SWISSPROT {
     // pre-filtered here.
     script:
     """
-    module load singularity
+    module load apptainer
     SWISSPROT_DB=${params.swissprot_dbdir}
-    SING_BINDS="--bind \${SWISSPROT_DB}:\${SWISSPROT_DB}"
+    export TMPDIR=\${SCRATCH:-/tmp}
+    SING_BINDS="--bind \${PWD}:\${PWD},\${SWISSPROT_DB}:\${SWISSPROT_DB},\$TMPDIR:\$TMPDIR"
     if [ "${params.swissprot_search}" = "blastp" ]; then
-        SING="singularity exec \${SING_BINDS} ${params.blastp_sif}"
+        SING="apptainer exec \${SING_BINDS} ${params.blastp_sif}"
         \${SING} blastp -query ${proteins} \\
             -db \${SWISSPROT_DB}/uniprot_sprot \\
             -out ${meta.locustag}.blasttab \\
@@ -38,7 +39,7 @@ process RUN_SWISSPROT {
             -evalue ${params.swissprot_evalue} \\
             -outfmt "6 qseqid sseqid pident positive nident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen stitle"
     else
-        SING="singularity exec \${SING_BINDS} ${params.diamond_sif}"
+        SING="apptainer exec \${SING_BINDS} ${params.diamond_sif}"
         \${SING} diamond blastp --sensitive \\
             -d \${SWISSPROT_DB}/uniprot_sprot.dmnd \\
             -q ${proteins} \\
