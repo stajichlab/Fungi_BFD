@@ -1,17 +1,23 @@
-# params_unified_funannotate.yaml — Phase 3 of unified pipeline
-# funannotate: CLEAN → MASK → RNASEQ → TRAIN → PREDICT → ANNOTATE
-# Produces: annotated genomes in genome_annotation/
+# params_unified_clean.yaml — Phase 0 of unified pipeline
+# funannotate: CLEAN only (GENOME_CLEAN/GENOME_CLEAN_BATCH), then stop.
+# Produces: input_clean_genomes/<asmid>.fa.gz (filtered + purged, UNMASKED --
+# masking happens in Phase 3, see params_unified_funannotate.yaml).
 #
-# Prerequisites:
-#   Phase 1 (BFD genome stats) must have completed, producing:
-#     - tables/asm_stats.parquet
-#     - tables/busco_genome.parquet
-#   Phase 2 (compare_ANI) must have completed, producing:
-#     - genome_annotation/_reuse_assignments/abinitio_reuse_assignments.csv
+# BUG FIX (2026-08-26): this file was a stale copy of
+# params_unified_funannotate.yaml (Phase 3) with only_clean left at `false`
+# -- meaning Phase 0 as configured did NOT actually stop after cleaning; with
+# run_sra_fetch also false, funannotate.nf's stop_after_sra_fetch/
+# stop_after_sra_query gate never even evaluates (it's `if (run_sra_fetch &&
+# (stop_after_sra_fetch || stop_after_sra_query))`), so the run would have
+# fallen through into RNASEQ/TRAIN/PREDICT/ANNOTATE for Phase 0 -- silently
+# duplicating Phase 3's work with unmasked genomes. Fixed by setting
+# only_clean: true (below), which FUNANNOTATE_GENOME_PREP.nf already
+# short-circuits on before masking even runs -- no need for
+# stop_after_genome_prep here, since Phase 0 explicitly wants pre-mask output.
 #
 # Usage:
 #   nextflow run nextflow/main.nf -c nextflow/nextflow.config \
-#       -profile funannotate -params-file nextflow/params_unified_funannotate.yaml -resume
+#       -profile funannotate -params-file nextflow/param_files/params_unified_clean.yaml -resume
 
 pipeline: "funannotate"
 samples: "samples.csv"
@@ -25,8 +31,8 @@ source: "/bigdata/stajichlab/shared/projects/1KFG/2026/NCBI_fungi/source/NCBI_AS
 target:          "genome_annotation"
 training_target: "genome_annotation"
 
-# This stops the pipeline after this step
-only_clean: false
+# This stops the pipeline after cleaning -- see BUG FIX note above.
+only_clean: true
 
 # ── ANI reuse ──────────────────────────────────────────────────────────────
 # run_ani_reuse=true loads abinitio_reuse_assignments.csv (from Phase 2)

@@ -20,14 +20,17 @@
 #   an earlier representatives pass in this same run). Run this second.
 #
 # Any extra arguments are passed straight through to `nextflow run` as
-# param overrides, e.g.:
+# param overrides -- but this repo's installed nextflow/nf-schema version
+# rejects CLI-passed booleans (`--run_annotate true` -> "Value is [string]
+# but should be [boolean]"; confirmed 2026-08-26). Boolean overrides
+# (run_annotate, only_clean, stop_after_sra_fetch, run_repeatmasker, etc.)
+# must be edited directly into params_predict_representatives.yaml /
+# params_predict_all.yaml instead. Non-boolean overrides are still safe
+# on the CLI, e.g.:
 #
-#   sbatch nextflow/run_funannotate.sh all --run_annotate true
-#   sbatch nextflow/run_funannotate.sh representatives --n_test 2 --only_clean true
-#   sbatch nextflow/run_funannotate.sh all --stop_after_sra_fetch true
-#   sbatch nextflow/run_funannotate.sh all --run_repeatmasker false
 #   sbatch nextflow/run_funannotate.sh all --taxon PHYLUM:Ascomycota
 #   sbatch nextflow/run_funannotate.sh representatives --asmid GCA_000001405.15
+#   sbatch nextflow/run_funannotate.sh representatives --n_test 2
 #
 # This supersedes the older single-mode run_funannotate_represenatives.sh /
 # run_funannotate_all.sh (kept as thin wrappers around this script).
@@ -36,7 +39,7 @@ set -euo pipefail
 
 MODE="${1:-}"
 case "$MODE" in
-    representatives)
+    representatives|rep)
         PARAMS_FILE=params_predict_representatives.yaml
         ;;
     all)
@@ -44,8 +47,8 @@ case "$MODE" in
         ;;
     *)
         echo "Usage: sbatch nextflow/run_funannotate.sh <representatives|all> [extra nextflow args...]" >&2
-        echo "  representatives -> params_predict_representatives.yaml (run first)" >&2
-        echo "  all             -> params_predict_all.yaml (run second)" >&2
+        echo "  representatives|rep -> params_predict_representatives.yaml (run first)" >&2
+        echo "  all                -> params_predict_all.yaml (run second)" >&2
         exit 1
         ;;
 esac

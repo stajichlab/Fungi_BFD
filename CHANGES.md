@@ -123,3 +123,121 @@ pod deadline, S3-vs-PVC-vs-pod-local path handling).
 ## Full commit list
 
 See `git log main..refactor_modules` for the complete 70-commit history.
+
+---
+
+# `main` — 2026-08-26: taxonomy misidentification incident + ANI/representative-picking hardening
+
+Separate, later changeset — not part of the `refactor_modules` PR above.
+Full narrative, evidence, and open items: `nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md`.
+
+## What happened
+
+`FUNANNOTATE_TRAIN` crashed for `Saccharomyces_cerevisiae_KCTC_13826BP`
+(PASA assigned 36 of 5,186 transcripts to loci) because that genome had been
+picked as the species' shared RNA-seq/ab-initio representative. Root-caused
+via NCBI's own ANI-taxonomy check + independent minimap2 alignment: the
+genome (`GCA_026225675.1`, "KCTC 13826BP") and a second genome
+(`GCA_051107375.1`, "MRD-KRBAY") are **not** *Saccharomyces cerevisiae* —
+they are misidentified *Nakaseomyces glabratus* (*Candida glabrata*, NCBI
+taxid 5478; 99.93% ANI to *N. glabratus* vs. 87.2%/failing to *S. cerevisiae*).
+The representative-picker itself worked exactly as designed (ranked KCTC
+1st of 1,308 by BUSCO completeness then N50); the two mislabeled genomes
+were the actual defect, not the pick logic. No downstream ab-initio
+parameters were corrupted — the pipeline's fail-closed blank-ANI semantics
+already prevented that — but the shared RNA-seq training resource was wrong
+for the whole species group, and the underlying gap (nothing validates a
+representative's *species*, and ANI-group storeDir caches don't invalidate
+on membership change) is generalizable, not KCTC-specific.
+
+## Data/curation fix
+
+- `data/curation/overrides.csv`: added `SPECIES_IN`/`GENUS`/`SPECIES`/
+  `NCBI_TAXONID` overrides for both `GCA_026225675.1_ASM2622567v1` and
+  `GCA_051107375.1_ASM5110737v1`, reclassifying them from *Saccharomyces
+  cerevisiae* to *Nakaseomyces glabratus* (taxid 5478, confirmed against the
+  local NCBI taxdump via `taxonkit`). `samples.csv` regeneration
+  (`scripts/create_samples_file.py --overrides data/curation/overrides.csv`)
+  and copying the result into `Fungi_BFD_runs/samples.csv` (a separate,
+  non-symlinked copy that Nextflow actually reads at runtime) are still
+  **pending** — not yet executed as of this writing.
+
+## Code changes
+
+1. **ANI aggregate `storeDir` → `publishDir`** (the actual bug preventing
+   automatic recovery from the above): `nextflow/modules/ani/report/MERGE_ANI/main.nf`
+   and `nextflow/modules/ani/report/REPORT_ANI/main.nf` used `storeDir`,
+   which only checks output-path *existence* — a species/genus group whose
+   membership changed (this incident's reclassification, or any future one)
+   would have kept silently serving its pre-change merged ANI table/report
+   forever, requiring a manual directory move-aside before every affected
+   rerun. Switched both to `publishDir` + Nextflow's normal input-hash
+   caching, matching the pattern the pairwise `*_COMPARE` modules
+   (`SKANI_COMPARE`/`MASH_COMPARE`/`SOURMASH_COMPARE`/`FASTANI_COMPARE`)
+   already used for this exact reason. `REPORT_ANI` previously had **both**
+   `storeDir` and `publishDir` on the same path — `storeDir`'s existence
+   check silently won regardless, making the `publishDir` vestigial; now
+   `storeDir` is removed and `publishDir` is the only cache mechanism.
+   Verified via stub-run: pre-fix a second invocation logged
+   `[skipping] Stored process > COMPARE_ANI:REPORT_ANI`; post-fix the
+   identical invocation shows the process actually executing.
+2. **skani divide-and-conquer prefilter** (`nextflow/conf/profile_ANI.config`,
+   `nextflow/modules/ani/compare/SKANI_COMPARE/main.nf`,
+   `nextflow/subworkflows/local/ANI_COMPARE_METHOD.nf`): a
+   mash-prefilter → connected-components → confirmatory-comparison cascade
+   already existed for `fastani` (gated behind `fastani_prefilter`) but was
+   unreachable for `skani`, the actual production `ani_method`. Added a new
+   `skani_prefilter` param (default `false`, independent toggle) and
+   extracted the shared prefilter/component-explosion logic into a new
+   `PREFILTER_COMPONENTS` subworkflow (not a Groovy closure — Nextflow
+   disallows process calls inside closures) that both the `fastani` and
+   `skani` branches now call, removing the previous duplication.
+   `SKANI_COMPARE`'s signature gained a `batch_tag` (mirroring
+   `FASTANI_COMPARE`) so per-component invocations don't collide on
+   filename; whole-group calls pass `"full"`, preserving today's behavior
+   byte-for-byte when the new flag is off (the default). Validated via
+   `-stub-run`: default path unchanged, new path fires the full
+   sketch→prefilter→components cascade with no channel/type errors. Opt-in;
+   intended for `GENUS`-scale comparisons where a single skani-triangle
+   job over an entire (large) genus would be wasted compute, and as
+   infrastructure a future genus-scale version of the proactive
+   misidentification sweep (below) can reuse.
+3. **Proactive dataset-wide misidentification sweep** — new script
+   `scripts/find_ani_label_mismatches.py`. Reuses the already-computed
+   whole-dataset merged ANI table (`results/ANI/skani/SPECIES/all_pairs_merged.tsv`,
+   2,195,284 pairs / 1,770 species groups) to flag any claimed-species group
+   whose ANI graph splits into more than one connected component at the
+   95% cluster threshold — exactly the KCTC/MRD-KRBAY signature (a 2-genome
+   cluster at 0.00% ANI to the 1,305-genome majority), reproduced
+   automatically with no training crash needed as a tripwire. Tiers findings
+   `HIGH`/`REVIEW` confidence using the existing `ani_outlier_threshold`
+   (90%) convention. Zero new Nextflow compute (~10s over the full 23k-genome
+   dataset). First run: 170 HIGH-confidence + 240 REVIEW-tier candidates
+   across 219 species, including 2 dataset-wide candidates beyond
+   KCTC/MRD-KRBAY not yet forensically confirmed (`Candidozyma auris`,
+   `Macrophomina phaseolina`) — triage tracked as `todo/TODO_REGISTRY.md` T-030.
+4. **Documentation fixes**: corrected two factual errors in
+   `nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md` inherited from an
+   earlier draft — `pasaTierFor()` actually lives in
+   `FUNANNOTATE_RNASEQ.nf` (not `utils.nf`), with real cutoffs `ANI>=97 ->
+   stringent, 90<=ANI<97 -> relaxed, <90/null -> skip` (not the
+   `ani_reuse_threshold=99.0` value, which is an unrelated parameter feeding
+   `reuse_eligible` in `PICK_REPRESENTATIVE_STRAIN`/`BACKFILL_ABINITIO_PARAMS`).
+
+## Not yet done
+
+- `samples.csv` regeneration + sync to `Fungi_BFD_runs/samples.csv` (data fix
+  above).
+- Re-running `compare_ani` → `PICK_REPRESENTATIVE_STRAIN` →
+  `RNASEQ_PREPARE` → `FUNANNOTATE_TRAIN` for *S. cerevisiae* against a
+  correctly-picked representative (candidates identified: `GCA_003277715.1`
+  "SX6", the picker-native winner, vs. `GCA_947344615.1`/`GCA_003273825.1`
+  for far better `reuse_eligible` coverage — see the plan doc's
+  "Remediation representative candidate" analysis for the trade-off).
+- `RNASEQ_PREPARE`'s own representative-identity `storeDir` sentinel (Option
+  2's original scope) — still design-only.
+- Option 1 (representative-path alignment floor) and Option 3 (data-driven
+  representative exemption) from the plan doc — still design-only, pending
+  expert review per the doc's (now-narrowed) evaluation plan.
+- Triage of the 410 candidates from `find_ani_label_mismatches.py`'s first
+  run (T-030).

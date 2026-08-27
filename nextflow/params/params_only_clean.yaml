@@ -1,0 +1,15 @@
+# funannotate pipeline, genome cleaning ONLY (stops before masking). Pairs
+# with run_clean_genome.sh. Differs from params_genome_clean_mask.yaml, which
+# also runs tantan masking before stopping.
+#
+# Booleans go here (not CLI --flag overrides) -- this repo's installed
+# nextflow/nf-schema version rejects CLI-passed booleans for funannotate.nf
+# (confirmed 2026-08-26; see run_genome_clean_mask.sh's header comment).
+# Non-boolean overrides (--taxon, --asmid, --n_test, --clean_batch_size) are
+# still safe on the CLI.
+
+pipeline: funannotate
+samples: samples.csv
+only_clean: true
+run_repeatmasker: true
+clean_batch_size: 1000

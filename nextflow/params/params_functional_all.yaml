@@ -1,0 +1,21 @@
+# BFD functional annotation, every tool enabled. Pairs with run_functional_all.sh.
+# Booleans go here (not CLI --flag overrides) -- see params_functional.yaml's
+# header comment for why.
+#
+# Note: unlike params_functional.yaml this omits run_swissprot (matches the
+# pre-existing difference between run_functional.sh and run_functional_all.sh
+# -- preserved as-is during the params-file migration, 2026-08-26).
+
+pipeline: BFD
+run_setup: true
+run_pfam: true
+run_cazy: true
+run_merops: true
+run_signalp: true
+run_tmhmm: true
+run_targetp: true
+run_idp: true
+run_wolfpsort: true
+run_predgpi: true
+run_busco_genome: true
+run_busco_pep: true

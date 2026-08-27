@@ -13,7 +13,7 @@
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 include { makeSampleTag; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
-include { loadAbinitioReuseMap } from '../modules/funannotate/utils.nf'
+include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
 include { FUNANNOTATE_GENOME_PREP }       from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
@@ -27,6 +27,12 @@ workflow FUNANNOTATE {
     if (params.help) {
         log.info paramsHelp(command: "nextflow run nextflow/main.nf --pipeline funannotate -c nextflow/nextflow.config -profile funannotate")
         return
+    }
+    // ── Container cache must come from the environment (env-only, no hardcoded path) ─
+    // params.singularity_cache is resolved from the env chain in nextflow.config;
+    // this pipeline needs it for every *_sif param + the apptainer cacheDir.
+    if (params.singularity_cache == null) {
+        throw new Exception("params.singularity_cache is not set. Export one of NXF_APPTAINER_CACHEDIR / NXF_SINGULARITY_CACHEDIR / APPTAINER_CACHEDIR / SINGULARITY_CACHEDIR pointing at the shared container cache (launch via run_funannotate.sh to get it set for you). See HOWTO_singularity.md.")
     }
     // ── Validate params and samples.csv structure (fail fast) ───────────────────
     validateParameters()
@@ -134,6 +140,12 @@ workflow FUNANNOTATE {
     // ── Stages ────────────────────────────────────────────────────────────────
     FUNANNOTATE_GENOME_PREP(jobs)
 
+    if (params.stop_after_genome_prep.toBoolean()) {
+        log.info "Stopping after genome prep (stop_after_genome_prep) -- " +
+                  "skipping RNA-seq acquisition, prediction, and annotation entirely."
+        return
+    }
+
     // Loaded before FUNANNOTATE_RNASEQ so its species-level "which assembly
     // anchors the shared Trinity-GG build" pick can use the same ANI/BUSCO
     // representative as FUNANNOTATE_PREDICTION's ab-initio reuse decision,
@@ -147,7 +159,13 @@ workflow FUNANNOTATE {
               "to train all strains independently."
     }
 
-    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap)
+    // species_tag -> out overrides for which strain RNASEQ_PREPARE builds the shared
+    // Trinity-GG assembly against, when abinitioReuseMap's ANI+BUSCO pick assembles
+    // fine but its RNA-seq doesn't align (see loadRnaseqRepresentativeOverride()).
+    // Populated by scripts/pick_rnaseq_representative_override.py, not by this pipeline.
+    def rnaseqRepOverride = loadRnaseqRepresentativeOverride()
+
+    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap, rnaseqRepOverride)
 
     // FUNANNOTATE_RNASEQ only assigns its predict_input emission past the
     // stop_after_sra_fetch/stop_after_sra_query gates (see its "end if" markers);

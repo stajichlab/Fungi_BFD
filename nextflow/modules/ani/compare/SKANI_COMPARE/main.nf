@@ -1,7 +1,7 @@
 include { skaniPresetFlag; skaniCpusFor; skaniMemoryFor; aniTimeFor } from '../../../common/utils.nf'
 
 process SKANI_COMPARE {
-    tag   "${group_name} [${n_genomes} genomes]"
+    tag   "${group_name} [${batch_tag}] n=${n_genomes}"
     label 'skani'
 
     cpus   { skaniCpusFor(n_genomes) }
@@ -11,10 +11,14 @@ process SKANI_COMPARE {
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}/batches" }, mode: 'copy'
 
     input:
-        tuple val(group_name), val(n_genomes), path(genomes)
+        // batch_tag distinguishes multiple invocations for the same group_name
+        // (one per skani_prefilter component, "cN"); plain whole-group calls
+        // pass "full", matching the historical filename so existing outputs/
+        // downstream globs are unaffected when skani_prefilter is off.
+        tuple val(group_name), val(n_genomes), path(genomes), val(batch_tag)
 
     output:
-        tuple val(group_name), path("${group_name}.full.ani.tsv")
+        tuple val(group_name), path("${group_name}.${batch_tag}.ani.tsv")
 
     script:
     def preset = skaniPresetFlag(params.skani_preset)
@@ -35,11 +39,11 @@ process SKANI_COMPARE {
     # Strip self-comparisons (diagonal) and extra columns
     awk -F'\\t' 'NR>1 && \$1 != \$2 {
         print \$1"\\t"\$2"\\t"\$3
-    }' skani_raw.tsv > ${group_name}.full.ani.tsv
+    }' skani_raw.tsv > ${group_name}.${batch_tag}.ani.tsv
     """
 
     stub:
     """
-    printf 'q\\tr\\t99.0\\n' > ${group_name}.full.ani.tsv
+    printf 'q\\tr\\t99.0\\n' > ${group_name}.${batch_tag}.ani.tsv
     """
 }

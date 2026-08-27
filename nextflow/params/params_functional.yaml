@@ -1,0 +1,21 @@
+# BFD functional annotation, selective tool set. Pairs with run_functional.sh.
+# Booleans go here (not CLI --flag overrides) -- this repo's installed
+# nextflow/nf-schema version rejects CLI-passed booleans for BFD.nf, which
+# calls validateParameters() (confirmed 2026-08-26; see
+# nextflow/run_genome_clean_mask.sh's header comment for the full story).
+# Non-boolean overrides (--n_test, --taxon, --asmid) are still safe on the CLI.
+
+pipeline: BFD
+run_setup: true
+run_pfam: false
+run_cazy: true
+run_merops: true
+run_swissprot: true
+run_signalp: true
+run_tmhmm: false
+run_targetp: false
+run_idp: true
+run_wolfpsort: true
+run_predgpi: false
+run_busco_genome: true
+run_busco_pep: true

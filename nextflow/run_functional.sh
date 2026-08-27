@@ -7,38 +7,36 @@
 # Submit from the PROJECT ROOT directory (where samples.csv lives):
 #   sbatch nextflow/run_functional.sh
 #
-# To run only specific tools:
-#   sbatch nextflow/run_functional.sh --run_pfam true --run_cazy false
+# Tool selection lives in nextflow/params/params_functional.yaml (booleans
+# must go in a -params-file, not CLI --flag overrides, on this repo's
+# installed nextflow/nf-schema version -- confirmed 2026-08-26, see that
+# file's header comment). Edit the yaml to change which tools run.
 #
-# To limit to first N samples for testing:
+# To limit to first N samples for testing (safe on the CLI, not a boolean):
 #   sbatch nextflow/run_functional.sh --n_test 5
-#
-# To skip symlink setup (input/ already populated from a prior run):
-#   sbatch nextflow/run_functional.sh --run_setup false
 
 set -euo pipefail
 
 module load nextflow
 
+# Container cache (env-resolved params.singularity_cache): backwards-compat
+# fallback to the canonical shared dir, mirroring run_funannotate.sh/run_unified.sh.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+
 mkdir -p logs/nextflow
+
+PARAMS_FILE=nextflow/params/params_functional.yaml
+if [ ! -f "$PARAMS_FILE" ]; then
+    echo "ERROR: $PARAMS_FILE not found in $(pwd) -- run from the project root (where samples.csv lives)" >&2
+    exit 1
+fi
 
 NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run nextflow/main.nf \
     -c nextflow/nextflow.config \
     -profile BFD \
-    --pipeline BFD \
-    --run_setup true \
-    --run_pfam false \
-    --run_cazy true \
-    --run_merops true \
-    --run_swissprot true \
-    --run_signalp true \
-    --run_tmhmm false \
-    --run_targetp false \
-    --run_idp true \
-    --run_wolfpsort true \
-    --run_predgpi false \
-    --run_busco_genome true \
-    --run_busco_pep true \
+    -params-file "$PARAMS_FILE" \
     -resume \
     "$@"

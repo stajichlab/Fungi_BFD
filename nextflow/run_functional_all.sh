@@ -3,38 +3,40 @@
 #SBATCH --job-name=nxf_functional
 #SBATCH --output=logs/functional_launch.%j.log
 
-# Launch the Nextflow functional annotation pipeline (BFD).
+# Launch the Nextflow functional annotation pipeline (BFD), every tool on.
 # Submit from the PROJECT ROOT directory (where samples.csv lives):
 #   sbatch nextflow/run_functional_all.sh
 #
-# To limit to first N samples for testing:
-#   sbatch nextflow/run_functional_all.sh --n_test 5
+# Tool selection lives in nextflow/params/params_functional_all.yaml
+# (booleans must go in a -params-file, not CLI --flag overrides, on this
+# repo's installed nextflow/nf-schema version -- confirmed 2026-08-26, see
+# that file's header comment).
 #
-# To skip symlink setup (input/ already populated from a prior run):
-#   sbatch nextflow/run_functional_all.sh --run_setup false
+# To limit to first N samples for testing (safe on the CLI, not a boolean):
+#   sbatch nextflow/run_functional_all.sh --n_test 5
 
 set -euo pipefail
 
 module load nextflow
 
+# Container cache (env-resolved params.singularity_cache): backwards-compat
+# fallback to the canonical shared dir, mirroring run_funannotate.sh/run_unified.sh.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+
 mkdir -p logs/nextflow
+
+PARAMS_FILE=nextflow/params/params_functional_all.yaml
+if [ ! -f "$PARAMS_FILE" ]; then
+    echo "ERROR: $PARAMS_FILE not found in $(pwd) -- run from the project root (where samples.csv lives)" >&2
+    exit 1
+fi
 
 NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run nextflow/main.nf \
     -c nextflow/nextflow.config \
     -profile BFD \
-    --pipeline BFD \
-    --run_setup true \
-    --run_pfam true \
-    --run_cazy true \
-    --run_merops true \
-    --run_signalp true \
-    --run_tmhmm true \
-    --run_targetp true \
-    --run_idp true \
-    --run_wolfpsort true \
-    --run_predgpi true \
-    --run_busco_genome true \
-    --run_busco_pep true \
+    -params-file "$PARAMS_FILE" \
     -resume \
     "$@"

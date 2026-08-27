@@ -52,16 +52,28 @@ cd "$PROJECT_DIR"
 source /etc/profile.d/modules.sh 2>/dev/null || true
 module load nextflow
 
+# ── Container cache (env-resolved params.singularity_cache) ─────────────────
+# Mirrors run_funannotate.sh's backwards-compat fallback so every phase that
+# runs a guarded workflow (BFD / funannotate) gets the canonical cache even from
+# a fresh SBATCH shell. Override by exporting any of these before sbatch.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export NXF_APPTAINER_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+
 mkdir -p logs/nextflow
 # Singularity bind sources (work/ANI/pip_cache, work/ANI/python_packages) are
 # created at config-parse time by the ANI/funannotate profiles (see _bind_sources
 # in conf/profile_*.config) — no launcher-script mkdir needed here.
 
 # ── Params files ────────────────────────────────────────────────────────────
-# Phase 0 reuses FUN_PARAMS with --only_clean true tacked on (see run_phase call
-# below) rather than a separate yaml — CLEAN and MASK live in the same
-# FUNANNOTATE_GENOME_PREP subworkflow, so one params file keeps both phases'
-# clean_batch_size/source/etc settings in sync.
+# Each phase has its OWN yaml (CLEAN_PARAMS/BFD_PARAMS/ANI_PARAMS/FUN_PARAMS,
+# all booleans set as real YAML values) rather than a shared base file plus
+# CLI --flag overrides -- this repo's installed nextflow/nf-schema version
+# rejects CLI-passed booleans for any schema-validated pipeline (funannotate,
+# BFD, setup_symlinks; confirmed 2026-08-26, see nextflow/run_genome_clean_mask.sh's
+# header comment), so `run_phase`'s phase_args mechanism below is only safe for
+# non-boolean overrides (-resume/-stub-run, --n_test, --taxon, etc.).
 CLEAN_PARAMS="nextflow/param_files/params_unified_clean.yaml"
 BFD_PARAMS="nextflow/param_files/params_unified_bfd.yaml"
 ANI_PARAMS="nextflow/param_files/params_unified_ani.yaml"

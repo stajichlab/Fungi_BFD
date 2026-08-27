@@ -1,0 +1,33 @@
+# Genome clean + tantan soft-mask, then stop -- no RNA-seq acquisition,
+# training, prediction, or annotation. Pairs with nextflow/run_genome_clean_mask.sh.
+#
+# Produces: input_clean_genomes/<asmid>.fa.gz (cleaned) and
+#           input_clean_genomes/<asmid>.masked.fasta (tantan soft-masked,
+#           what FUNANNOTATE_PREDICTION would consume in a later full run).
+#
+# Passed via -params-file rather than CLI --flag overrides: this repo's
+# installed nextflow/nf-schema version rejects CLI-passed booleans
+# (`--stop_after_genome_prep true` -> "Value is [string] but should be
+# [boolean]") even for long-established flags like --only_clean/
+# --run_repeatmasker -- confirmed 2026-08-26, affects every existing run_*.sh
+# script's documented `--flag true` CLI examples too, not just this one.
+# YAML booleans parse correctly, so -params-file avoids the bug entirely.
+
+pipeline: funannotate
+samples: samples.csv
+
+# Runs GENOME_CLEAN(_BATCH) then MASKREPEAT_TANTAN_RUN, then stops before
+# RNASEQ_PREPARE/SRA work is even queued (see funannotate.nf's
+# stop_after_genome_prep check, right after FUNANNOTATE_GENOME_PREP).
+stop_after_genome_prep: true
+
+# tantan is the fast default masker here (seconds-to-minutes/genome); the
+# heavier RepeatModeler+RepeatMasker / Earlgrey path is a separate
+# `--pipeline earlgrey_mask` run, not wired into this genome-prep stage --
+# too slow to run genome-by-genome at this dataset's scale (23k+ genomes).
+run_repeatmasker: true
+
+# Batches FCS-GX DB staging into /dev/shm once per clean_batch_size genomes
+# instead of once per genome (see profile_funannotate.config). Set to 0 to
+# revert to one SLURM job per genome (GENOME_CLEAN, not GENOME_CLEAN_BATCH).
+clean_batch_size: 1000

@@ -19,6 +19,41 @@ include { MASH_PREFILTER   } from '../../modules/ani/compare/MASH_PREFILTER/main
 include { MASH_COMPONENTS  } from '../../modules/ani/compare/MASH_COMPONENTS/main.nf'
 include { MERGE_ANI        } from '../../modules/ani/report/MERGE_ANI/main.nf'
 
+// Shared by skani_prefilter and fastani_prefilter: mash-sketch the group,
+// mash-dist all-vs-all (cheap), connected-components at params.prefilter_ani,
+// then explode into per-component (group, comp, [genome paths]) tuples so the
+// caller can run its own (more expensive/precise) comparator only within each
+// component instead of over the whole group. A subworkflow rather than a
+// closure because Nextflow does not allow process calls inside closures.
+workflow PREFILTER_COMPONENTS {
+    take:
+    genome_ch   // tuple(group_name, [genome files])
+    flat_ch     // tuple(group_name, genome file) -- one row per genome
+
+    main:
+    def grouped_msk = MASH_SKETCH(flat_ch).groupTuple()
+    def comps_ch    = MASH_PREFILTER(grouped_msk) | MASH_COMPONENTS
+
+    // Explode components.tsv (comp_id <TAB> genome_filename) into rows
+    // keyed by (group, filename) so we can re-attach the genome file path.
+    def comp_rows = comps_ch
+        .splitCsv(elem: 1, sep: '\t')
+        .map { gn, row -> tuple(tuple(gn, row[1]), tuple(gn, row[0])) }
+
+    def genome_lut = genome_ch.flatMap { gn, genomes ->
+        genomes.collect { g -> tuple(tuple(gn, g.name), g) }
+    }
+
+    def per_comp = comp_rows
+        .combine(genome_lut, by: 0)                       // (key, (gn,comp), gpath)
+        .map { _key, gncomp, gpath -> tuple(gncomp[0], gncomp[1], gpath) }
+        .groupTuple(by: [0, 1])                            // (gn, comp, [gpaths])
+        .filter { _gn, _comp, gs -> gs.size() >= params.min_group_size as int }
+
+    emit:
+    components = per_comp   // tuple(group_name, comp_id, [genome paths])
+}
+
 workflow ANI_COMPARE_METHOD {
     take:
     genome_ch      // tuple(group_name, [genome files])
@@ -33,13 +68,31 @@ workflow ANI_COMPARE_METHOD {
     def ani_tsv_ch
 
     if (method == 'skani') {
-        // skani 0.3.x: sketch all genomes in one pass, then skani triangle.
-        // Chunking was for the old per-genome .sketch API; skani triangle handles
-        // large groups efficiently with a single sketch directory.
         // Pass n_genomes as an explicit val so the process resource directive can
         // use it reliably (channel inputs aren't accessible in closures at submit time).
-        def skani_input = genome_ch.map { gn, genomes -> tuple(gn, genomes.size(), genomes) }
-        ani_tsv_ch = SKANI_COMPARE(skani_input)
+        if (params.skani_prefilter as boolean) {
+            // Same divide-and-conquer shape as fastani_prefilter below: mash
+            // pre-cluster first, then skani triangle only within each component.
+            // Matters at GENUS-scale groups (potentially thousands of genomes)
+            // where a single skani-triangle-over-everything job is wasteful once
+            // most of the group is obviously not related; at the SPECIES scale
+            // this pipeline runs today (~1,300 genomes/group) a single skani
+            // triangle job is already fast, so this is opt-in, not default.
+            PREFILTER_COMPONENTS(genome_ch, genome_flat)
+            def per_comp = PREFILTER_COMPONENTS.out.components
+                .map { gn, comp, gs -> tuple(gn, gs.size(), gs, "c${comp}") }
+            def part_ch  = SKANI_COMPARE(per_comp)
+            ani_tsv_ch = part_ch
+                .groupTuple()
+                .map { gn, tsv_list -> tuple(gn, tsv_list.flatten()) }
+                | MERGE_ANI
+        } else {
+            // skani 0.3.x: sketch all genomes in one pass, then skani triangle.
+            // Chunking was for the old per-genome .sketch API; skani triangle
+            // handles large groups efficiently with a single sketch directory.
+            def skani_input = genome_ch.map { gn, genomes -> tuple(gn, genomes.size(), genomes, "full") }
+            ani_tsv_ch = SKANI_COMPARE(skani_input)
+        }
 
     } else if (method == 'mash') {
         ani_tsv_ch = MASH_SKETCH(genome_flat)
@@ -56,24 +109,8 @@ workflow ANI_COMPARE_METHOD {
 
         if (params.fastani_prefilter as boolean) {
             // (b) mash pre-cluster, then fastANI all-vs-all within each component.
-            def grouped_msk = MASH_SKETCH(genome_flat).groupTuple()
-            def comps_ch    = MASH_PREFILTER(grouped_msk) | MASH_COMPONENTS
-
-            // Explode components.tsv (comp_id <TAB> genome_filename) into rows
-            // keyed by (group, filename) so we can re-attach the genome file path.
-            def comp_rows = comps_ch
-                .splitCsv(elem: 1, sep: '\t')
-                .map { gn, row -> tuple(tuple(gn, row[1]), tuple(gn, row[0])) }
-
-            def genome_lut = genome_ch.flatMap { gn, genomes ->
-                genomes.collect { g -> tuple(tuple(gn, g.name), g) }
-            }
-
-            def per_comp = comp_rows
-                .combine(genome_lut, by: 0)                       // (key, (gn,comp), gpath)
-                .map { _key, gncomp, gpath -> tuple(gncomp[0], gncomp[1], gpath) }
-                .groupTuple(by: [0, 1])                           // (gn, comp, [gpaths])
-                .filter { _gn, _comp, gs -> gs.size() >= params.min_group_size as int }
+            PREFILTER_COMPONENTS(genome_ch, genome_flat)
+            def per_comp = PREFILTER_COMPONENTS.out.components
                 .map { gn, comp, gs -> tuple(gn, gs, gs, "c${comp}", gs.size()) }
 
             part_ch = FASTANI_COMPARE(per_comp)

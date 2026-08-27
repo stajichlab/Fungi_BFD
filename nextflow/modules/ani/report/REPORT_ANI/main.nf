@@ -2,7 +2,16 @@ process REPORT_ANI {
     tag   "${group_name}"
     label 'report'
 
-    storeDir "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}"
+    // storeDir removed (2026-08-26): it sat alongside publishDir pointed at the
+    // same path, so its bare-existence check silently won -- a group whose
+    // membership changed (taxonomy reclassification, new genome added) never
+    // regenerated its report as long as *a* report already existed there,
+    // regardless of -resume. publishDir + Nextflow's normal input-hash caching
+    // (already keyed on ani_tsv/names_tsv, which do change when membership
+    // changes) is the correct behavior -- same fix as MERGE_ANI and the
+    // pairwise *_COMPARE modules. See
+    // nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md, gate inventory
+    // item 6 / Option 2 extension (KCTC_13826BP/MRD-KRBAY incident, 2026-08-26).
     publishDir { "${params.outdir}/${params.ani_method}/${params.compare}/${group_name}" }, mode: 'copy'
 
     input:
