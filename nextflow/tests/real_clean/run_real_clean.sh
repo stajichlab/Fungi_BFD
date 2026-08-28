@@ -38,6 +38,12 @@ cd "$HERE" || { echo "[ERR] cannot cd to $HERE" >&2; exit 1; }
 # nextflow/logs dir must pre-exist -- see --output above) and proceed regardless.
 mkdir -p "$HERE/logs/nextflow" 2>/dev/null || true
 
+# Container cache (env-resolved params.singularity_cache): backwards-compat
+# fallback to the canonical shared dir, mirroring run_funannotate.sh/run_unified.sh.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+
 NXF_OPTS="-Xms512m -Xmx4g" \
 nextflow run main.nf \
     -c nextflow.config \

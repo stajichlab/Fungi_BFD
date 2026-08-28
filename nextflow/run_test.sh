@@ -19,6 +19,12 @@ module load nextflow
 NXFDIR="nextflow"
 mkdir -p logs/nextflow
 
+# Container cache (env-resolved params.singularity_cache): backwards-compat
+# fallback to the canonical shared dir, mirroring run_funannotate.sh/run_unified.sh.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+
 echo "=== Step 1: Syntax + channel wiring check (preview) ==="
 NXF_OPTS="-Xms256m -Xmx2g" \
 nextflow run ${NXFDIR}/main.nf \

@@ -33,15 +33,15 @@ process GENOME_CLEAN_BATCH {
     AAFTF_SIF=${params.aaftf_sif}
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     # AAFTF + taxonkit now come from the AAFTF SIF (replaces `module load AAFTF`
-    # and `module load taxonkit`). The image hardcodes AAFTF_DB=/opt/aaaftf_db and
-    # AAFTF fcs_gx_purge needs the host-staged FCS-GX db (/dev/shm/gxdb) visible,
-    # so bind the host DB + /dev/shm for every in-container call. \$SCRATCH (node-
-    # local, NOT under /bigdata) also needs an explicit bind -- fcs_gx_purge reads/
-    # writes \$SCRATCH/\${asmid}.*.fa[sta] directly per-genome in the loop below,
-    # and manually-built \$SING commands get none of Nextflow's automatic
-    # task-workdir binding (same missing-bind bug class as GENEMARK_RUN, confirmed
-    # 2026-08-24).
-    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/srv/projects/db/AAFTF_DB:/opt/aaaftf_db,/dev/shm:/dev/shm"
+    # and `module load taxonkit`). fcs_gx_purge takes its DB via an explicit
+    # --db /dev/shm/gxdb/all flag (not the image's AAFTF_DB env default), so
+    # only /dev/shm needs binding for that -- no separate AAFTF_DB bind.
+    # \$SCRATCH (node-local, NOT under /bigdata) also needs an explicit bind --
+    # fcs_gx_purge reads/writes \$SCRATCH/\${asmid}.*.fa[sta] directly per-genome
+    # in the loop below, and manually-built \$SING commands get none of
+    # Nextflow's automatic task-workdir binding (same missing-bind bug class as
+    # GENEMARK_RUN, confirmed 2026-08-24).
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
 
     TAXONKIT_DB=${taxondb}

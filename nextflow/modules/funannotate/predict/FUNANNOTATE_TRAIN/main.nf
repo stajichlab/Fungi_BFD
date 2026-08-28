@@ -42,6 +42,20 @@ process FUNANNOTATE_TRAIN {
         exit 0
     fi
 
+    # ── Skip if the shared Trinity-GG assembly is too thin to train on ────────
+    # A too-few-transcripts trinity_fa usually means it was assembled against the
+    # wrong reference strain (same species name, divergent genome) rather than a
+    # real expression signal -- PASA has nothing to build a training set from and
+    # funannotate train either crashes or emits junk models. See
+    # train_min_trinity_transcripts in conf/profile_funannotate.config.
+    if [ -s "${trinity_fa}" ] && [ "${params.train_min_trinity_transcripts}" -gt 0 ]; then
+        TRINITY_TX_COUNT=\$(grep -c '^>' "${trinity_fa}" || true)
+        if [ "\$TRINITY_TX_COUNT" -lt "${params.train_min_trinity_transcripts}" ]; then
+            echo "[WARN] ${out}: shared Trinity-GG assembly has only \$TRINITY_TX_COUNT transcripts (< ${params.train_min_trinity_transcripts}); likely assembled against the wrong reference strain. Skipping funannotate train -- rerun scripts/fix_low_trinity.py to pick a better reference." >&2
+            exit 0
+        fi
+    fi
+
     # ── Skip if training output already present and rnaseq is not newer than GBK ──
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
@@ -297,6 +311,11 @@ process FUNANNOTATE_TRAIN {
             --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
             \$pasa_db_arg
+    fi
+    TRAIN_STATUS=\$?
+    if [ "\$TRAIN_STATUS" -ne 0 ]; then
+        echo "[ERROR] funannotate train failed for ${out} (exit \$TRAIN_STATUS); not publishing \$LOCAL_TRAIN over ${params.training_target}/${out}/training" >&2
+        exit "\$TRAIN_STATUS"
     fi
 
     # ── Publish the local run into the persistent, retry-reused training dir ───

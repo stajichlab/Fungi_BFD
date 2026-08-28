@@ -25,7 +25,7 @@ process RUN_ANTISMASH {
     export TMPDIR=\${SCRATCH:-/tmp}
     SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
-    apptainer exec \${SING_BINDS} ${params.antismash_sif} \\
+    apptainer exec \${SING_BINDS} ${params.antismash_standalone_sif} \\
         antismash --taxon ${params.antismash_taxon} \\
             --databases ${params.antismash_dbdir} \\
             --output-dir \${OUTD} \\

@@ -35,12 +35,14 @@ def staleRnaseq(String out, String species) {
     def gbk = gbkResult("${params.target}/${out}/predict_results", out)
     if (gbk == null) return false  // predict hasn't run yet; normal path handles it
     def r1      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_R1.fastq.gz")
+    def r2      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_R2.fastq.gz")
     def se      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_SE.fastq.gz")
     def trinity = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
     def r1_newer      = r1.exists()      && r1.size() > 0      && r1.lastModified()      > gbk.lastModified()
+    def r2_newer      = r2.exists()      && r2.size() > 0      && r2.lastModified()      > gbk.lastModified()
     def se_newer      = se.exists()      && se.size() > 0      && se.lastModified()      > gbk.lastModified()
     def trinity_newer = trinity.exists() && trinity.size() > 0 && trinity.lastModified() > gbk.lastModified()
-    if (r1_newer || se_newer || trinity_newer) {
+    if (r1_newer || r2_newer || se_newer || trinity_newer) {
         log.info "stale prediction for ${out}: rnaseq/trinity newer than GBK — scheduling retrain+repredict"
         return true
     }
@@ -170,5 +172,40 @@ def loadAbinitioReuseMap() {
     log.info "Loaded ${m.size()} ab-initio reuse assignments from ${csv} " +
         "(${m.count { it.value.reuse_eligible }} reuse_eligible, " +
         "${m.count { it.value.is_representative }} representative)"
+    return m
+}
+
+// Eagerly loads rnaseq_representative_override_csv into species_tag -> out. Lets
+// scripts/pick_rnaseq_representative_override.py force RNASEQ_PREPARE to build the
+// shared Trinity-GG assembly against a specific strain instead of whatever
+// abinitioReuseMap's ANI+BUSCO pick happens to be. Exists because that ANI+BUSCO pick
+// optimizes for genome assembly quality, not for which genome the RNA-seq reads
+// actually align to -- e.g. Ascochyta_rabiei's ANI-picked representative (a
+// pks1-deletion construct genome, BUSCO 98.1%) is a perfectly good assembly that the
+// species' real RNA-seq (SRR330019xx) barely aligns to (HISAT2 -> 9 Trinity-GG
+// clusters -> 7 transcripts total), while GCF_004011695.2 (Me14, BUSCO 98.4%, the
+// RefSeq reference for this species) is not the ANI pick but works fine. Returns an
+// empty map when no override file exists -- every species then keeps using
+// abinitioReuseMap's pick unchanged.
+def loadRnaseqRepresentativeOverride() {
+    def m = [:]
+    def csv = file(params.rnaseq_representative_override_csv as String)
+    if (!csv.exists()) return m
+    def lines = csv.readLines()
+    if (lines.size() < 2) return m
+    def header = lines[0].split(',', -1)*.trim()
+    def iTag = header.indexOf('species_tag')
+    def iOut = header.indexOf('out')
+    if (iTag < 0 || iOut < 0) {
+        log.warn "rnaseq_representative_override_csv ${csv} missing species_tag/out columns -- ignoring"
+        return m
+    }
+    lines.drop(1).each { line ->
+        if (!line.trim()) return
+        def f = line.split(',', -1)
+        if (f.size() <= [iTag, iOut].max()) return
+        m[f[iTag].trim()] = f[iOut].trim()
+    }
+    log.info "Loaded ${m.size()} RNA-seq representative overrides from ${csv}"
     return m
 }

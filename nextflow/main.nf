@@ -30,24 +30,39 @@ include { PHYling }      from './subworkflows/local/PHYLING_ALIGN.nf'
 include { BACKFILL_ABINITIO } from './workflows/backfill_abinitio.nf'
 include { SETUP_SYMLINKS_ONLY } from './workflows/setup_symlinks.nf'
 
-params.pipeline = 'BFD'
+// No default: an omitted --pipeline used to silently fall back to BFD (via the
+// line this replaced), which runs BFD() against whatever profile/params are
+// actually active. If that profile doesn't define BFD.nf's own params (e.g.
+// -profile funannotate lacks run_setup), it doesn't fail here -- it fails
+// deep inside BFD.nf with a "Cannot invoke method toBoolean() on null object"
+// NullPointerException that gives no hint --pipeline was ever the problem.
+// Requiring --pipeline explicit turns that into the clear error below instead.
 
-// ANI_REPRESENTATIVE_SELECT (funannotate + ani profiles) needs pip cache +
-// python_packages dirs for DuckDB install. Singularity hard-FATALs ("mount
-// source ... doesn't exist") if a bind source path is missing, and the bind
-// is applied when the first task's container launches -- before any process
-// body can run. Called at the top of workflow{} below, before any pipeline
-// is dispatched, so the dirs exist before any container starts. A function
-// declaration is allowed at DSL2 top level (a bare statement there is not),
-// and it's plain Groovy in the .nf script rather than nextflow.config, so it
-// isn't a params/config key and neither ConfigValidator nor nf-schema's
+// ANI_REPRESENTATIVE_SELECT (funannotate + ani profiles) needs a pip cache
+// dir for DuckDB install. Singularity hard-FATALs ("mount source ... doesn't
+// exist") if a bind source path is missing, and the bind is applied when the
+// first task's container launches -- before any process body can run.
+// Called at the top of workflow{} below, before any pipeline is dispatched,
+// so the dir exists before any container starts. A function declaration is
+// allowed at DSL2 top level (a bare statement there is not), and it's plain
+// Groovy in the .nf script rather than nextflow.config, so it isn't a
+// params/config key and neither ConfigValidator nor nf-schema's
 // validateParameters flags it. Idempotent, so -resume is safe.
+// (pip's --target install dir is node-local \$SCRATCH now, not a bigdata dir
+// -- see profile_ANI.config -- so it needs no pre-created bind source here.)
 def setupBindSourceDirs() {
-    ['work/ANI/pip_cache', 'work/ANI/python_packages'].each { new File("${launchDir}/${it}").mkdirs() }
+    ['work/ANI/pip_cache'].each { new File("${launchDir}/${it}").mkdirs() }
 }
 
 workflow {
     setupBindSourceDirs()
+
+    if (!params.pipeline) {
+        error "--pipeline is required (no default -- an omitted --pipeline used to " +
+              "silently fall back to BFD and fail confusingly deep inside BFD.nf).\n" +
+              "  --pipeline must be one of: BFD, compare_ani, query_ani, funannotate, " +
+              "earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks"
+    }
 
     // if/else rather than switch: the strict parser rejects switch statements.
     def pipeline = (params.pipeline as String).toLowerCase()

@@ -17,6 +17,12 @@
 // exist yet), repr_ch falls back to the first assembly in the group, exactly
 // as before this was wired up.
 //
+// rnaseqRepOverride (loaded once in funannotate.nf, same as abinitioReuseMap) lets
+// scripts/pick_rnaseq_representative_override.py force a *different* strain for this
+// species-level pick specifically -- ANI+BUSCO optimizes for assembly quality, which
+// is not always the genome the species' actual RNA-seq reads align to well. See that
+// script and loadRnaseqRepresentativeOverride() in modules/funannotate/utils.nf.
+//
 
 include { SRA_QUERY_BATCH   } from '../../modules/funannotate/rnaseq/SRA_QUERY_BATCH/main.nf'
 include { COLLECT_SRA_QUERY } from '../../modules/funannotate/rnaseq/COLLECT_SRA_QUERY/main.nf'
@@ -32,6 +38,7 @@ workflow FUNANNOTATE_RNASEQ {
     take:
     predict_genome_ch   // tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
     abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
+    rnaseqRepOverride     // species_tag -> out, from loadRnaseqRepresentativeOverride()
 
     main:
     // When SRA is enabled: SRA_FETCH fetches reads once per species; RNASEQ_PREPARE runs
@@ -65,13 +72,31 @@ workflow FUNANNOTATE_RNASEQ {
                 }
                 .filter { it != null }
         } else {
-            def sra_batched = sra_input
+            // Filter out species whose CSV is already cached on disk *before* batching,
+            // so a batch made up entirely of cached species never gets submitted to
+            // SLURM at all. SRA_QUERY_BATCH's own inline `[ -s "$cached" ]` check still
+            // covers a batch with a MIX of cached/uncached species (that job still runs,
+            // just does no esearch/efetch work for the cached ones), but this branch is
+            // what stops a fully-cached batch from launching a short-queue job in the
+            // first place -- mirrors what SRA_FETCH gets for free from storeDir.
+            def sra_branched = sra_input
+                .branch { species_tag, _taxonid ->
+                    def csv = file("${launchDir}/rnaseq_reads/sra_query/${species_tag}.sra_query.csv")
+                    cached:     csv.exists() && csv.size() > 0
+                    needs_query: true
+                }
+            def cached_results = sra_branched.cached
+                .map { species_tag, _taxonid ->
+                    tuple(species_tag, file("${launchDir}/rnaseq_reads/sra_query/${species_tag}.sra_query.csv"))
+                }
+            def sra_batched = sra_branched.needs_query
                 .collate(params.sra_query_batch_size)
                 .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
             SRA_QUERY_BATCH(sra_batched)
-            sra_query_results = SRA_QUERY_BATCH.out.query_results
+            def queried_results = SRA_QUERY_BATCH.out.query_results
                 .flatten()
                 .map { csv -> tuple(csv.baseName.replaceAll(/\.sra_query$/, ''), csv) }
+            sra_query_results = cached_results.mix(queried_results)
         }
 
         // Step 2: Collect all per-species results into {stem}.rnaseq_sra.csv
@@ -181,11 +206,27 @@ workflow FUNANNOTATE_RNASEQ {
         // the same strain FUNANNOTATE_PREDICTION uses for ab-initio reuse -- not an
         // arbitrary first-in-group assembly. Falls back to index 0 when the map has no
         // assignment for this species (see module header comment).
+        //
+        // rnaseqRepOverride (species_tag -> out) takes priority over that ANI+BUSCO pick
+        // when present: ANI+BUSCO optimizes for assembly quality, not for which genome
+        // the species' actual RNA-seq reads align to, and the two occasionally disagree
+        // badly (Ascochyta_rabiei's ANI pick assembles fine but its real RNA-seq
+        // genome-guided-Trinity's down to 7 transcripts against it; GCF_004011695.2/Me14
+        // works). See loadRnaseqRepresentativeOverride() and
+        // scripts/pick_rnaseq_representative_override.py.
         def repr_ch = assembly_with_reads
             .groupTuple(by: 0)
             .map { species_tag, outs, asmids, species_list, strains, locustags,
                    buscos, hlens, ttables, genomes, r1s, r2s, ses ->
-                def repIdx = outs.findIndexOf { out -> abinitioReuseMap[out]?.is_representative }
+                def overrideOut = rnaseqRepOverride[species_tag]
+                def repIdx = overrideOut
+                    ? outs.findIndexOf { out -> out == overrideOut }
+                    : outs.findIndexOf { out -> abinitioReuseMap[out]?.is_representative }
+                if (overrideOut && repIdx < 0) {
+                    log.warn "rnaseq_representative_override names out '${overrideOut}' for " +
+                              "${species_tag} but no such assembly is in this run -- falling " +
+                              "back to the ANI+BUSCO pick"
+                }
                 def i = repIdx >= 0 ? repIdx : 0
                 tuple(species_tag, outs[i], asmids[i], species_list[i], strains[i],
                       locustags[i], buscos[i], hlens[i], ttables[i], genomes[i], r1s[i], r2s[i], ses[i])

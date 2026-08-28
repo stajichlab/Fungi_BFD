@@ -33,6 +33,13 @@ workflow BFD {
         return
     }
 
+    // ── Container cache must come from the environment (env-only, no hardcoded path) ─
+    // params.singularity_cache is resolved from the env chain in nextflow.config;
+    // this pipeline needs it for every *_sif param + the apptainer cacheDir.
+    if (params.singularity_cache == null) {
+        throw new Exception("params.singularity_cache is not set. Export one of NXF_APPTAINER_CACHEDIR / NXF_SINGULARITY_CACHEDIR / APPTAINER_CACHEDIR / SINGULARITY_CACHEDIR pointing at the shared container cache (launch via run_unified.sh / run_funannotate.sh to get it set for you). See HOWTO_singularity.md.")
+    }
+
     // ── Validate params and samples.csv structure (fail fast) ────────────────
     validateParameters()
     log.info paramsSummaryLog(workflow)

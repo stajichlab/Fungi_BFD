@@ -53,9 +53,10 @@ process PICK_REPRESENTATIVE_STRAIN {
     """
     mkdir -p _reuse_assignments
     # duckdb is not in the python:3.12 base image (used via the 'report' label) —
-    # install it first, same pattern as COMBINE_ANI_TABLE.
-    pip install --quiet --target /tmp/python_packages --ignore-installed duckdb
-    PYTHONPATH="/tmp/python_packages:\${PYTHONPATH}" \
+    # install it first, same pattern as COMBINE_ANI_TABLE (node-local \$SCRATCH,
+    # not a shared bigdata dir — see profile_ANI.config).
+    pip install --quiet --target "\$SCRATCH/python_packages" --ignore-installed duckdb
+    PYTHONPATH="\$SCRATCH/python_packages:\${PYTHONPATH}" \
     python "${projectDir}/bin/pick_representative_strain.py" \
         --ani-tsv "${ani_tsv}" \
         --predict-input "${predict_input_tsv}" \

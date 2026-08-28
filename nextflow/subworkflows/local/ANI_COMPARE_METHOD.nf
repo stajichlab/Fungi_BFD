@@ -73,25 +73,55 @@ workflow ANI_COMPARE_METHOD {
         if (params.skani_prefilter as boolean) {
             // Same divide-and-conquer shape as fastani_prefilter below: mash
             // pre-cluster first, then skani triangle only within each component.
-            // Matters at GENUS-scale groups (potentially thousands of genomes)
+            // Matters at GENUS/order scale (potentially thousands of genomes)
             // where a single skani-triangle-over-everything job is wasteful once
-            // most of the group is obviously not related; at the SPECIES scale
-            // this pipeline runs today (~1,300 genomes/group) a single skani
-            // triangle job is already fast, so this is opt-in, not default.
+            // most of the group is obviously not related. Each component runs as
+            // one 'triangle' SKANI_COMPARE job (query == ref).
             PREFILTER_COMPONENTS(genome_ch, genome_flat)
             def per_comp = PREFILTER_COMPONENTS.out.components
-                .map { gn, comp, gs -> tuple(gn, gs.size(), gs, "c${comp}") }
+                .map { gn, comp, gs -> tuple(gn, gs.size(), gs, gs, "c${comp}", 'triangle') }
             def part_ch  = SKANI_COMPARE(per_comp)
             ani_tsv_ch = part_ch
                 .groupTuple()
                 .map { gn, tsv_list -> tuple(gn, tsv_list.flatten()) }
                 | MERGE_ANI
         } else {
-            // skani 0.3.x: sketch all genomes in one pass, then skani triangle.
-            // Chunking was for the old per-genome .sketch API; skani triangle
-            // handles large groups efficiently with a single sketch directory.
-            def skani_input = genome_ch.map { gn, genomes -> tuple(gn, genomes.size(), genomes, "full") }
-            ani_tsv_ch = SKANI_COMPARE(skani_input)
+            def batchSize = params.ani_batch_size as int
+
+            if (batchSize > 0) {
+                // Upper-triangle batch pairs (same shape as the fastani branch):
+                // diagonal pairs (i==j) are 'triangle' jobs; off-diagonal pairs
+                // are 'dist' jobs (query batch i x ref batch j). Every unordered
+                // genome pair appears in exactly one job, so concatenating the
+                // batch outputs reproduces the whole-group triangle.
+                def batch_pairs_ch = genome_ch.flatMap { group_name, genomes ->
+                    def N      = genomes.size()
+                    def nBatch = (N + batchSize - 1).intdiv(batchSize)
+                    def batches = (0..<nBatch).collect { i ->
+                        def end = (i + 1) * batchSize < N ? (i + 1) * batchSize : N
+                        genomes.subList(i * batchSize, end)
+                    }
+                    (0..<nBatch).collectMany { i ->
+                        (i..<nBatch).collect { j ->
+                            tuple(group_name, N,
+                                  batches[i], batches[j],
+                                  "b${i}_b${j}", i == j ? 'triangle' : 'dist')
+                        }
+                    }
+                }
+                def part_ch = SKANI_COMPARE(batch_pairs_ch)
+                ani_tsv_ch = part_ch
+                    .groupTuple()
+                    .map { gn, tsv_list -> tuple(gn, tsv_list.flatten()) }
+                    | MERGE_ANI
+
+            } else {
+                // Single triangle job per group; query == ref == all genomes.
+                def skani_input = genome_ch.map { group_name, genomes ->
+                    tuple(group_name, genomes.size(), genomes, genomes, "full", 'triangle')
+                }
+                ani_tsv_ch = SKANI_COMPARE(skani_input)
+            }
         }
 
     } else if (method == 'mash') {
