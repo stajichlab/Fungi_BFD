@@ -233,6 +233,8 @@ mariadb-10.3.9.sif|build|mariadb_sif||${MARIADB_DEF}
 DeepTMHMM-1.0.sif|license|deeptmhmm_sif||
 antismash-standalone-8.0.4.sif|license|antismash_standalone_sif||
 skani_0.3.2--h79ce301_0.sandbox|sandbox|skani_container|docker://quay.io/biocontainers/skani:0.3.2--h79ce301_0|
+mash_2.3--hb105d93_10.sandbox|sandbox|mash_container|docker://quay.io/biocontainers/mash:2.3--hb105d93_10|
+sourmash_4.9.4--hdfd78af_0.sandbox|sandbox|sourmash_container|docker://quay.io/biocontainers/sourmash:4.9.4--hdfd78af_0|
 "
 
 # known-but-not-actively-wired (comment-referenced fallbacks / other projects);
