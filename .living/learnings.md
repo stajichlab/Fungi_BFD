@@ -1315,3 +1315,82 @@ Validated `-stub-run` clean for both, then forced a real re-predict for `Pichia_
 **Resolution**: switched to `glob.glob(os.path.expanduser(trace_glob))` so the same code path serves relative CWD-relative globs, `~/`-expansion, and absolute globs. (Note: `nextflow_schema.json` uses the top-level `$defs` key, *not* `definitions` — the schema's param groups live under `$defs/ani_options/properties`.)
 
 **Tags**: python, pathlib, glob, gotcha, compare-ani-methods
+
+### [2026-08-28] Containerized `wgd syn` (i-ADHoRe) needs OpenMPI env hygiene inside the SIF — SLURM env leaks kill it
+
+**Category**: hpc / container gotcha
+
+**What happened**: Validating the WGD_SYN module (`wgd syn` → i-ADHoRe for collinear-block anchor detection) in the paralogoscope pipeline. First real failure before the fix: `FileNotFoundError: [Errno 2] No such file or directory: 'wgd_syn/iadhore-out/anchorpoints.txt'` with `i-adhore: error while loading shared libraries: libmpi.so.40` in the log. The lib IS in the container at `/opt/conda/lib/libmpi.so.40` (conda openmpi 4.1.6) but `LD_LIBRARY_PATH` isn't set (base prefix, not an activated env). With `LD_LIBRARY_PATH=/opt/conda/lib` set, i-ADHoRe then failed with `OPAL ERROR: Unreachable in file pmix3x_client.c at line 111` — the classic "launched under srun/tores, but OMPI was not built with SLURM's support" error: SLURM env vars from the job shell leak into the container and OMPI tries (and fails) to talk to SLURM's PMI. Also needed `OMPI_ALLOW_RUN_AS_ROOT=1` + `OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1` (container runs as root).
+
+**Resolution**: In the module's `script:` block, run the command as `apptainer exec ... --env LD_LIBRARY_PATH=/opt/conda/lib --env OMPI_ALLOW_RUN_AS_ROOT=1,OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 ${wgd_sif} bash -c 'env -u <SLURM_*> -u <PMI_*> bash -c "wgd syn ..."'`. Explicitly unset all `SLURM*` and `PMI*` env vars inside the container before the wgd call (a static list of ~29 vars; the dynamic `for v in $(env | grep -E '^SLURM|^PMI' | cut -d= -f1); do unset $v; done` was verified by hand but the explicit list is baked in). Verified live: i-ADHoRe prints its banner and completes (`All Done!  Bye...`); the full dmd→ksd→syn Nextflow run succeeds 6/6 and publishes dmd/ksd outputs.
+
+**Gotchas learned along the way**:
+- `env -u FOO bar -c "cmd"` fails (`env: invalid option -- 'c'`) — the `-c` belongs to the *program* being invoked, so it must be `env -u FOO ... bash -c "cmd"`.
+- **"No anchors found" is a LEGITIMATE rc=0 outcome** of `wgd syn` (i-ADHoRe ran, found no collinear anchors, `cli.py:716` warns and terminates) — in that case `anchors.csv` is NEVER written. So a module guard like `[ -f anchors.csv ] || exit 1` would falsely fail valid runs. Guard must be tolerant: require anchors.csv **or** a non-empty `iadhore-out/anchorpoints.txt` (i.e. i-ADHoRe actually ran).
+- `write_genelists` **skips scaffolds with ≤2 genes** (`if len(sdf.index) <= 2: continue` in `/opt/conda/lib/python3.9/site-packages/wgd/syn.py` ~line 118) → i-ADHoRe "ERROR: Genelist files not found in settings file" on tiny test genomes.
+- Overlapping (non-partition) MCL-like families cause "ERROR: There are duplicated gene IDs for given feature and attribute" — must feed a valid partition.
+- **`wgd syn` needs `-f mRNA -a ID` for funannotate-style GFF3s**: CDS-transcript headers (`FF5840CF_00001-T1`) match mRNA features, NOT gene features; the default `-f gene -a ID` errors "No genes from families file ... found in the GFF file".
+- wgd syn visualizations ARE named `*.dot.{svg,pdf,png}` — confirmed in cli.py:740-742 (the `all_dotplots` loop). (The `*_multiplicons_level.*`/`All_species_marcosynteny.*` names from viz.py belong to a different code path, `macrosynteny`, not `syn`.) So WGD_SYN's `wgd_syn/*.dot.pdf` and `*.dot.png` publishDir/output patterns are correct. Also confirmed: `wgd_syn/anchors.csv` IS the real output name (cli.py:720) written only when anchors are found; `*.anchors.ks.tsv` + `*.ksd.{svg,pdf}` come from a `-k/--ks-distribution` variant of syn (not used by default).
+- Empirically, a "No anchors found" run exits **0** even though cli.py:716 calls `exit(1)` — the click wrapper normalizes it. Do not rely on rc; rely on output files.
+
+**Tags**: wgd, i-ADHoRe, openmpi, apptainer, container, SLURM, PMI, nextflow, paralogoscope, gotcha
+
+### [2026-08-28] Nextflow `publishDir` glob patterns don't cross directories — scope patterns to the publishDir root
+
+**Category**: nextflow gotcha
+
+**What happened**: In the paralogoscope wgd modules, publishDir was `{ "${params.outdir}/${meta.id}/wgd_dmd" }` with `pattern: '*.tsv'` — but `*` does not cross directory separators, so the published `wgd_dmd/` dirs existed while no files were ever copied (silent success, nothing published). Varying it to `{ outdir/{meta.id}/wgd_dmd }` + pattern `'wgd_dmd/*.tsv'` double-nested the dir (`outdir/{id}/wgd_dmd/wgd_dmd/file.tsv`).
+
+**Resolution**: Set each module's publishDir root to `{ "${params.outdir}/${meta.id}" }` and express the pattern relative to THAT root: `pattern: 'wgd_dmd/*.tsv'`, `'wgd_ksd/*.ks.tsv'`, `'wgd_ksd/*.pdf'` (ksd's actual pdf is `*.tsv.ksd.pdf`). Verified real-run tree: `outdir/{id}/wgd_dmd/{id}.cds-transcripts.fa.tsv`, `wgd_ksd/{id}.cds-transcripts.fa.tsv.ks.tsv`, `wgd_ksd/{id}.cds-transcripts.fa.tsv.ksd.pdf`.
+
+**Tags**: nextflow, publishDir, glob, pattern, paralogoscope, gotcha
+
+### [2026-08-28] Login-node smoke tests are capped at 4 CPUs / 24 GB; local config must match
+
+**Category**: HPCC gotcha
+
+**What happened**: A real-data wgd run on the login node failed twice: `Process requirement exceeds available CPUs -- req: 8; avail: 4` then, after lowering cpus to 4, `Process requirement exceeds available memory -- req: 32 GB; avail: 24 GB`. The login node is 4 vCPU / 24 GB and is shared with other sessions.
+
+**Resolution**: The local test config caps `comparative_wgd` at cpus=4, memory='16 GB', time='2 h'. SLURM runs (the real deployment) use 8 cpus/32 GB via the paralogoscope profile — no cap there.
+
+**Tags**: HPCC, login-node, slurm, resources, nextflow, paralogoscope, gotcha
+
+### [2026-08-28] `pkill -f <pattern>` can kill its own invoking shell
+
+**Category**: shell gotcha
+
+**What happened**: `pkill -f "plg_stub"` matched the current bash command line (which contained the pattern as an argument) and killed the tool's own shell, hanging the call until timeout.
+
+**Resolution**: Never `pkill -f` a pattern that appears in the command you're typing. Scope it (`pgrep -af java | grep -v <self-excluding-token>`) or match a more specific string absent from the command line (e.g. the full java `-jar ...nextflow...jar` arg).
+
+**Tags**: shell, pkill, pgrep, gotcha
+
+### [2026-08-28] Nextflow `include` relative paths resolve from the module file, not the workflow
+
+**Category**: nextflow gotcha
+
+**What happened**: `include { hashBucketForType } from '../../common/utils.nf'` in `modules/comparative/wgd/WGD_DMD/main.nf` resolved to `modules/comparative/common/utils.nf` (Error: Invalid include source), because the wgd process sits THREE dirs under `modules/` while BFD's `modules/BFD/CALC_INTERGENIC/` sits TWO.
+
+**Resolution**: Modules nested deeper under `modules/` need one more `../`: `from '../../../common/utils.nf'`. Compilation fails loudly (unlike the publishDir-glob silent failure), so it never ships broken.
+
+**Tags**: nextflow, include, relative-path, modules, gotcha
+
+### [2026-08-28] `storeDir` preserves output relative subpaths — move outputs to workdir root for clean buckets
+
+**Category**: nextflow gotcha
+
+**What happened**: With `storeDir { outdir/wgd_dmd/{bucket} }` and outputs left in the process's `wgd_dmd/` subdir, storeDir would place files at `outdir/wgd_dmd/{bucket}/wgd_dmd/file.tsv` (double nesting), exactly like the earlier publishDir double-nest learning.
+
+**Resolution**: `mv` the declared outputs to the workdir root in the script (`mv wgd_dmd/*.tsv .`) before the processes complete; then storeDir drops them directly in the bucket dir. Note: with `-stub-run`, storeDir is NOT populated — stub validation checks parsing/flow, not the bucket layout.
+
+**Tags**: nextflow, storeDir, publishDir, glob, paralogoscope, gotcha
+
+### [2026-08-28] Backgrounded `setsid nohup nextflow &` dies when the invoking session/shell exits
+
+**Category**: HPCC gotcha
+
+**What happened**: Three detached nextflow launches (setsid + nohup + disown, `</dev/null` redirected) all died within ~30 s of the invoking tool call returning, with no error in the log. A foreground run under `timeout` survives fine.
+
+**Resolution**: For anything long, submit a SLURM job (`run_paralogoscope.sh` uses `sbatch` on preempt) instead of backgrounding on the login node. The r3 real-data smoke test is the exception that was let to finish in the foreground of an interactive session.
+
+**Tags**: HPCC, nextflow, background, setsid, nohup, slurm, gotcha

@@ -29,6 +29,7 @@ include { COMPARATIVE }  from './workflows/comparative_genomics.nf'
 include { PHYling }      from './subworkflows/local/PHYLING_ALIGN.nf'
 include { BACKFILL_ABINITIO } from './workflows/backfill_abinitio.nf'
 include { SETUP_SYMLINKS_ONLY } from './workflows/setup_symlinks.nf'
+include { PARALOGOSCOPE_RUN } from './workflows/paralogoscope.nf'
 
 // No default: an omitted --pipeline used to silently fall back to BFD (via the
 // line this replaced), which runs BFD() against whatever profile/params are
@@ -61,7 +62,7 @@ workflow {
         error "--pipeline is required (no default -- an omitted --pipeline used to " +
               "silently fall back to BFD and fail confusingly deep inside BFD.nf).\n" +
               "  --pipeline must be one of: BFD, compare_ani, query_ani, funannotate, " +
-              "earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks"
+              "earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks, paralogoscope"
     }
 
     // if/else rather than switch: the strict parser rejects switch statements.
@@ -94,8 +95,11 @@ workflow {
     else if (pipeline == 'setup_symlinks') {
         SETUP_SYMLINKS_ONLY()
     }
+    else if (pipeline == 'paralogoscope') {
+        PARALOGOSCOPE_RUN()
+    }
     else {
-        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks (got '${params.pipeline}')\n" +
+        error "--pipeline must be one of: BFD, compare_ani, query_ani, funannotate, earlgrey_mask, comparative, phyling, backfill_abinitio, setup_symlinks, paralogoscope (got '${params.pipeline}')\n" +
               "  BFD           — functional annotation + genome stats\n" +
               "  funannotate    — gene prediction + annotation (modular: modules/funannotate/)\n" +
               "  compare_ani    — all-vs-all ANI clustering\n" +
@@ -104,6 +108,7 @@ workflow {
               "  comparative    — comparative genomics clustering\n" +
               "  phyling        — PHYling phylogenomics\n" +
               "  backfill_abinitio — sweep: backfill shared ab-initio params for already-predicted representatives\n" +
-              "  setup_symlinks — only run SETUP_SYMLINKS (input/ symlinking), skip all downstream steps"
+              "  setup_symlinks — only run SETUP_SYMLINKS (input/ symlinking), skip all downstream steps\n" +
+              "  paralogoscope — per-species WGD duplication dating via wgd (dmd -> ksd [+ syn])"
     }
 }

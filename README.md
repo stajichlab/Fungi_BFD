@@ -95,6 +95,7 @@ nextflow run nextflow/main.nf \
 | `query_ani` | `ani_query` | `run_ANI.sh` | ANI query against existing sketches |
 | `earlgrey_mask` | `earlgrey` | `run_earlgrey.sh` | EarlGrey repeat masking |
 | `comparative` | `comparative` | `run_comparative.sh` | Comparative genomics clustering |
+| `paralogoscope` | `paralogoscope` | `run_paralogoscope.sh` | Whole-genome duplication dating (wgd dmd → ksd [+syn]) |
 | `phyling` | `phyling` | `run_phyling.sh` | PHYling phylogenomics |
 
 All workflows accept `--taxon RANK:VALUE` (e.g. `--taxon PHYLUM:Ascomycota`) and
@@ -150,6 +151,50 @@ sbatch nextflow/run_ANI.sh
 ```
 
 See [README_ANI.md](README_ANI.md) for details.
+
+### Paralog detection & WGD dating (`--pipeline paralogoscope`)
+
+Per-species detection and dating of whole-genome duplication events using
+[wgd](https://github.com/arzwa/wgd) (container `container_wgd2_complete`,
+`params.wgd_sif`). Runs the wgd pipeline inside an apptainer container on the
+quadruple-decoded CDS set:
+
+1. `wgd dmd` — all-vs-all DIAMOND + MCL to delineate paralog families
+2. `wgd ksd` — Ka/Ks (Ks) estimation per family via MSA + codeml, giving the
+   Ks distribution used to date WGD events
+3. `wgd syn` — synteny / i-ADHoRe anchor detection for collinear blocks
+   (optional, behind `--run_wgd_syn true`; heavy)
+
+Inputs follow the BFD structure (`input/cds/{Species_Strain}.cds-transcripts.fa`
+plus `input/gff3/` for syn); selection mirrors the other pipelines
+(`--taxon`, `--group`, `--ignore`, `--n_test`).
+
+```bash
+# Full run, restricted to a clade (submitted to SLURM, preempt queue)
+sbatch nextflow/run_paralogoscope.sh --taxon CLASS:Sordariomycetes
+
+# Pilot: first 2 samples only
+sbatch nextflow/run_paralogoscope.sh --n_test 2
+
+# Enable the heavy i-ADHoRe synteny step
+sbatch nextflow/run_paralogoscope.sh --run_wgd_syn true
+```
+
+Outputs follow the BFD hash sub-folder convention (no per-genome directory
+accumulates too many files): results are fanned out by SHA-1 hash bucket keyed
+on the stable LOCUSTAG under `paralogoscope/wgd_{dmd,ksd,syn}/{bucket}/`
+
+```text
+paralogoscope/wgd_dmd/{bucket}/{Species_Strain}.cds-transcripts.fa.tsv            ← paralog families
+paralogoscope/wgd_ksd/{bucket}/{Species_Strain}.cds-transcripts.fa.tsv.ks.tsv    ← per-family Ks
+paralogoscope/wgd_ksd/{bucket}/{Species_Strain}.cds-transcripts.fa.tsv.ksd.pdf   ← Ks distribution plot
+paralogoscope/wgd_syn/{bucket}/anchors.csv                                       ← i-ADHoRe anchors
+```
+
+Setting these outputs as `storeDir` lets reruns reuse already-stored files
+(it doubles as an output cache), and the natural wgd filenames mean a
+re-annotated sample produces a new filename — a stale storeDir hit is never
+possible.
 
 ---
 

@@ -628,3 +628,35 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Consequences**: compare_ANI supports 4 methods; doc/tooling consistent; LZ-ANI remains as a documented negative result rather than an unmaintained pipeline branch.
 
 **Tags**: ani, lz-ani, de-scope, container, singularity, nextflow, tool-evaluation, decision, negative-result
+
+## D: WGD_SYN treats "no anchors found" as success; container gets OpenMPI env hygiene (2026-08-28)
+
+**Context**: `wgd syn` (i-ADHoRe) in the paralogoscope pipeline failed in two distinct ways before this decision: (1) `libmpi.so.40` not found — the conda base prefix `/opt/conda/lib` isn't on `LD_LIBRARY_PATH` inside the SIF; (2) once the lib was found, `OPAL ERROR: Unreachable in file pmix3x_client.c at line 111` — SLURM env vars leaking into the container make OpenMPI think it's running under SLURM's PMI. Additionally, `wgd syn` exits rc=0 with NO `anchors.csv` whenever i-ADHoRe finds no collinear anchors, so a strict `[ -f anchors.csv ]` guard would fail valid runs.
+
+**Decision**:
+1. WGD_SYN script wraps the container call with `--env LD_LIBRARY_PATH=/opt/conda/lib --env OMPI_ALLOW_RUN_AS_ROOT=1,OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1` and runs the wgd command inside `env -u SLURM_* -u PMI_* ... bash -c "..."` (explicit ~29-var list) so OpenMPI doesn't try to talk to SLURM's PMI.
+2. `wgd syn` is invoked with `-f mRNA -a ID` — funannotate CDS-transcript headers match mRNA features, not gene features (default `-f gene` errors).
+3. `anchors.csv` is an **optional output** (`path(..., optional: true)`); the module's fail-guard is tolerant: require `anchors.csv` OR a non-empty `iadhore-out/anchorpoints.txt` (proves i-ADHoRe actually ran). A genome with no collinear anchors is a legitimate biological result, not a pipeline error.
+4. publishDir for all three WGD modules roots at `{params.outdir}/{meta.id}` with subdir-relative patterns (`wgd_dmd/*.tsv`, `wgd_ksd/*.ks.tsv`, `wgd_ksd/*.pdf`) — globs don't cross directories.
+
+**Alternatives considered**: (a) Require anchors.csv always — rejected: "No anchors found" is rc=0 and biologically meaningful. (b) Set LD_LIBRARY_PATH via a conda env inside the container — not needed; the base prefix lib dir is sufficient. (c) Build a SLURM-PMI-aware OpenMPI — out of scope; unlsetting is simpler and verified.
+
+**Consequences**: dmd→ksd→syn validated end-to-end on synthetic 12-gene test genomes (6 tandem paralog pairs); 6/6 tasks succeed and dmd/ksd publish cleanly. Syn publishes only when anchors are actually found (not the case for the tandem-only synthetic data). `wgd_syn/anchors.csv` and `wgd_syn/*.dot.{pdf,png}` filenames confirmed correct against cli.py:720 and cli.py:740-742 (the `*.dot.*` outputs come from `all_dotplots` in the syn path, not from viz.py's macrosynteny names); the `*.anchors.ks.tsv`/`*.ksd.*` outputs only appear with `-k/--ks-distribution` (not currently used). Also verified empirically that "No anchors found" exits 0 despite `exit(1)` in cli.py:716 — module relies on output-file guards, never rc.
+
+**Tags**: wgd, syn, i-ADHoRe, openmpi, apptainer, nextflow, paralogoscope, decision
+
+## D: WGD modules publish through BFD hash-bucket storeDir layout (2026-08-28)
+
+**Context**: The paralogoscope wgd steps previously published flat under `{outdir}/{meta.id}/{wgd_dmd|wgd_ksd|wgd_syn}/`. The function_neurospora input set is ~4,365 genomes — a flat per-type directory would accumulate thousands of files, so the user asked for the same hash sub-folder fan-out BFD uses.
+
+**Decision**:
+1. All three WGD modules now use `storeDir { "${params.outdir}/wgd_{dmd|ksd|syn}/${hashBucketForType('wgd_dmd', meta.locustag)}" }` — keyed on the **stable LOCUSTAG** (like PFAM/PHOBIUS/CALC_INTERGENIC), never the derived Genus_species_strain tag. Unknown types default to 256 buckets (width 2); wgd types have no 3-char override yet.
+2. Output files are **moved out of the `wgd_*` subdir to the workdir root** (`mv wgd_dmd/*.tsv .` etc.) so storeDir drops them directly into the bucket — otherwise storeDir preserves the relative subpath and double-nests (`bucket/wgd_dmd/file.tsv`).
+3. **Natural wgd filenames are kept** (`{id}.cds-transcripts.fa.tsv`, `{prefix}.ks.tsv`, `{prefix}.ksd.pdf`, `anchors.csv`). They embed the source cds id, so a re-annotated sample produces a new filename and can never be served a stale storeDir hit — sidestepping the `clearIfStale` machinery BFD needs for its locustag-named outputs.
+4. `include { hashBucketForType } from '../../../common/utils.nf'` (3-level relative path from `modules/comparative/wgd/<PROC>/`, mirroring BFD's 2-level from `modules/BFD/<PROC>/`).
+
+**Alternatives considered**: (a) Keep publishDir + flat dirs — rejected: thousands of files per dir. (b) Rename outputs to `{locustag}.{suffix}` like BFD — rejected: introduces storeDir staleness when a sample is re-annotated under the same locustag; BFD needs `clearIfStale` for that, which is hard for variable-count outputs (ksd plots). (c) storeDir at `bucket/wgd_*` keeping subdirs — rejected: double-nesting.
+
+**Consequences**: Stub-validated (6/6 tasks, `-stub-run`). Real-data r3 run predates this change (still flat layout). First real run with the new layout will be the SLURM full run. storeDir doubles as a cache: reruns reuse stored files by name.
+
+**Tags**: wgd, paralogoscope, storeDir, hash-bucket, locustag, nextflow, decision

@@ -241,3 +241,70 @@ on membership change) is generalizable, not KCTC-specific.
   expert review per the doc's (now-narrowed) evaluation plan.
 - Triage of the 410 candidates from `find_ani_label_mismatches.py`'s first
   run (T-030).
+
+---
+
+# `main` — 2026-08-28: paralogoscope pipeline (wgd whole-genome duplication dating)
+
+New standalone Nextflow pipeline that dates whole-genome duplication (WGD)
+events per species using [wgd](https://github.com/arzwa/wgd) (Tiley et al.
+2021) inside the `container_wgd2_complete` SIF.
+
+## What was added
+
+- **Pipeline**: `nextflow/workflows/paralogoscope.nf` +
+  `nextflow/subworkflows/local/PARALOGOSCOPE.nf` — per-species
+  `wgd dmd` (DIAMOND all-vs-all + MCL paralog families) → `wgd ksd`
+  (per-family Ka/Ks via mafft + codeml, Ks distribution plots) → optional
+  `wgd syn` (i-ADHoRe synteny anchors, gated behind `--run_wgd_syn true`).
+- **Modules**: `nextflow/modules/comparative/wgd/{WGD_DMD,WGD_KSD,WGD_SYN}/main.nf`.
+- **Profile/launcher**: `nextflow/conf/profile_paralogoscope.config` +
+  `nextflow/run_paralogoscope.sh` (SLURM submit, **preempt** partition —
+  `-A preempt -p preempt`, 8 cpus / 32 GB / 24 h per wgd task).
+- **Inputs** follow the BFD structure (`input/cds/{Species_Strain}.cds-transcripts.fa`,
+  `input/gff3/` for syn); selection mirrors the other pipelines (`--taxon`,
+  `--group`, `--ignore`, `--n_test`). Synthetic test fixtures in
+  `nextflow/tests/data/input_wgd/{cds,gff3}`.
+
+## Container/runtime fixes (real-data validation)
+
+- **Workdir symlink staging**: Nextflow stages inputs as symlinks into the
+  task workdir pointing at `/bigdata/...`; the SIF originally only bound
+  `${PWD},${projectDir},$TMPDIR`, so real (non-`tests/`) inputs failed with
+  `Path ... does not exist`. All three modules now bind
+  `/bigdata:/bigdata,/rhome:/rhome`.
+- **Host user-site shadowing**: the container's Python resolved
+  `/rhome/<user>/.local/lib/python3.9/site-packages` before `/opt/conda`, so
+  a newer host Biopython shadowed the container's Bio 1.76 (`Bio.Alphabet`
+  import error). Fixed with `--env PYTHONNOUSERSITE=1`.
+- **OpenMPI env hygiene** (syn): `wgd syn` needs
+  `LD_LIBRARY_PATH=/opt/conda/lib` and `SLURM_*/PMI_*` env vars stripped
+  inside the container, plus `-f mRNA -a ID` for funannotate-style GFF3s.
+  "No anchors found" is a legitimate rc=0 (no `anchors.csv` written); the
+  module guard tolerates a non-empty `iadhore-out/anchorpoints.txt` instead.
+
+## Output layout (BFD hash sub-folder convention)
+
+`wgd dmd`/`ksd`/`syn` outputs publish via `storeDir` (BFD-style SHA-1 hash
+bucket keyed on the stable LOCUSTAG, 256 buckets), so no per-genome dir
+accumulates too many files and reruns reuse stored results:
+
+```
+paralogoscope/wgd_dmd/{bucket}/{id}.cds-transcripts.fa.tsv
+paralogoscope/wgd_ksd/{bucket}/{id}.cds-transcripts.fa.tsv.ks.tsv
+paralogoscope/wgd_ksd/{bucket}/{id}.cds-transcripts.fa.tsv.ksd.pdf
+paralogoscope/wgd_syn/{bucket}/anchors.csv
+```
+
+Natural wgd filenames (which embed the source cds id) are preserved so a
+re-annotated sample can never be served a stale `storeDir` hit — the
+staleness hazard BFD's `clearIfStale` machinery exists for is avoided by
+construction.
+
+## Test status
+
+- Stub-run 6/6 (dmd×2, ksd×2, syn×2) clean.
+- Real-data smoke test (2 Aaosphaeria genomes): `wgd dmd` 2/2 exit 0,
+  published TSVs confirmed; `wgd ksd` validated in-container (slow on real
+  genomes, still running) — full run proceeds via SLURM.
+
