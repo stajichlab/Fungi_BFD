@@ -31,12 +31,12 @@ include { SRA_FETCH         } from '../../modules/funannotate/rnaseq/SRA_FETCH/m
 include { SRA_FETCH_SE      } from '../../modules/funannotate/rnaseq/SRA_FETCH_SE/main.nf'
 include { RNASEQ_PREPARE    } from '../../modules/funannotate/rnaseq/RNASEQ_PREPARE/main.nf'
 include { FUNANNOTATE_TRAIN } from '../../modules/funannotate/predict/FUNANNOTATE_TRAIN/main.nf'
-// Second WRITE_EMPTY_READS invocation, aliased -- Nextflow DSL2 only allows a process
-// to be called once per workflow scope, same reasoning as FUNANNOTATE_PREDICT/_SIB and
-// GENEMARK_RUN/_SIB elsewhere in this project. Hybrid-cross species never go through
-// SRA_FETCH/SRA_FETCH_SE (see hybridGenomeCh below), so they need their own
-// empty-reads-placeholder call, same 0-byte-file mechanism, different invocation.
-include { WRITE_EMPTY_READS as WRITE_EMPTY_READS_HYBRID } from '../../modules/funannotate/rnaseq/WRITE_EMPTY_READS/main.nf'
+// A dedicated process/storeDir, NOT a WRITE_EMPTY_READS alias -- see that module's
+// header comment for why aliasing it (same storeDir + filename as SRA_FETCH's real
+// output) silently resurrected stale real reads for hybrid species that had
+// accumulated them before this feature existed (confirmed 2026-08-28,
+// Saccharomyces_x_bayanus_NBRC1948).
+include { WRITE_EMPTY_HYBRID_READS } from '../../modules/funannotate/rnaseq/WRITE_EMPTY_HYBRID_READS/main.nf'
 include { BUILD_HYBRID_COMPOSITE_TRINITY } from '../../modules/funannotate/rnaseq/BUILD_HYBRID_COMPOSITE_TRINITY/main.nf'
 
 include { gbkResult; staleRnaseq } from '../../modules/funannotate/utils.nf'
@@ -402,12 +402,13 @@ workflow FUNANNOTATE_RNASEQ {
         def hybrid_shared_ch = BUILD_HYBRID_COMPOSITE_TRINITY.out.shared.mix(hybrid_empty_shared_ch)
 
         // Hybrid strains never queried/fetched their own reads (see hybridGenomeCh
-        // above) -- 0-byte placeholders via the same WRITE_EMPTY_READS mechanism
-        // normal species get when they genuinely have no SRA data, so hybrid rows
-        // slot into the identical train_input tuple shape as everything else.
-        WRITE_EMPTY_READS_HYBRID(hybrid_species_tags_ch.map { it[0] })
+        // above) -- 0-byte placeholders via a dedicated storeDir (see
+        // WRITE_EMPTY_HYBRID_READS module header for why it's not just an alias of
+        // WRITE_EMPTY_READS), so hybrid rows slot into the identical train_input
+        // tuple shape as everything else.
+        WRITE_EMPTY_HYBRID_READS(hybrid_species_tags_ch.map { it[0] })
         def hybrid_assembly_with_reads = hybrid_strains_ch
-            .combine(WRITE_EMPTY_READS_HYBRID.out.reads, by: 0)
+            .combine(WRITE_EMPTY_HYBRID_READS.out.reads, by: 0)
 
         def hybrid_train_input = hybrid_assembly_with_reads
             .combine(hybrid_shared_ch, by: 0)
