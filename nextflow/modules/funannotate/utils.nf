@@ -209,3 +209,39 @@ def loadRnaseqRepresentativeOverride() {
     log.info "Loaded ${m.size()} RNA-seq representative overrides from ${csv}"
     return m
 }
+
+// Eagerly loads hybrid_parentage_csv into hybrid_species_tag -> [parent_species, ...].
+// See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Narrow/long format -- one row
+// per (hybrid, parent) pair, so 2-way through N-way crosses need no schema change
+// (parent_species is a plain "Genus species" string, matched against other species'
+// species_tag via the same spaces->underscore rule used everywhere else in this
+// codebase). Presence of a species_tag as a key IS the "this species is a hybrid"
+// signal FUNANNOTATE_RNASEQ.nf acts on -- samples.csv carries no separate hybrid
+// marker column (hybrids are <0.5% of rows; scripts/bootstrap_hybrid_metadata.py
+// detects them by scanning SPECIES directly instead). Returns an empty map if the
+// CSV doesn't exist yet (e.g. that bootstrap script hasn't been run) --
+// every species then falls through to today's non-hybrid behavior unchanged.
+def loadHybridParentage() {
+    def m = [:].withDefault { [] }
+    def csv = file(params.hybrid_parentage_csv as String)
+    if (!csv.exists()) return m
+    def lines = csv.readLines()
+    if (lines.size() < 2) return m
+    def header = lines[0].split(',', -1)*.trim()
+    def iTag    = header.indexOf('hybrid_species_tag')
+    def iParent = header.indexOf('parent_species')
+    if (iTag < 0 || iParent < 0) {
+        log.warn "hybrid_parentage_csv ${csv} missing hybrid_species_tag/parent_species columns -- ignoring"
+        return m
+    }
+    lines.drop(1).each { line ->
+        if (!line.trim()) return
+        def f = line.split(',', -1)
+        if (f.size() <= [iTag, iParent].max()) return
+        def parentSpecies = f[iParent].trim()
+        def parentTag = parentSpecies.replaceAll(/\s+/, '_')
+        m[f[iTag].trim()] << parentTag
+    }
+    log.info "Loaded hybrid parentage for ${m.size()} hybrid species from ${csv}"
+    return m
+}

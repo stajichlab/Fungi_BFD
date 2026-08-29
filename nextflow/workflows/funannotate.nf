@@ -13,7 +13,7 @@
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 include { makeSampleTag; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
-include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride } from '../modules/funannotate/utils.nf'
+include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride; loadHybridParentage } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
 include { FUNANNOTATE_GENOME_PREP }       from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
@@ -165,7 +165,14 @@ workflow FUNANNOTATE {
     // Populated by scripts/pick_rnaseq_representative_override.py, not by this pipeline.
     def rnaseqRepOverride = loadRnaseqRepresentativeOverride()
 
-    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap, rnaseqRepOverride)
+    // hybrid_species_tag -> [parent_species_tag, ...] for interspecific hybrid-cross
+    // species -- routes them to composite parent-transcript RNA-seq evidence instead
+    // of the normal per-species representative pick (see
+    // nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Empty map (no hybrid_parentage.csv
+    // yet) means every species behaves exactly as before this feature existed.
+    def hybridParentage = loadHybridParentage()
+
+    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap, rnaseqRepOverride, hybridParentage)
 
     // FUNANNOTATE_RNASEQ only assigns its predict_input emission past the
     // stop_after_sra_fetch/stop_after_sra_query gates (see its "end if" markers);

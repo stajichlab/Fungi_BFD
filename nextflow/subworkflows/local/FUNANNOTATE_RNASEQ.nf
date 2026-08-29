@@ -31,6 +31,13 @@ include { SRA_FETCH         } from '../../modules/funannotate/rnaseq/SRA_FETCH/m
 include { SRA_FETCH_SE      } from '../../modules/funannotate/rnaseq/SRA_FETCH_SE/main.nf'
 include { RNASEQ_PREPARE    } from '../../modules/funannotate/rnaseq/RNASEQ_PREPARE/main.nf'
 include { FUNANNOTATE_TRAIN } from '../../modules/funannotate/predict/FUNANNOTATE_TRAIN/main.nf'
+// Second WRITE_EMPTY_READS invocation, aliased -- Nextflow DSL2 only allows a process
+// to be called once per workflow scope, same reasoning as FUNANNOTATE_PREDICT/_SIB and
+// GENEMARK_RUN/_SIB elsewhere in this project. Hybrid-cross species never go through
+// SRA_FETCH/SRA_FETCH_SE (see hybridGenomeCh below), so they need their own
+// empty-reads-placeholder call, same 0-byte-file mechanism, different invocation.
+include { WRITE_EMPTY_READS as WRITE_EMPTY_READS_HYBRID } from '../../modules/funannotate/rnaseq/WRITE_EMPTY_READS/main.nf'
+include { BUILD_HYBRID_COMPOSITE_TRINITY } from '../../modules/funannotate/rnaseq/BUILD_HYBRID_COMPOSITE_TRINITY/main.nf'
 
 include { gbkResult; staleRnaseq } from '../../modules/funannotate/utils.nf'
 
@@ -39,6 +46,8 @@ workflow FUNANNOTATE_RNASEQ {
     predict_genome_ch   // tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
     abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
     rnaseqRepOverride     // species_tag -> out, from loadRnaseqRepresentativeOverride()
+    hybridParentage       // hybrid_species_tag -> [parent_species_tag, ...], from loadHybridParentage()
+                           // see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md
 
     main:
     // When SRA is enabled: SRA_FETCH fetches reads once per species; RNASEQ_PREPARE runs
@@ -47,8 +56,25 @@ workflow FUNANNOTATE_RNASEQ {
     def predict_input_ch
     def reads_ch = Channel.empty()
     if (params.run_sra_fetch.toBoolean()) {
+        // ── Hybrid-cross species never go through SRA acquisition ─────────────
+        // (nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Querying SRA per
+        // hybrid-cross taxid is fragile/sparse (narrow nothospecies taxids
+        // routinely return next to nothing -- see Saccharomyces_x_bayanus_FM677,
+        // 2026-08-28), and sharing one hybrid strain's own admixed Trinity
+        // across differently-recombined siblings assumes similarity the
+        // biology doesn't support. Instead they get composite parent-transcript
+        // evidence built further down. hybridParentage is a plain offline map
+        // (loaded once in funannotate.nf), so this split is a synchronous
+        // per-item test, not a new channel dependency.
+        def genome_branched = predict_genome_ch.branch { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
+            hybrid: hybridParentage.containsKey(species.replaceAll(/\s+/, '_'))
+            normal: true
+        }
+        def normalGenomeCh = genome_branched.normal
+        def hybridGenomeCh = genome_branched.hybrid
+
         // Build per-species input: group assemblies, keep first taxonid per species.
-        def sra_input = predict_genome_ch
+        def sra_input = normalGenomeCh
             .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
                 def species_tag = species.replaceAll(/\s+/, '_')
                 tuple(species_tag, taxonid)
@@ -185,7 +211,7 @@ workflow FUNANNOTATE_RNASEQ {
         if (!params.stop_after_sra_fetch.toBoolean()) {
         // Build per-assembly channel keyed by species_tag with SRA reads joined.
         // reads_ch is now a 4-tuple: (species_tag, r1, r2, se)
-        def assembly_with_reads = predict_genome_ch
+        def assembly_with_reads = normalGenomeCh
             .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
                 def species_tag = species.replaceAll(/\s+/, '_')
                 tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa)
@@ -287,6 +313,110 @@ workflow FUNANNOTATE_RNASEQ {
             }
         // train_input tuple indices: out=0,asmid=1,sp=2,st=3,lt=4,bl=5,hl=6,tt=7,
         //                            genome_fa=8, r1=9, r2=10, se=11, trinity_fa=12, pasa_tier=13
+
+        // ── Hybrid-cross species: composite parent-transcript evidence ────────
+        // (nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Builds one composite
+        // Trinity FASTA per hybrid species_tag (never per strain) by concatenating
+        // its PARENT species' own Trinity-GG assemblies -- free, since every parent
+        // species already builds its own via the normal RNASEQ_PREPARE path above.
+        // Mixed into train_input below (same tuple shape) so the existing
+        // ani_skip/has_rnaseq/no_rnaseq branching, staleness filtering, and
+        // FUNANNOTATE_TRAIN invocation below need zero duplication for hybrids.
+        def hybrid_strains_ch = hybridGenomeCh
+            .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, _taxonid ->
+                def species_tag = species.replaceAll(/\s+/, '_')
+                tuple(species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa)
+            }
+
+        // One composite build per hybrid species_tag: dedupe by species_tag, keep
+        // the species string (needed for the genus-fallback below -- GENUS itself
+        // isn't threaded through predict_genome_ch's tuple shape, but every hybrid
+        // in this dataset has GENUS == the first token of its SPECIES string, so
+        // this is a safe proxy rather than a wider tuple-shape change).
+        def hybrid_species_tags_ch = hybrid_strains_ch
+            .map { species_tag, out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa ->
+                tuple(species_tag, species)
+            }
+            .unique { it[0] }
+
+        // shared_ch (this run's freshly-built + already-cached non-hybrid Trinity
+        // outputs) collected into a single offline map -- a deliberate
+        // synchronization point, so every hybrid composite build waits for all of
+        // THIS run's normal-species Trinity builds to finish first. Hybrids are
+        // lower priority, so running last is acceptable, and this sidesteps
+        // fragile per-parent channel joins entirely.
+        def parentTrinityMap_ch = shared_ch
+            .map { species_tag, trinity_fa -> [species_tag, trinity_fa] }
+            .toList()
+            .map { pairs -> pairs.collectEntries { st, fa -> [(st): fa] } }
+
+        def hybrid_parent_lookup_ch = hybrid_species_tags_ch
+            .combine(parentTrinityMap_ch)
+            .map { species_tag, species, thisRunMap ->
+                def parentTags = hybridParentage[species_tag] ?: []
+                def parentFastas = []
+                parentTags.each { pt ->
+                    def fa = thisRunMap[pt]
+                    if (!fa) {
+                        def onDisk = file("${launchDir}/rnaseq_data/${pt}.trinity-GG.fasta")
+                        if (onDisk.exists() && onDisk.size() > 0) fa = onDisk
+                    }
+                    if (fa && fa.size() > 0) parentFastas << fa
+                }
+                if (parentFastas.isEmpty()) {
+                    // Genus-wide fallback: every non-hybrid Trinity under the same
+                    // GENUS (approximated from `species`'s first token -- see above).
+                    // Excludes other hybrids' own (pre-composite-mechanism, possibly
+                    // near-empty) Trinity files by filtering out any filename
+                    // containing "_x_", since a hybrid species_tag always does.
+                    def genus = species.split(/\s+/)[0]
+                    def dataDir = file("${launchDir}/rnaseq_data")
+                    if (dataDir.exists()) {
+                        dataDir.toFile().listFiles()?.each { f ->
+                            def name = f.getName()
+                            if (name.startsWith("${genus}_") && name.endsWith('.trinity-GG.fasta') &&
+                                !name.contains('_x_') && f.length() > 0) {
+                                parentFastas << file(f.toString())
+                            }
+                        }
+                    }
+                }
+                tuple(species_tag, parentFastas)
+            }
+
+        def hybrid_parent_branched = hybrid_parent_lookup_ch.branch {
+            has_parents: it[1].size() > 0
+            no_parents:  true
+        }
+        BUILD_HYBRID_COMPOSITE_TRINITY(hybrid_parent_branched.has_parents)
+
+        // No parents and no genus-mates found at all -- last-resort true skip
+        // (ab-initio-only), reached via the existing no_rnaseq branch below (empty
+        // trinity_fa + empty r1/se already routes there, no special-casing needed).
+        def hybrid_empty_shared_ch = hybrid_parent_branched.no_parents
+            .map { species_tag, _fastas ->
+                def empty_fa = file("${launchDir}/rnaseq_data/${species_tag}.composite-parents.trinity-GG.fasta")
+                if (!empty_fa.exists()) empty_fa.text = ''
+                tuple(species_tag, empty_fa)
+            }
+        def hybrid_shared_ch = BUILD_HYBRID_COMPOSITE_TRINITY.out.shared.mix(hybrid_empty_shared_ch)
+
+        // Hybrid strains never queried/fetched their own reads (see hybridGenomeCh
+        // above) -- 0-byte placeholders via the same WRITE_EMPTY_READS mechanism
+        // normal species get when they genuinely have no SRA data, so hybrid rows
+        // slot into the identical train_input tuple shape as everything else.
+        WRITE_EMPTY_READS_HYBRID(hybrid_species_tags_ch.map { it[0] })
+        def hybrid_assembly_with_reads = hybrid_strains_ch
+            .combine(WRITE_EMPTY_READS_HYBRID.out.reads, by: 0)
+
+        def hybrid_train_input = hybrid_assembly_with_reads
+            .combine(hybrid_shared_ch, by: 0)
+            .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa ->
+                def tier = trinity_fa.size() > 0 ? 'composite' : 'skip'
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa, tier)
+            }
+
+        train_input = train_input.mix(hybrid_train_input)
 
         // Branch on r1 (idx 9), se (idx 11), or trinity_fa (idx 12) sizes; ani_skip
         // (checked first) catches shared-Trinity rows whose ANI tier says the

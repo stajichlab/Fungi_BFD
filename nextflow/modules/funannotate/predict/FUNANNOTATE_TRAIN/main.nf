@@ -212,19 +212,26 @@ process FUNANNOTATE_TRAIN {
 
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
     # Shared-Trinity rows only ever reach this process with pasa_tier
-    # 'stringent' or 'relaxed' -- FUNANNOTATE_RNASEQ.nf filters 'skip'-tier rows
-    # (ANI < 90% to the representative, or unmeasured) out before FUNANNOTATE_TRAIN
-    # is even invoked, routing them to ab-initio-only like a genuinely
-    # RNA-seq-less strain. 'relaxed' rows are non-representative strains whose
-    # ANI to the representative (90-97%) says the shared Trinity-GG transcripts
-    # -- assembled from a DIFFERENT strain's own RNA-seq (see RNASEQ_PREPARE) --
-    # are real but somewhat diverged, so PASA's stringent defaults (95% identity
-    # / 90% aligned) would reject most of it; PASA_TIER_ARGS relaxes those
-    # specifically for this run. 'stringent' rows (ANI >= 97%, or the
-    # representative itself at ANI=100) keep PASA's defaults untouched.
+    # 'stringent', 'relaxed', or 'composite' -- FUNANNOTATE_RNASEQ.nf filters
+    # 'skip'-tier rows (ANI < 90% to the representative, or unmeasured) out
+    # before FUNANNOTATE_TRAIN is even invoked, routing them to ab-initio-only
+    # like a genuinely RNA-seq-less strain. 'relaxed' rows are non-representative
+    # strains whose ANI to the representative (90-97%) says the shared
+    # Trinity-GG transcripts -- assembled from a DIFFERENT strain's own RNA-seq
+    # (see RNASEQ_PREPARE) -- are real but somewhat diverged, so PASA's
+    # stringent defaults (95% identity / 90% aligned) would reject most of it;
+    # PASA_TIER_ARGS relaxes those specifically for this run. 'stringent' rows
+    # (ANI >= 97%, or the representative itself at ANI=100) keep PASA's
+    # defaults untouched. 'composite' rows are hybrid-cross species whose
+    # trinity_fa is a concatenation of their PARENT species' own Trinity-GG
+    # assemblies (see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md) --
+    # cross-species identity within a genus is looser than intra-species
+    # divergence, so this tier uses its own, more permissive thresholds.
     PASA_TIER_ARGS=""
     if [ "${pasa_tier}" = "relaxed" ]; then
         PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_shared_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_shared_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_shared_num_bp_splice}"
+    elif [ "${pasa_tier}" = "composite" ]; then
+        PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_composite_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_composite_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_composite_num_bp_splice}"
     fi
 
     # ── Local, per-attempt working directory for the funannotate run itself ────
@@ -280,9 +287,18 @@ process FUNANNOTATE_TRAIN {
                 \$PASA_TIER_ARGS \\
                 \$pasa_db_arg
         else
+            # No reads at all -- r1/se are present-but-empty (0-byte) placeholders,
+            # not missing paths (Nextflow path inputs can't be null). Passing
+            # --left_norm/--right_norm pointed at those empty files (the previous
+            # behavior here) handed funannotate empty FASTQs to normalize instead
+            # of omitting the flags entirely -- latent bug, fixed alongside the
+            # composite-tier work that made this branch a live, common path
+            # (hybrid-cross species' composite parent-transcript evidence: see
+            # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md) rather than a rare
+            # edge case.
             echo "[INFO] Running funannotate train (PASA only, no reads) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
             \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
-                --trinity ${trinity_fa} --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" \\
+                --trinity ${trinity_fa} \\
                 --species "${species}" --strain "${strain}" \\
                 --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
                 --header_length ${header_length} \\
