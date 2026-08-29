@@ -34,15 +34,26 @@ def staleRnaseq(String out, String species) {
     def species_tag = species.replaceAll(/\s+/, '_')
     def gbk = gbkResult("${params.target}/${out}/predict_results", out)
     if (gbk == null) return false  // predict hasn't run yet; normal path handles it
+    // Ordinary species: real reads + representative-built Trinity-GG under the paths
+    // RNASEQ_PREPARE/SRA_FETCH use. Hybrid-cross species (see
+    // nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md) never populate these -- they
+    // use rnaseq_reads/hybrid_empty/ (always 0-byte, so *_newer below is always false
+    // for them, which is correct: empty placeholders never go stale) and a
+    // composite-parents.trinity-GG.fasta instead of a plain one. Checking both path
+    // sets unconditionally (rather than threading a hybrid flag through every one of
+    // this function's several call sites) is safe and cheap -- for any given species
+    // only one set will ever actually exist on disk.
     def r1      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_R1.fastq.gz")
     def r2      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_R2.fastq.gz")
     def se      = file("${launchDir}/rnaseq_reads/${species_tag}_norm_SE.fastq.gz")
     def trinity = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
-    def r1_newer      = r1.exists()      && r1.size() > 0      && r1.lastModified()      > gbk.lastModified()
-    def r2_newer      = r2.exists()      && r2.size() > 0      && r2.lastModified()      > gbk.lastModified()
-    def se_newer      = se.exists()      && se.size() > 0      && se.lastModified()      > gbk.lastModified()
-    def trinity_newer = trinity.exists() && trinity.size() > 0 && trinity.lastModified() > gbk.lastModified()
-    if (r1_newer || r2_newer || se_newer || trinity_newer) {
+    def compositeTrinity = file("${launchDir}/rnaseq_data/${species_tag}.composite-parents.trinity-GG.fasta")
+    def r1_newer        = r1.exists()      && r1.size() > 0      && r1.lastModified()      > gbk.lastModified()
+    def r2_newer        = r2.exists()      && r2.size() > 0      && r2.lastModified()      > gbk.lastModified()
+    def se_newer        = se.exists()      && se.size() > 0      && se.lastModified()      > gbk.lastModified()
+    def trinity_newer   = trinity.exists() && trinity.size() > 0 && trinity.lastModified() > gbk.lastModified()
+    def composite_newer = compositeTrinity.exists() && compositeTrinity.size() > 0 && compositeTrinity.lastModified() > gbk.lastModified()
+    if (r1_newer || r2_newer || se_newer || trinity_newer || composite_newer) {
         log.info "stale prediction for ${out}: rnaseq/trinity newer than GBK — scheduling retrain+repredict"
         return true
     }
@@ -222,7 +233,14 @@ def loadRnaseqRepresentativeOverride() {
 // CSV doesn't exist yet (e.g. that bootstrap script hasn't been run) --
 // every species then falls through to today's non-hybrid behavior unchanged.
 def loadHybridParentage() {
-    def m = [:].withDefault { [] }
+    // Plain map, NOT [:].withDefault{[]} -- withDefault auto-vivifies on ANY read,
+    // not just the append below, so a future bare `hybridParentage[someOtherTag]`
+    // read anywhere in the codebase (as opposed to the `.containsKey()` check
+    // FUNANNOTATE_RNASEQ.nf actually uses to test hybrid-ness) would silently
+    // insert that tag as an empty-parent-list entry, reclassifying an ordinary
+    // species as hybrid. `?: []` at each read call site already covers the
+    // "not present" case without needing the map itself to auto-vivify.
+    def m = [:]
     def csv = file(params.hybrid_parentage_csv as String)
     if (!csv.exists()) return m
     def lines = csv.readLines()
@@ -240,7 +258,9 @@ def loadHybridParentage() {
         if (f.size() <= [iTag, iParent].max()) return
         def parentSpecies = f[iParent].trim()
         def parentTag = parentSpecies.replaceAll(/\s+/, '_')
-        m[f[iTag].trim()] << parentTag
+        def hybridTag = f[iTag].trim()
+        m.computeIfAbsent(hybridTag) { [] }
+        m[hybridTag] << parentTag
     }
     log.info "Loaded hybrid parentage for ${m.size()} hybrid species from ${csv}"
     return m

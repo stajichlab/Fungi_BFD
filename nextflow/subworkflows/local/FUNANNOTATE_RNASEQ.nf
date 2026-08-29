@@ -350,6 +350,18 @@ workflow FUNANNOTATE_RNASEQ {
             .toList()
             .map { pairs -> pairs.collectEntries { st, fa -> [(st): fa] } }
 
+        // evidence_source tracks WHICH path resolved the composite -- 'parents' (a
+        // real, species-specific match via hybrid_parentage.csv) vs 'genus_fallback'
+        // (no parent-specific data, fell back to any genus-mate's Trinity). Carried
+        // through to FUNANNOTATE_TRAIN so it can pick the right PASA identity tier:
+        // parent-matched evidence aligns near-identically to its own subgenome copy
+        // (~99-100%, same lineage), so it needs a STRICTER tier than genus-fallback
+        // evidence, whose divergence is genuinely wide open -- see "New PASA tier:
+        // composite" in nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md (reversed
+        // from the original single loose tier per bioinformatics review 2026-08-28:
+        // a loose threshold on parent-matched evidence risks the WRONG parent's
+        // transcript cross-mapping onto a subgenome copy it doesn't belong to,
+        // merging homeologs into chimeric gene models).
         def hybrid_parent_lookup_ch = hybrid_species_tags_ch
             .combine(parentTrinityMap_ch)
             .map { species_tag, species, thisRunMap ->
@@ -363,25 +375,31 @@ workflow FUNANNOTATE_RNASEQ {
                     }
                     if (fa && fa.size() > 0) parentFastas << fa
                 }
+                def evidence_source = 'parents'
                 if (parentFastas.isEmpty()) {
                     // Genus-wide fallback: every non-hybrid Trinity under the same
                     // GENUS (approximated from `species`'s first token -- see above).
-                    // Excludes other hybrids' own (pre-composite-mechanism, possibly
-                    // near-empty) Trinity files by filtering out any filename
-                    // containing "_x_", since a hybrid species_tag always does.
+                    // Excludes every OTHER hybrid species_tag by checking
+                    // hybridParentage.containsKey() on the candidate's own tag (NOT a
+                    // "_x_" filename-substring heuristic, which would incorrectly
+                    // admit a hypothetical hybrid named without an "x" token, e.g. a
+                    // formal "Genus ×species" nothospecies with no ASCII x at all).
+                    evidence_source = 'genus_fallback'
                     def genus = species.split(/\s+/)[0]
                     def dataDir = file("${launchDir}/rnaseq_data")
                     if (dataDir.exists()) {
                         dataDir.toFile().listFiles()?.each { f ->
                             def name = f.getName()
-                            if (name.startsWith("${genus}_") && name.endsWith('.trinity-GG.fasta') &&
-                                !name.contains('_x_') && f.length() > 0) {
-                                parentFastas << file(f.toString())
+                            if (name.endsWith('.trinity-GG.fasta') && f.length() > 0) {
+                                def candidateTag = name - '.trinity-GG.fasta'
+                                if (candidateTag.startsWith("${genus}_") && !hybridParentage.containsKey(candidateTag)) {
+                                    parentFastas << file(f.toString())
+                                }
                             }
                         }
                     }
                 }
-                tuple(species_tag, parentFastas)
+                tuple(species_tag, parentFastas, evidence_source)
             }
 
         def hybrid_parent_branched = hybrid_parent_lookup_ch.branch {
@@ -393,11 +411,14 @@ workflow FUNANNOTATE_RNASEQ {
         // No parents and no genus-mates found at all -- last-resort true skip
         // (ab-initio-only), reached via the existing no_rnaseq branch below (empty
         // trinity_fa + empty r1/se already routes there, no special-casing needed).
+        // evidence_source is moot here (tier resolves to 'skip' regardless of it,
+        // since trinity_fa is empty) but kept for tuple-shape consistency with the
+        // has_parents branch.
         def hybrid_empty_shared_ch = hybrid_parent_branched.no_parents
-            .map { species_tag, _fastas ->
+            .map { species_tag, _fastas, evidence_source ->
                 def empty_fa = file("${launchDir}/rnaseq_data/${species_tag}.composite-parents.trinity-GG.fasta")
                 if (!empty_fa.exists()) empty_fa.text = ''
-                tuple(species_tag, empty_fa)
+                tuple(species_tag, empty_fa, evidence_source)
             }
         def hybrid_shared_ch = BUILD_HYBRID_COMPOSITE_TRINITY.out.shared.mix(hybrid_empty_shared_ch)
 
@@ -412,8 +433,8 @@ workflow FUNANNOTATE_RNASEQ {
 
         def hybrid_train_input = hybrid_assembly_with_reads
             .combine(hybrid_shared_ch, by: 0)
-            .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa ->
-                def tier = trinity_fa.size() > 0 ? 'composite' : 'skip'
+            .map { species_tag, out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa, evidence_source ->
+                def tier = trinity_fa.size() == 0 ? 'skip' : (evidence_source == 'genus_fallback' ? 'composite_fallback' : 'composite')
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa, r1, r2, se, trinity_fa, tier)
             }
 
@@ -449,7 +470,14 @@ workflow FUNANNOTATE_RNASEQ {
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
         FUNANNOTATE_TRAIN(train_todo)
-        predict_input_ch = FUNANNOTATE_TRAIN.out.mix(train_done).mix(predict_no_rnaseq)
+        predict_input_ch = FUNANNOTATE_TRAIN.out.predict_input.mix(train_done).mix(predict_no_rnaseq)
+
+        // Audit trail for composite/composite_fallback-tier graceful degrades --
+        // one reviewable file, same convention as rnaseq_se_candidates.csv/
+        // rnaseq_blacklist_candidates.csv above. Empty when nothing degraded.
+        FUNANNOTATE_TRAIN.out.composite_failed
+            .collectFile(name: 'composite_train_failed.tsv', storeDir: launchDir,
+                         keepHeader: true, skip: 1)
         } // end if (!params.stop_after_sra_fetch)
         } // end if (!params.stop_after_sra_query)
     } else {

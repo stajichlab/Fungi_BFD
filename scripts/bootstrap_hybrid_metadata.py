@@ -40,10 +40,16 @@ import sys
 # a citation-backed parentage, never a guess.
 #
 # Saccharomyces x bayanus (historically S. pastorianus / S. carlsbergensis): the
-# lager-yeast hybrid lineage, documented as descending from S. cerevisiae x
-# S. eubayanus.
+# lager-yeast hybrid lineage. Three parents, not two -- the CBS 380 type strain
+# is documented as an S. uvarum x S. eubayanus hybrid with a minor S. cerevisiae
+# contribution, per bioinformatics review 2026-08-28 (original 2-parent entry
+# under-represented its actual composition).
 NOTHOSPECIES_PARENTS = {
-    "Saccharomyces x bayanus": ["Saccharomyces cerevisiae", "Saccharomyces eubayanus"],
+    "Saccharomyces x bayanus": [
+        "Saccharomyces cerevisiae",
+        "Saccharomyces eubayanus",
+        "Saccharomyces uvarum",
+    ],
 }
 
 HYBRID_TOKEN_RE = re.compile(r"(?:\sx\s|×)", re.IGNORECASE)

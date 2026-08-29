@@ -377,20 +377,40 @@
                     "type": "number",
                     "minimum": 0,
                     "maximum": 100,
-                    "description": "Relaxed PASA --pasa_min_avg_per_id used only in FUNANNOTATE_TRAIN's composite-evidence branch (hybrid-cross species trained against their parent species' concatenated Trinity-GG assemblies -- cross-species identity within a genus is looser than the intra-species pasa_shared_* tier above). See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Provisional default, not yet empirically calibrated.",
-                    "default": 70
+                    "description": "PASA --pasa_min_avg_per_id for FUNANNOTATE_TRAIN's 'composite' tier: hybrid-cross species trained against their real PARENT species' concatenated Trinity-GG assemblies. Stricter than pasa_shared_min_avg_per_id above (not looser) -- a parent's transcript should align to ITS OWN subgenome copy at ~99-100% identity, so a loose threshold here risks the wrong parent's transcript cross-mapping onto a subgenome it doesn't belong to. See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Provisional default, not yet empirically calibrated.",
+                    "default": 85
                 },
                 "pasa_composite_min_pct_aligned": {
                     "type": "number",
                     "minimum": 0,
                     "maximum": 100,
-                    "description": "Relaxed PASA --pasa_min_pct_aligned used only in FUNANNOTATE_TRAIN's composite-evidence branch. Provisional default, not yet empirically calibrated.",
-                    "default": 55
+                    "description": "PASA --pasa_min_pct_aligned for FUNANNOTATE_TRAIN's 'composite' tier. Provisional default, not yet empirically calibrated.",
+                    "default": 60
                 },
                 "pasa_composite_num_bp_splice": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Relaxed PASA --NUM_BP_PERFECT_SPLICE_BOUNDARY used only in FUNANNOTATE_TRAIN's composite-evidence branch.",
+                    "description": "PASA --NUM_BP_PERFECT_SPLICE_BOUNDARY for FUNANNOTATE_TRAIN's 'composite' tier.",
+                    "default": 1
+                },
+                "pasa_composite_fallback_min_avg_per_id": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Relaxed PASA --pasa_min_avg_per_id for FUNANNOTATE_TRAIN's 'composite_fallback' tier: hybrid-cross species with no parent-specific Trinity-GG data, trained against any genus-mate's instead. Genuinely wide-open cross-species divergence, unlike the parent-matched 'composite' tier above, so this one keeps loose thresholds. See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Provisional default, not yet empirically calibrated.",
+                    "default": 70
+                },
+                "pasa_composite_fallback_min_pct_aligned": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Relaxed PASA --pasa_min_pct_aligned for FUNANNOTATE_TRAIN's 'composite_fallback' tier. Provisional default, not yet empirically calibrated.",
+                    "default": 55
+                },
+                "pasa_composite_fallback_num_bp_splice": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "PASA --NUM_BP_PERFECT_SPLICE_BOUNDARY for FUNANNOTATE_TRAIN's 'composite_fallback' tier.",
                     "default": 1
                 },
                 "predict_min_asm_bp": {

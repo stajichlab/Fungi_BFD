@@ -17,7 +17,12 @@ process FUNANNOTATE_TRAIN {
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa)
+          val(genome_fa), emit: predict_input
+    // Audit row emitted only when a composite/composite_fallback-tier run gracefully
+    // degrades (see the TRAIN_STATUS handling near the end) -- collected by
+    // FUNANNOTATE_RNASEQ.nf into one reviewable TSV, same convention as
+    // repr_assignments.tsv/rnaseq_blacklist_candidates.csv elsewhere in this project.
+    path("${out}.composite_train_failed.tsv"), optional: true, emit: composite_failed
 
     script:
     def pasa_db_arg = "--pasa_db sqlite"
@@ -56,19 +61,43 @@ process FUNANNOTATE_TRAIN {
         fi
     fi
 
-    # ── Skip if training output already present and rnaseq is not newer than GBK ──
+    # ── Skip if training is already resolved and evidence is not newer ────────────
+    # "Resolved" is either a real published PASA GFF3, OR a durable marker recording
+    # that a composite/composite_fallback-tier attempt legitimately couldn't train
+    # from transcript evidence (see the TRAIN_STATUS handling near the end and
+    # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Without this marker, a
+    # gracefully-degraded hybrid strain would never publish anything and would be
+    # re-attempted on every single future run/-resume forever -- the marker makes
+    # that outcome durable, the same way a real GFF3 makes success durable.
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
+    TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.composite_train_failed"
     PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
     [ -f "\$PREDICT_GBK" ] || PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk.gz"
+    RESOLVED_MARKER=""
     if [ -f "\$TRAIN_GFF3" ]; then
+        RESOLVED_MARKER="\$TRAIN_GFF3"
+    elif [ -f "\$TRAIN_FAILED_MARKER" ]; then
+        RESOLVED_MARKER="\$TRAIN_FAILED_MARKER"
+    fi
+    if [ -n "\$RESOLVED_MARKER" ]; then
         RETRAIN=0
-        # Re-train if the genome assembly itself is newer than the existing PASA training
-        # output -- otherwise a swapped-in new assembly version silently keeps stale
-        # training coordinates forever, since RETRAIN below only ever looks at rnaseq reads.
-        if [ -s "${genome_fa}" ] && [ "${genome_fa}" -nt "\$TRAIN_GFF3" ]; then
-            echo "[INFO] Genome assembly newer than training GFF3 for ${out}; retraining"
+        # Re-train if the genome assembly itself is newer than the resolved marker --
+        # otherwise a swapped-in new assembly version silently keeps stale training
+        # (or a stale "not trainable" verdict) forever, since the checks below only
+        # ever look at rnaseq/trinity evidence.
+        if [ -s "${genome_fa}" ] && [ "${genome_fa}" -nt "\$RESOLVED_MARKER" ]; then
+            echo "[INFO] Genome assembly newer than training output for ${out}; retraining"
             rm -rf "${params.training_target}/${out}/training"
+            RETRAIN=1
+        fi
+        # Re-train if the trinity/composite evidence itself is newer than the resolved
+        # marker -- covers a rebuilt composite (new/changed parent set, retuned PASA
+        # composite thresholds) for a strain previously marked not-trainable, which
+        # r1/se newer-than-GBK below can never catch since hybrid r1/se are always
+        # empty placeholders.
+        if [ -s "${trinity_fa}" ] && [ "${trinity_fa}" -nt "\$RESOLVED_MARKER" ]; then
+            echo "[INFO] Trinity/composite evidence newer than training output for ${out}; retraining"
             RETRAIN=1
         fi
         if [ -f "\$PREDICT_GBK" ]; then
@@ -84,13 +113,17 @@ process FUNANNOTATE_TRAIN {
             fi
         fi
         if [ \$RETRAIN -eq 0 ]; then
-            echo "[INFO] Training already complete for ${out}; skipping"
-            # Still repoint any absolute cross-project symlinks left by an older run.
-            # Called by absolute path: this process runs via `bash -l`, and the login
-            # shell's profile/module init rebuilds PATH, dropping the bin/ dir nextflow
-            # otherwise appends for us.
-            ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet \\
-                "${params.training_target}/${out}/training" || true
+            if [ "\$RESOLVED_MARKER" = "\$TRAIN_GFF3" ]; then
+                echo "[INFO] Training already complete for ${out}; skipping"
+                # Still repoint any absolute cross-project symlinks left by an older run.
+                # Called by absolute path: this process runs via `bash -l`, and the login
+                # shell's profile/module init rebuilds PATH, dropping the bin/ dir nextflow
+                # otherwise appends for us.
+                ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet \\
+                    "${params.training_target}/${out}/training" || true
+            else
+                echo "[INFO] ${out} previously determined not trainable from composite transcript evidence (pasa_tier=${pasa_tier}); skipping re-attempt"
+            fi
             exit 0
         fi
     fi
@@ -212,26 +245,35 @@ process FUNANNOTATE_TRAIN {
 
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
     # Shared-Trinity rows only ever reach this process with pasa_tier
-    # 'stringent', 'relaxed', or 'composite' -- FUNANNOTATE_RNASEQ.nf filters
-    # 'skip'-tier rows (ANI < 90% to the representative, or unmeasured) out
-    # before FUNANNOTATE_TRAIN is even invoked, routing them to ab-initio-only
-    # like a genuinely RNA-seq-less strain. 'relaxed' rows are non-representative
-    # strains whose ANI to the representative (90-97%) says the shared
-    # Trinity-GG transcripts -- assembled from a DIFFERENT strain's own RNA-seq
-    # (see RNASEQ_PREPARE) -- are real but somewhat diverged, so PASA's
-    # stringent defaults (95% identity / 90% aligned) would reject most of it;
-    # PASA_TIER_ARGS relaxes those specifically for this run. 'stringent' rows
-    # (ANI >= 97%, or the representative itself at ANI=100) keep PASA's
-    # defaults untouched. 'composite' rows are hybrid-cross species whose
-    # trinity_fa is a concatenation of their PARENT species' own Trinity-GG
-    # assemblies (see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md) --
-    # cross-species identity within a genus is looser than intra-species
-    # divergence, so this tier uses its own, more permissive thresholds.
+    # 'stringent', 'relaxed', 'composite', or 'composite_fallback' --
+    # FUNANNOTATE_RNASEQ.nf filters 'skip'-tier rows (ANI < 90% to the
+    # representative, or unmeasured) out before FUNANNOTATE_TRAIN is even
+    # invoked, routing them to ab-initio-only like a genuinely RNA-seq-less
+    # strain. 'relaxed' rows are non-representative strains whose ANI to the
+    # representative (90-97%) says the shared Trinity-GG transcripts --
+    # assembled from a DIFFERENT strain's own RNA-seq (see RNASEQ_PREPARE) --
+    # are real but somewhat diverged, so PASA's stringent defaults (95%
+    # identity / 90% aligned) would reject most of it; PASA_TIER_ARGS relaxes
+    # those specifically for this run. 'stringent' rows (ANI >= 97%, or the
+    # representative itself at ANI=100) keep PASA's defaults untouched.
+    # 'composite'/'composite_fallback' rows are hybrid-cross species whose
+    # trinity_fa is a concatenation of Trinity-GG assemblies from OTHER species
+    # (see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md) -- two DIFFERENT
+    # tiers, not one, per bioinformatics review 2026-08-28: 'composite' is
+    # parent-matched evidence, which should align to ITS OWN subgenome copy at
+    # ~99-100% identity (same lineage) -- a loose threshold there risks the
+    # WRONG parent's transcript cross-mapping onto a subgenome it doesn't
+    # belong to, merging homeologs into chimeric models, so this tier is
+    # actually STRICTER than 'relaxed', not looser. 'composite_fallback' (no
+    # parent-specific data, genus-wide instead) keeps the original loose
+    # thresholds, since that path's divergence assumption is genuinely wide.
     PASA_TIER_ARGS=""
     if [ "${pasa_tier}" = "relaxed" ]; then
         PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_shared_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_shared_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_shared_num_bp_splice}"
     elif [ "${pasa_tier}" = "composite" ]; then
         PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_composite_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_composite_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_composite_num_bp_splice}"
+    elif [ "${pasa_tier}" = "composite_fallback" ]; then
+        PASA_TIER_ARGS="--pasa_min_avg_per_id ${params.pasa_composite_fallback_min_avg_per_id} --pasa_min_pct_aligned ${params.pasa_composite_fallback_min_pct_aligned} --pasa_num_bp_splice ${params.pasa_composite_fallback_num_bp_splice}"
     fi
 
     # ── Local, per-attempt working directory for the funannotate run itself ────
@@ -263,6 +305,11 @@ process FUNANNOTATE_TRAIN {
     SE_REAL="${se}"
     [ -e "\$SE_REAL" ] && SE_REAL="\$(readlink -f "\$SE_REAL")"
 
+    # Whole invocation wrapped in a group + tee so composite/composite_fallback-tier
+    # failures can be inspected below without re-running anything -- \${PIPESTATUS[0]}
+    # (not plain \$?, which after a pipe would report tee's exit code) captures the
+    # group's real exit status, i.e. whichever funannotate train branch ran last.
+    {
     if [ -s "${trinity_fa}" ]; then
         if [ -s "${r1}" ]; then
             echo "[INFO] Running funannotate train (PASA+PE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
@@ -328,8 +375,32 @@ process FUNANNOTATE_TRAIN {
             --max_intronlen ${params.max_intronlen} \\
             \$pasa_db_arg
     fi
-    TRAIN_STATUS=\$?
+    } 2>&1 | tee funannotate_train_capture.log
+    TRAIN_STATUS=\${PIPESTATUS[0]}
     if [ "\$TRAIN_STATUS" -ne 0 ]; then
+        # 'composite'/'composite_fallback' failures get one chance to degrade
+        # gracefully instead of the usual hard-fail+retry: only when PASA itself
+        # actually completed its alignment/assignment step (its own
+        # "PASA assigned N transcripts to M loci" summary line appears in the
+        # captured output -- same signal DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md's
+        # still-unimplemented Option 1 proposes generally, applied here just for
+        # this tier). Absence of that line means PASA (or something before it --
+        # MySQL, OOM, a crash) never finished, which is exactly the kind of infra
+        # failure that SHOULD keep retrying with more memory, not get silently
+        # absorbed into "this hybrid isn't trainable" -- conflating the two would
+        # mask real infra bugs across every hybrid strain. See "Should we degrade
+        # gracefully on composite-tier failure?" in
+        # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md.
+        if { [ "${pasa_tier}" = "composite" ] || [ "${pasa_tier}" = "composite_fallback" ]; } && \\
+           grep -qE 'PASA assigned [0-9]+ transcripts to [0-9]+ loci' funannotate_train_capture.log; then
+            echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this composite-tier (pasa_tier=${pasa_tier}) run -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
+            mkdir -p "${params.training_target}/${out}/training"
+            : > "${params.training_target}/${out}/training/.composite_train_failed"
+            printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\n%s\\t%s\\t%s\\t%s\\t%s\\n" \\
+                "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" \\
+                > "${out}.composite_train_failed.tsv"
+            exit 0
+        fi
         echo "[ERROR] funannotate train failed for ${out} (exit \$TRAIN_STATUS); not publishing \$LOCAL_TRAIN over ${params.training_target}/${out}/training" >&2
         exit "\$TRAIN_STATUS"
     fi

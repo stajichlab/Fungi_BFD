@@ -26,11 +26,12 @@ process BUILD_HYBRID_COMPOSITE_TRINITY {
     time   '30m'
 
     input:
-    tuple val(species_tag), path(parent_fastas)
+    tuple val(species_tag), path(parent_fastas), val(evidence_source)
 
     output:
     tuple val(species_tag),
-          path("${species_tag}.composite-parents.trinity-GG.fasta"), emit: shared
+          path("${species_tag}.composite-parents.trinity-GG.fasta"),
+          val(evidence_source), emit: shared
     path("${species_tag}.composite-parents.parent_prefix_map.tsv"),  emit: prefix_map
 
     script:
