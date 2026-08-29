@@ -227,7 +227,7 @@ EOF
 #                   comment for the full incident).
 PINNED_SIFS="\
 AAFTF-latest.sif|public|aaftf_sif|docker://ghcr.io/stajichlab/aaftf:latest|
-funannotate-1.9.0-beta.8.sif|public|funannotate_sif|docker://ghcr.io/nextgenusfs/funannotate:1.9.0-beta.8|
+funannotate-1.9.0-beta.10.sif|public|funannotate_sif|docker://ghcr.io/nextgenusfs/funannotate:1.9.0-beta.10|
 braker3-v3.1.1.sif|public|genemark_sif|docker://teambraker/braker3:v3.1.1|
 mariadb-10.3.9.sif|build|mariadb_sif||${MARIADB_DEF}
 DeepTMHMM-1.0.sif|license|deeptmhmm_sif||
