@@ -258,6 +258,32 @@ events per species using [wgd](https://github.com/arzwa/wgd) (Tiley et al.
   (per-family Ka/Ks via mafft + codeml, Ks distribution plots) → optional
   `wgd syn` (i-ADHoRe synteny anchors, gated behind `--run_wgd_syn true`).
 - **Modules**: `nextflow/modules/comparative/wgd/{WGD_DMD,WGD_KSD,WGD_SYN}/main.nf`.
+- **Final merge** (`MERGE_WGD_KSD`, label 'merge'): after the last `wgd ksd`
+  task, globs *all* ks.tsv published so far off disk and streams them into
+  `tables/wgd.ks.parquet` (`bin/merge_wgd_ks.py`; 16-column schema — genome +
+  species_prefix + pair/family/g1/g2/gene1/gene2/node + N/S/dN/dN/dS/dS/
+  alignmentlength/t — zstd; ~0.8–1 GB for the full dataset vs ~45 GB raw) +
+  per-genome `tables/wgd.ks.summary.parquet`, following the BFD
+  MERGE_*/tablesDir() convention. Disk-globbing (and a completion-only gate)
+  makes it wave- and `-resume`-safe: a fully-cached rerun still rebuilds the
+  merged table. (`node` = wgd tree-node id the pair was dated at; added so
+  the Ks-peak summariser can use wgd's own node-averaged mixture models.)
+- **BFD duckdb exposure**: `nextflow/bin/build_BFD_duckDB.sh` gained guarded
+  optional tables — `wgd_ks` (indexed on species_prefix/genome) and
+  `wgd_ks_summary` (unique on genome) are loaded into `db/BFD.duckdb` only
+  when `tables/wgd.ks*.parquet` exist (paralogoscope-run pipelines only);
+  plain BFD rebuilds print a SKIP line instead of erroring.
+- **Per-genome Ks-peak summary framework** (the "number of duplicates + mean
+  Ks of the peaks" ask): `analysis/WGD_PERFORMANCE_ANALYSIS/scripts/{
+  wgd_ks_mix_fit.py,build_wgd_ksd_summary.py}` derive
+  `tables/wgd_ksd_summary.parquet` + `tables/wgd_ksd_density.parquet` from
+  the merged `wgd.ks*.parquet` using **wgd's own mixture models** (the CLI's
+  `mix`/`peak` never export component means, so the worker calls
+  `wgd.mix.fit_gmm` inside the SIF and captures them). wgd.ks schema gained
+  `node` (16 cols) so the node-averaging filter reproduces exact `wgd mix`
+  semantics. Validated on the 2-genome synb pair (fits match a direct
+  in-container fit; arxii 3 peaks 0.080/1.559/3.500, pasadenensis 4 peaks
+  0.053/0.853/2.449/3.766). Full-4,365 execution tracked under T-032.
 - **Profile/launcher**: `nextflow/conf/profile_paralogoscope.config` +
   `nextflow/run_paralogoscope.sh` (SLURM submit, **preempt** partition —
   `-A preempt -p preempt`, 8 cpus / 32 GB / 24 h per wgd task).
