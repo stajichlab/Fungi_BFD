@@ -1,0 +1,11 @@
+step	cpus_per_task	per_genome_min	n_genomes	total_task_h	total_cpu_h	concurrent	wall_days
+wgd_dmd	8	0.4	4365	32.0	253.0	16	0.1
+wgd_dmd	8	0.4	4365	32.0	253.0	24	0.1
+wgd_dmd	8	0.4	4365	32.0	253.0	32	0.0
+wgd_dmd	8	0.4	4365	32.0	253.0	40	0.0
+wgd_dmd	8	0.4	4365	32.0	253.0	56	0.0
+wgd_ksd	8	41.4	4365	3009.0	24071.0	16	7.8
+wgd_ksd	8	41.4	4365	3009.0	24071.0	24	5.2
+wgd_ksd	8	41.4	4365	3009.0	24071.0	32	3.9
+wgd_ksd	8	41.4	4365	3009.0	24071.0	40	3.1
+wgd_ksd	8	41.4	4365	3009.0	24071.0	56	2.2

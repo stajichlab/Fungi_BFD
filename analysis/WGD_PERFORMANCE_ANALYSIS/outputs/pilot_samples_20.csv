@@ -1,0 +1,21 @@
+ASMID,SPECIES_IN,STRAIN,BIOPROJECT,NCBI_TAXONID,BUSCO_LINEAGE,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES,TRANSL_TABLE,LOCUSTAG
+GCA_027569415.1_ASM2756941v1,Penicillium janthinellum,NRRL 35451,PRJNA852164,5079,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Penicillium,Penicillium janthinellum,1,FEFEE8FF
+GCA_030574275.1_ASM3057427v1,Pichia sporocuriosa,NRRL Y-27347,PRJNA736342,87101,dikarya,Ascomycota,,Pichiomycetes,,Pichiales,Pichiaceae,Pichia,Pichia sporocuriosa,1,FC4C1EC4
+GCA_031125765.1_ASM3112576v1,Saccharomycopsis amapae,CBS 7872,PRJNA977123,51913,dikarya,Ascomycota,,Saccharomycetes,,Ascoideales,Saccharomycopsidaceae,Saccharomycopsis,Saccharomycopsis amapae,1,F085ABF1
+GCA_030557065.1_ASM3055706v1,Metschnikowia rubicola,CBS 15344,PRJNA736342,2201248,dikarya,Ascomycota,,Pichiomycetes,,Serinales,Metschnikowiaceae,Metschnikowia,Metschnikowia rubicola,1,FDFC7EFF
+GCA_030568275.1_ASM3056827v1,Lipomyces orientalis,NRRL Y-27927,PRJNA736342,1233043,dikarya,Ascomycota,,Lipomycetes,,Lipomycetales,Lipomycetaceae,Lipomyces,Lipomyces orientalis,1,FCC8206B
+GCA_026023555.1_ASM2602355v1,Chrysothrix sp. TS-e1954,Spribille s.n. 12.05.2019-TS-e1954,PRJNA833438,2939400,dikarya,Ascomycota,,Arthoniomycetes,,Arthoniales,Chrysotrichaceae,Chrysothrix,Chrysothrix sp. TS-e1954,1,F7C1580B
+GCA_030411455.1_ASM3041145v1,Arthroderma sp. MBC 290,MBC 290,PRJNA879330,2978605,dikarya,Ascomycota,,Eurotiomycetes,,Onygenales,Arthrodermataceae,Arthroderma,Arthroderma sp. MBC 290,1,F0C54309
+GCA_030777505.1_ASM3077750v1,Beauveria bassiana,MBC 105,PRJNA879330,176275,dikarya,Ascomycota,,Sordariomycetes,,Hypocreales,Cordycipitaceae,Beauveria,Beauveria bassiana,1,F2095D88
+GCA_032357745.1_ASM3235774v1,Camptophora hylomeconis,CBS 113311,PRJNA868610,470456,dikarya,Ascomycota,,Eurotiomycetes,,Chaetothyriales,Chaetothyriaceae,Camptophora,Camptophora hylomeconis,1,F8792FB6
+GCA_025531575.1_ASM2553157v1,Pichia sp. PH4023,PH4023,PRJNA833221,2951365,dikarya,Ascomycota,,Pichiomycetes,,Pichiales,Pichiaceae,Pichia,Pichia sp. PH4023,1,F8BD228C
+GCA_020137715.1_BUMICRO_TalaroTrachy_1.1,Talaromyces trachyspermus,4014,PRJNA650128,28566,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces trachyspermus,1,FC9A98C0
+GCA_016508685.1_ASM1650868v1,Cytospora piceae,CFCC52841,PRJNA675330,2570895,dikarya,Ascomycota,,Sordariomycetes,,Diaporthales,Cytosporaceae,Cytospora,Cytospora piceae,1,F4ED2AAB
+GCA_003988795.1_ASM398879v1,Proliferodiscus dingleyae,D683,PRJNA487672,2283848,dikarya,Ascomycota,,Leotiomycetes,,Helotiales,Lachnaceae,Proliferodiscus,Proliferodiscus dingleyae,1,FF8BF472
+GCA_049997495.1_ASM4999749v1,Neosartorya sp. G150-14,G150-14,PRJNA1208278,3392094,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Aspergillaceae,Neosartorya,Neosartorya sp. G150_14,1,FA4D4D0D
+GCA_022814505.1_ASM2281450v1,Talaromyces liani,FKII-L2-CM-DRAB3,PRJNA800051,1295094,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces liani,1,F49152D2
+GCF_000143185.2_Schco3,Schizophyllum commune H4-8,H4-8,PRJNA32757,578458,dikarya,Basidiomycota,,Agaricomycetes,,Agaricales,Schizophyllaceae,Schizophyllum,Schizophyllum commune,1,F43E66A0
+GCA_030512285.1_Cernew1,Cercophora newfieldiana,SMH2532-1,PRJNA371209,92897,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Lasiosphaeriaceae,Cercophora,Cercophora newfieldiana,1,FB7A3B85
+GCA_020883615.1_ASM2088361v1,Fusarium virguliforme,FV201,PRJNA773799,232082,dikarya,Ascomycota,,Sordariomycetes,,Hypocreales,Nectriaceae,Fusarium,Fusarium virguliforme,1,F7212665
+GCA_019381815.1_ASM1938181v1,Ogataea polymorpha x Ogataea parapolymorpha,CBS 1977,PRJNA706707,2053387,dikarya,Ascomycota,,Pichiomycetes,,Pichiales,Pichiaceae,Ogataea,Ogataea polymorpha x Ogataea parapolymorpha,1,F1B2BAA8
+GCA_037176845.1_USDA_PpaGH12_1.0,Paramarasmius palmivorus,GH-12,PRJNA1061504,297713,dikarya,Basidiomycota,,Agaricomycetes,,Agaricales,Marasmiaceae,Paramarasmius,Paramarasmius palmivorus,1,F73B88A1

@@ -316,3 +316,67 @@ join + timing comparison of any two methods). Real-genome probes on 1–2 fungal
 genomes (32–52 MB scaffolds) in both container modes established the silent
 no-output and OOM failure modes that led to de-scoping LZ-ANI from the
 pipeline. Evidence + reproduction recipe in `LZANI_PERFORMANCE.md`.
+
+### paralogoscope
+
+```yaml
+name: paralogoscope
+type: pipeline-implementation
+status: active
+created: 2026-08-28
+last_updated: 2026-08-28
+datasets: [nextflow/tests/data/test_samples.csv, nextflow/tests/data/input_wgd/{cds,gff3} (synthetic 12-gene test genomes)]
+algorithms: [nextflow/modules/comparative/wgd/{WGD_DMD,WGD_KSD,WGD_SYN,MERGE_WGD_KSD}/main.nf, nextflow/bin/merge_wgd_ks.py, container_wgd2_complete:2.0.38 SIF]
+parent_analysis: null
+key_findings:
+  - "Standalone per-species paralogoscope pipeline (wgd dmd -> ksd, syn gated by --run_wgd_syn) validated end-to-end: 6/6 tasks, clean publishDir tree."
+  - "Terminal MERGE_WGD_KSD step globs every published ks.tsv off disk into tables/wgd.ks.parquet (+ summary) via bin/merge_wgd_ks.py (16-col prune incl. node, zstd; ~0.8-1 GB for 4,365 genomes vs ~45 GB raw). Completion-only gate fires even on a fully-cached -resume (validated on 2-genome synb data: 72,755 rows)."
+  - "Containerized wgd syn / i-ADHoRe needs OpenMPI env hygiene inside the SIF (LD_LIBRARY_PATH=/opt/conda/lib + unset SLURM*/PMI* + OMPI_ALLOW_RUN_AS_ROOT) — otherwise libmpi.so.40 not found then 'OPAL ERROR pmix3x_client.c'."
+  - "wgd syn requires -f mRNA -a ID for funannotate GFF3s (CDS headers match mRNA features); 'No anchors found' is a legitimate rc=0 outcome with no anchors.csv written."
+report: nextflow/modules/comparative/wgd/WGD_SYN/main.nf (inline docs + .living/learnings.md/decisions.md 2026-08-28)
+tags: [nextflow, wgd, paralogoscope, dmd, ksd, syn, i-ADHoRe, container, pipeline]
+```
+
+Standalone Nextflow pipeline computing per-species whole-genome-duplication
+dating via wgd (`dmd` MCL clustering of CDS → `ksd` K_a/K_s dating, optional
+`syntenic` i-ADHoRe steps gated behind `--run_wgd_syn`). Selects samples from the
+BFD `samples.csv` (group/taxon/ignore/n_test), resolves CDS (+GFF3) from indexed
+input dirs, and publishes under `outdir/{meta.id}/{wgd_dmd,wgd_ksd,wgd_syn}`.
+Validate real runs with `/tmp/plg_test.config` (local executor, `withLabel
+'comparative_wgd'` cpus=2) + test inputs staged in
+`nextflow/tests/data/input_wgd/`.
+
+### wgd_performance_analysis
+
+```yaml
+name: wgd-performance-analysis
+type: performance-profiling
+status: active
+created: 2026-08-28
+last_updated: 2026-08-28
+datasets: [/scratch/jstajich/27843486/plg_real (r3/resume4 run work+out dirs, 2 Aaosphaeria genomes), function_neurospora/input/cds (4,365 genomes), /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/paralogoscope_pilot (20-genome pilot storeDir: wgd_dmd+wgd_ksd hash buckets), /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/paralogoscope_synb (2-genome syn benchmark storeDir)]
+algorithms: [scripts/collect_measurements.py, scripts/estimate_throughput.py, scripts/profile_pilot.py]
+parent_analysis: paralogoscope
+key_findings:
+  - "wgd dmd is cheap (~1 min/genome at 4 cpus for ~12-13k genes) and never the bottleneck."
+  - "wgd ksd is the bottleneck: 94.3 min/median-adjacent genome at 4 cpus (pasadenensis, 1,184 multi-copy families, 34,164 pairs -> 10.9 MB ks.tsv)."
+  - "Extrapolated full run (4,365 genomes, median 9,105 genes from n=198 sample): ksd ~41 min/genome at 8 cpus -> ~3,000 task-h / ~24,000 CPU-h, 2.2-7.8 days wall at 16-56 concurrent tasks."
+  - "ksd runtime variance is large (arxii, near-identical family spectrum, SIGTERM'd at 2 h) -- attributed to contention/log buffering, motivating a SLURM pilot wave before the full run."
+  - "wgd syn (i-ADHoRe) unmeasured at real scale -- must be benchmarked before enabling."
+  - "PILOT (2026-08-28, 20 genomes/8 cpus/preempt, job 27927803): per-5k-genes = 24.8 min runtime (R2 0.37), 12.7 MB artifacts (R2 0.69), peak RSS flat ~2.5 GB; full 4,365 run ~3,277 task-h (~102 h at C32, ~58 h at C56), ~92 GB artifacts; ksd variance is biological (family structure), not contention; 46 dangling input/cds symlinks flagged."
+  - "SYN BENCHMARK (2026-08-28, job 27929339, 2 Aaosphaeria genomes, run_wgd_syn true): wgd syn is dmd-tier (~37 s/genome, ~0.5 GB peak RSS, ~350 KB artifacts/genome anchors.csv+dot.pdf) -- NOT a bottleneck; full-run estimate unchanged; safe to enable syn for the full run. Datangling symlinks now 52 (38 empty predict_results / 12 no annotation dir / 2 no predict_results; tree still being rewritten upstream)."
+report: analysis/WGD_PERFORMANCE_ANALYSIS/WGD_PERFORMANCE_ANALYSIS.md
+tags: [wgd, paralogoscope, dmd, ksd, performance, throughput, storage, visualization, preempt, slurm, pilot]
+```
+
+Performance estimate for the paralogoscope full run over the 4,365-genome
+`function_neurospora` input set, anchored on measured r3/resume4 wall times
+(dmd ~1 min, ksd 94.3 min at 4 cpus) and extrapolated via
+`estimate_throughput.py` with documented assumptions (median gene count, 1.7x
+8-cpu scaling). Includes a storage plan (raw hash buckets ~35-50 GB + derived
+parquet summary/density tables) and a visualization plan (per-genome ksd.pdf
+gallery, Ks peak calling for WGD dating, class-overlaid densities, profile
+embeddings, plotly report). Reproduce: `collect_measurements.py
+/scratch/jstajich/27843486/plg_real outputs/wgd_perf_measurements.tsv`
+then `estimate_throughput.py outputs/wgd_perf_measurements.tsv 4365
+--median-genes 9105 --out outputs/wgd_throughput_estimate.tsv`.

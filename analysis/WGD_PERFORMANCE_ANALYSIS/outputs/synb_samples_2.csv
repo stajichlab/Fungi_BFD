@@ -1,0 +1,3 @@
+ASMID,SPECIES_IN,STRAIN,BIOPROJECT,NCBI_TAXONID,BUSCO_LINEAGE,PHYLUM,SUBPHYLUM,CLASS,SUBCLASS,ORDER,FAMILY,GENUS,SPECIES,TRANSL_TABLE,LOCUSTAG
+GCF_010015735.1_Aaoar1,Aaosphaeria arxii CBS 175.79,CBS 175.79,PRJNA234399,1450172,dikarya,Ascomycota,,Dothideomycetes,,Pleosporales,,Aaosphaeria,Aaosphaeria arxii,1,FF5840CF
+GCA_022813625.1_ASM2281362v1,Aaosphaeria pasadenensis,FJI-L9-BK-P1,PRJNA800051,3025424,dikarya,Ascomycota,,Dothideomycetes,,Pleosporales,,Aaosphaeria,Aaosphaeria pasadenensis,1,F2EE6837
