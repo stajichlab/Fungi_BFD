@@ -311,6 +311,36 @@ SELECT * FROM read_parquet('$SRC/codon_freq.parquet');
 CREATE INDEX idx_codon_locustag ON codon_frequency(species_prefix);
 " "$DB"
 
+# ─── paralogoscope / WGD ───────────────────────────────────────────────────────
+# Optional: only exists after the paralogoscope workflow's terminal merge
+# (MERGE_WGD_KSD → tables/wgd.ks.parquet) has run. Not produced by the main BFD
+# functional pipeline, so guarded like telomeres / busco_genome rather than
+# created empty. Note 1: genome here is the sampletag (filename stem), which
+# maps 1:1 to the species/representative concept carrier of LOCUSTAG/SAMPLE in
+# species.parquet -- join on species_prefix (the LOCUSTAG) for BFD cross-tables,
+# not on genome. Note 2: rows with NULL dS are non-dup paralog pairs wgd emitted
+# without a valid Ka/Ks estimate, not errors -- keep raw semantics.
+if [ -f "$SRC/wgd.ks.parquet" ]; then
+    duckdb -c "
+CREATE TABLE wgd_ks AS
+SELECT * FROM read_parquet('$SRC/wgd.ks.parquet');
+CREATE INDEX idx_wgdks_locustag ON wgd_ks(species_prefix);
+CREATE INDEX idx_wgdks_genome   ON wgd_ks(genome);
+" "$DB"
+else
+    echo "SKIP: $SRC/wgd.ks.parquet not found (paralogoscope not run); wgd_ks table omitted."
+fi
+
+if [ -f "$SRC/wgd.ks.summary.parquet" ]; then
+    duckdb -c "
+CREATE TABLE wgd_ks_summary AS
+SELECT * FROM read_parquet('$SRC/wgd.ks.summary.parquet');
+CREATE UNIQUE INDEX idx_wgdkssum_genome ON wgd_ks_summary(genome);
+" "$DB"
+else
+    echo "SKIP: $SRC/wgd.ks.summary.parquet not found; wgd_ks_summary table omitted."
+fi
+
 # ─── analytical views ─────────────────────────────────────────────────────────
 # Per-species summary: genome stats + functional domain counts
 duckdb -c "
