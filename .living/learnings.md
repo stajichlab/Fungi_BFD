@@ -1316,6 +1316,18 @@ Validated `-stub-run` clean for both, then forced a real re-predict for `Pichia_
 
 **Tags**: python, pathlib, glob, gotcha, compare-ani-methods
 
+### [2026-08-25] Nextflow config files reject top-level `if` — put guards in the workflow, not nextflow.config
+
+**Category**: gotcha
+
+**What happened**: While refactoring `params.singularity_cache` to env-only resolution, tried to guard the `== null` case inside `nextflow.config` with `if (params.singularity_cache == null) { ... }` plus a failing `throw`. `nextflow config . -profile BFD` failed to even parse: `Error profile_BFD.config:8:1: If statements cannot be mixed with config statements` (same for `nextflow.config`). The `if` blocks were reverted; the guard now lives at the top of `workflows/BFD.nf` and `workflows/funannotate.nf` (a plain `if (params.singularity_cache == null) throw new Exception(...)`), placed **before** the `validateParameters()` call so nf-schema also sees a resolved value.
+
+**Why it matters**: It's easy to reach for `if`/`throw` in config to fail loudly on a missing required param, but Nextflow's config grammar only allows assignments (`=`/`{}` blocks); any control flow mixed in at the statement level is a parse error. The workflow entry point (or a process `beforeScript`) is the right place for a fail-loud guard. Also confirmed: `main.nf` dispatches by `--pipeline` (default `BFD`), so a guard in `workflows/*.nf` correctly covers every profile that uses them.
+
+**Resolution / How to apply**: For required-but-computed params, keep the resolution in config (a pure expression, e.g. `[System.getenv('A'), System.getenv('B')].find { it }`), and validate the result in the workflow entry file before `validateParameters()`. Verified: unsetting all four env vars makes the BFD run abort with exactly our message; setting `NXF_SINGULARITY_CACHEDIR` passes the guard and proceeds to the next validation (missing `samples.csv`).
+
+**Tags**: nextflow, config, if-statement, parse-error, params, guard, gotcha
+
 ### [2026-08-28] Containerized `wgd syn` (i-ADHoRe) needs OpenMPI env hygiene inside the SIF — SLURM env leaks kill it
 
 **Category**: hpc / container gotcha
@@ -1394,3 +1406,90 @@ Validated `-stub-run` clean for both, then forced a real re-predict for `Pichia_
 **Resolution**: For anything long, submit a SLURM job (`run_paralogoscope.sh` uses `sbatch` on preempt) instead of backgrounding on the login node. The r3 real-data smoke test is the exception that was let to finish in the foreground of an interactive session.
 
 **Tags**: HPCC, nextflow, background, setsid, nohup, slurm, gotcha
+
+### [2026-08-28] `query/` staging-dir prefix broke ASMID parsing in two ANI consumers — pick_representative_strain.py silently zeroed out 90% of reuse eligibility
+
+**Category**: silent-failure / gotcha
+
+**What happened**: `d3ba98c` (2026-08-27, "skani scaling") reworked `SKANI_COMPARE` to stage genomes via `stageAs: 'query/*'`/`'ref/*'` for its new batched `dist` mode, so skani's own query/ref columns in `all_pairs_merged.tsv` now read `query/GCA_....fa.gz` instead of a bare filename. Two downstream consumers parsed genome names with a suffix-only strip (regex/endswith on `.fa.gz` etc, no `os.path.basename()` first) and silently mismatched on the new prefix: `scripts/find_ani_label_mismatches.py` (Option 7a mismatch sweep — returned 0 flagged groups instead of erroring) and, much more seriously, `nextflow/bin/pick_representative_strain.py`'s `load_ani_pairs()`. The picker's ANI-pair dict keys never matched any real ASMID, so **89.7% of sibling rows in the freshly-rerun `repr_assignments.tsv` had blank `ani_to_representative`** — per the codebase's own fail-closed convention (blank ANI = not eligible), this silently disabled `reuse_eligible` and pushed nearly every species through `pasaTierFor`'s `'skip'`/ab-initio-only branch, not because of real divergence but because the picker couldn't see its own ANI data. `combine_ani_table.py`/`report_ani.py` were unaffected — they already `os.path.basename()`'d defensively.
+
+**Why it matters**: This is the exact silent-failure shape the KCTC/MRD-KRBAY investigation (`nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md`) was about, but upstream of representative-picking itself rather than at train time — a `git log`-adjacent code change to one module's output format silently corrupted a downstream script's string parsing with no error, no crash, just wrong numbers that looked plausible (a "divergent species" story) until checked against the raw ANI table.
+
+**Resolution**: Fixed both scripts to `os.path.basename()` before stripping the FASTA suffix. Verified via a standalone dry-run of `pick_representative_strain.py` against the real 2.3M-pair table: blank-ANI rate dropped from 89.7% to 2.6% (consistent with genuine sparse-ANI coverage gaps), `reuse_eligible` rows went from near-zero to 8,121/17,999, and 29/1,849 species (1.6%) got a different (and now correctly-ANI-informed) representative pick, including `Hansenula_anomala` and `Malassezia_globosa`. Reran the real `PICK_REPRESENTATIVE_STRAIN` Nextflow task (quarantined its stale cached work dir at `misc/quarantine/PICK_REPRESENTATIVE_STRAIN_work_stale_query_prefix_bug_2026-08-28/` in `do_annotation_asco/` so `-resume` was forced to re-execute it — process code isn't part of Nextflow's task hash, so an external script edit alone would NOT have invalidated the cache); production `genome_annotation/_reuse_assignments/{repr_assignments.tsv,abinitio_reuse_assignments.csv}` now match the dry-run (2.6% blank).
+
+**How to apply**: Any script parsing skani/mash/sourmash query/ref genome-name columns must `os.path.basename()` before stripping the sequence-file suffix — the staged path shape is an implementation detail of the comparison module (`stageAs`) and can change without notice to a plain-text consumer downstream. When a module's process script changes (not its declared inputs), `-resume` will silently skip it — must locate and quarantine/remove that task's cached `work/` dir to force re-execution, or use a fresh `-w`/session.
+
+**Tags**: ani, skani, query-prefix, asmid, pick-representative-strain, silent-failure, reuse-eligible, nextflow, resume, cache-invalidation, gotcha
+
+### [2026-08-28] `-stub-run` still submits to the configured executor (slurm) — hangs; force `-process.executor local`, and resource overrides must match `withLabel`
+
+**Category**: Nextflow gotcha
+
+**What happened**: A `nextflow run nextflow/main.nf -stub-run -profile paralogoscope ...` sanity check did NOT run stubs locally — tasks were submitted to the slurm executor (`executor > slurm`) and sat pending until timeout, with no outputs written. The paralogoscope profile sets `process { withLabel:'comparative_wgd' { ... } }` but no executor override, so stub tasks went to the default `slurm` executor and queued like real jobs.
+
+**Resolution**: `-stub-run` + `-process.executor local` engages the stubs, but then the task fails resource validation (`Process requirement exceeds available CPUs -- req: 8; avail: 4`) because this login node has 4 cpus. `-process.cpus 2` on the CLI did NOT help — a CLI `-process.*` value lands in the base `process` scope, which loses to the more specific `withLabel:` block. Fix: a `-c` override config that re-declares the label with small resources:
+`process { withLabel: "comparative_wgd" { cpus = 1; memory = "1 GB"; time = "1 h" } }`.
+With both in place the full-paralogoscope stub graph completed in seconds.
+
+**How to apply**: For fast local stub checks of a profile whose processes use a remote executor, always pass `-process.executor local` AND a `-c` file overriding `withLabel`/`withName` resources (never rely on bare `-process.cpus`, it loses to label-scoped config). `-stub-run` does not bypass the executor or the local resource check.
+
+**Tags**: nextflow, stub-run, executor, slurm, withLabel, resource, paralogoscope, gotcha
+
+### [2026-08-28] storeDir + zero-output tasks race: "Cannot access directory ... retried" loop
+
+**Category**: Nextflow gotcha
+
+**What happened**: A real (non-stub) paralogoscope run passed WGD_DMD and WGD_KSD
+but WGD_SYN failed consistently with `Cannot access directory: '<storeDir>/<bucket>'`,
+tasks retried 4x, run cancelled — even though the task exited 0. Root cause: on
+inputs with no collinear anchors, `wgd syn` writes `iadhore-out/` but NO `anchors.csv`
+or `*.dot.pdf`, so the process emitted zero files; with `storeDir`, concurrent
+zero-output tasks race on storeDir directory creation and Nextflow can never
+materialize the bucket (dirs never created; reproducing every time, even with `-resume`).
+
+**Resolution**: Guarantee the process always emits a file — when no `anchors.csv`
+was found, write an empty one (`: > wgd_syn/anchors.csv`, warning to stderr) before
+the `mv`. Empty anchors table = a legitimate "no anchors" verdict for that genome.
+After the fix the run completed cleanly (exit 0), both buckets got a 0-byte
+`anchors.csv`.
+
+**How to apply**: Any process using `storeDir` whose emits are `optional: true`
+must ensure ≥1 declared output file always exists, or concurrent tasks will hit
+this publish race. Also note the design question this exposes: a truly anchor-less
+genome (empty `anchorpoints.txt`) still hard-fails via the `[ -s ... ]` guard —
+acceptable for now, revisit if pilot wave hits it.
+
+**Tags**: nextflow, storeDir, optional, emit, race, wgd, paralogoscope, syn, gotcha
+
+### [2026-08-28] Pilot profiling gotchas: humanized trace units, dangling cds symlinks, ksd artifact naming
+
+**Category**: gotcha
+
+**What happened**: Profiling the 20-genome paralogoscope pilot (job 27927803) surfaced three parsing/QC traps. (1) The paralogoscope profile's trace config (`fields = 'task_id,name,status,exit,realtime,%cpu,rss,tag'`) yields **human-readable** values, not raw units: `realtime` is `'12m 34s'`/`'1h 1m 19s'` (not ms) and `rss` is `'366.4 MB'`/`'2.1 GB'` (not bytes) — my first parser crashed on `'11s'`. (2) `input/cds/` is a directory of **symlinks** into `genome_annotation/<tag>/predict_results/`, and 46 of the 4,365 dangle (target missing) — they present as zero-gene files and would read-fail as task inputs; they also made `rg` silently skip the whole dir (ripgrep refuses to traverse symlinked entries even with `-uu`, returning exit 1 / no matches). (3) `wgd ksd` storeDir artifacts are named `<dmd_output_base>.ks.tsv` where the base is the **dmd families tsv** `<tag>.cds-transcripts.fa.tsv`, so the glob is `<tag>.cds-transcripts.fa.tsv.ks.*` — `<tag>.cds-transcripts.fa.ks.*` matches nothing (silently undercounted Ogataea's size 14 MB → 0.3 MB).
+
+**Why it matters**: Trace-humanization breaks any naive `int(field)` parsing (`analysis/WGD_PERFORMANCE_ANALYSIS/scripts/profile_pilot.py` now has `parse_duration()`/`parse_memory()`). Dangling symlinks are a real input-completeness risk for the full 4,365-genome run and should be cleaned before launch. Getting the artifact glob wrong silently corrupts size accounting — profile totals for the full run (≈92 GB) depend on it.
+
+**Resolution**: `profile_pilot.py` parses both units; pilot results recorded in `WGD_PERFORMANCE_ANALYSIS.md` §8 and finding F-010. QC flag for the 46 dangling symlinks logged in the analysis doc.
+
+**Tags**: nextflow, trace, units, humanized, parsing, symlink, dangling, qc, wgd, ksd, storeDir, glob, paralogoscope, pilot, gotcha
+**Date**: 2026-08-28
+**Scope**: wgd syn benchmark (synb) + dangling-symlink audit
+
+Running `wgd syn` through the pipeline (job 27929339, run_wgd_syn true, 2
+Aaosphaeria genomes) showed syn is **dmd-tier, not ksd-tier**: ~37 s/genome at
+8 cpus, ~0.5 GB peak RSS, ~350 KB/genome artifacts (anchors.csv + dot.pdf
+only). The previous "unmeasured / must-benchmark-before-enabling" caution is
+retired; syn adds <1.50 the full-run total and `--run_wgd_syn true` is safe
+at scale. Also: `profile_pilot.py` requires `--counts` and produces garbage
+linear fits on n=2 (use per-genome rows, not the slope, for tiny traces).
+
+**Tags**: wgd, syn, iADHoRe, benchmark, dmd-tier, ksd, profile, pilot, nextflow, slurm
+
+## 2026-08-28: MERGE_WGD_KSD implementation gotchas (relative-path globs + cached-resume gates)
+
+- **A relative path anywhere in a process script resolves against the task workdir, not the launch dir.** The first MERGE run passed `--glob 'paralogoscope_synb/wgd_ksd/*/*.ks.tsv'` (a relative `${params.outdir}`) and silently wrote a 0-row table — the glob matched nothing because the task workdir has no such path. Fix: resolve to absolute *in workflow scope* (`params.outdir.startsWith('/') ? params.outdir : "${launchDir}/${params.outdir}"`) and pass as `val(outdir)`. Validate merged artifacts after every run, not just rc.
+- **`<cached_output>.collect()` still fires the gate on a fully-cached `-resume`**: we gated MERGE_WGD_KSD on `WGD_KSD.out.ks.collect()` (data is globbed off disk; channel is only a completion signal). Empirically, a `-resume` run where every dmd/ksd was cached submitted *only* the merge task and rebuilt the table (72,755 rows). So a collect-gated final step is safe even when nothing re-runs — contradicting the intuition that cached channels "go silent".
+- **`tables/` in this repo is a symlink → `../Fungi_BFD_runs/tables`** (the shared BFD tables dir), and `.gitignore` covers `tables/*parquet`. Publishing via `tablesDir()` lands in the real shared location automatically.
+- **`-stub-run` of the pipeline did not clobber the already-published `tables/wgd.ks.parquet`** (touch-stub outputs were not copied over the real 1.39 MB file); the real artifact survived the stub test byte-for-byte.
+
+**Tags**: wgd, paralogoscope, merge, parquet, glob, workdir, relative-path, cached, resume, collect, gate, nextflow

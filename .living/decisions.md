@@ -629,6 +629,24 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 
 **Tags**: ani, lz-ani, de-scope, container, singularity, nextflow, tool-evaluation, decision, negative-result
 
+## D: Singularity cache resolved from the environment (`params.singularity_cache`), not hardcoded (2026-08-25)
+
+**Context**: `nextflow.config` and the profile configs hardcoded/derived container cache paths in several inconsistent ways (`/bigdata/stajichlab/shared/singularity_cache` vs `/bigdata/stajichlab/shared/lib/singularity_cache`, `docker://` URIs mixed with pre-built `.sif`), and `run_funannotate.sh` set an env fallback while other launchers relied on defaults. Confirmed empirically that of the 13 Section A images `setup_singularity_cache.sh` pulls, only 2 (hmmer, diamond) existed in the canonical cache — the other 11 `docker://`-derived image names genuinely are not materialized, so the "it should just be in the cache" assumption was a race.
+
+**Decision**:
+1. `params.singularity_cache` is resolved in `nextflow.config` from the first-set env var of `NXF_APPTAINER_CACHEDIR` / `NXF_SINGULARITY_CACHEDIR` / `APPTAINER_CACHEDIR` / `SINGULARITY_CACHEDIR` (`.find { it }`, **no fallback** — a null result is intentional so the workflows can fail loudly). The canonical shared dir is `/bigdata/stajichlab/shared/singularity_cache` and the launchers export it.
+2. BFD and funannotate workflows fail loudly at start with the full env-var list when `params.singularity_cache == null` (guard added before `validateParameters()` in `workflows/BFD.nf` and `workflows/funannotate.nf`).
+3. Every `*_sif` param is now `"${params.singularity_cache}/<canonical>.sif"` — `aaaftf_sif` (nextflow.config), `deeptmhmm_sif`/`antismash_sif` (profile_BFD), `mariadb_sif`/`funannotate_sif`/`genemark_sif` (profile_funannotate). Both `apptainer{}`/`singularity{}` blocks set `cacheDir = params.singularity_cache`; `profile_apptainer.config` sets `env.NXF_APPTAINER_CACHEDIR`.
+4. `profile_interproscan6.config` **keeps its own** `singularity_cache = /bigdata/stajichlab/shared/containers/interproscan6` override (separate dir, managed by the nested interproscan6 run) — intentionally left alone.
+5. **`run_funannotate.sh` fallback to `$NXF_SINGULARITY_CACHEDIR:-APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache` is KEPT for backwards compat** (explicit user choice) even though configs no longer hardcode the path.
+6. `singularity_cache` added to `nextflow_schema.json` under `input_output_options` (no default — env-resolved).
+
+**Alternatives considered**: (a) One hardcoded path in `nextflow.config` with the profile overrides stripped — rejected: keeps a single point of truth but silently misresolves if the shared dir ever moves. (b) Default fallback to the canonical dir when env unset — rejected: the null-guard is the point, so a wrong-cache run fails at the workflow start instead of silently pulling. (c) Fully drop the `run_funannotate.sh` env fallback — rejected by user for backwards compat (its export coincides with the env-only resolution anyway).
+
+**Consequences**: One place decides the cache location; interactive runs exported the vars in tests and resolve identically to launcher-driven runs (`nextflow config` dumps match env-set values byte-for-byte); `-profile interproscan6` still parses standalone. Remaining work: `nextflow/bin/setup_singularity_cache.sh --apply` to materialize the 11 missing Section A image names into the canonical cache.
+
+**Tags**: singularity, apptainer, cache, nextflow.config, env, decision, config-refactor
+
 ## D: WGD_SYN treats "no anchors found" as success; container gets OpenMPI env hygiene (2026-08-28)
 
 **Context**: `wgd syn` (i-ADHoRe) in the paralogoscope pipeline failed in two distinct ways before this decision: (1) `libmpi.so.40` not found — the conda base prefix `/opt/conda/lib` isn't on `LD_LIBRARY_PATH` inside the SIF; (2) once the lib was found, `OPAL ERROR: Unreachable in file pmix3x_client.c at line 111` — SLURM env vars leaking into the container make OpenMPI think it's running under SLURM's PMI. Additionally, `wgd syn` exits rc=0 with NO `anchors.csv` whenever i-ADHoRe finds no collinear anchors, so a strict `[ -f anchors.csv ]` guard would fail valid runs.
@@ -660,3 +678,82 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Consequences**: Stub-validated (6/6 tasks, `-stub-run`). Real-data r3 run predates this change (still flat layout). First real run with the new layout will be the SLURM full run. storeDir doubles as a cache: reruns reuse stored files by name.
 
 **Tags**: wgd, paralogoscope, storeDir, hash-bucket, locustag, nextflow, decision
+
+## D: Defer Option 1 (train-time PASA-alignment floor); rely on Option 7a sweep + targeted representative cross-check as the pre-launch guard (2026-08-28)
+
+**Context**: Before relaunching the RNASeq/train batch (`do_annotation_asco`), reviewed progress on `nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md`'s hardening options (KCTC_13826BP misidentified-representative incident). Option 1 (`train_min_pasa_loci` floor inside `FUNANNOTATE_TRAIN`, graceful degrade to ab-initio-only on low PASA-locus assignment) remains design-only — none of `train_min_pasa_loci`/`rnaseqPolicyFor`/a representative-majority-cluster check exist in code. `query_ANI.nf` was confirmed NOT useful for catching mis-species-labeled samples (its query set is blank-taxonomy orphans only, never a confidently-but-wrongly-labeled genome like KCTC).
+
+**Decision** (grilled interactively, all points confirmed):
+1. Do NOT implement Option 1 before this launch — its open design questions (Q-SW-2: reliably parsing PASA's "assigned N transcripts to N loci"; Q-BIO-3: a biologically defensible floor) are not quick to resolve well, and a rushed answer risks a second silent-failure class.
+2. Guard for this launch = **targeted triage**, not full triage of all 172+ HIGH-tier flags from `scripts/find_ani_label_mismatches.py` (T-030): cross-reference flagged ASMIDs against the run's actual representative picks via the new `scripts/check_flagged_representatives.py` (minimal join, exit code = hit count, no rank-proximity logic — kept deliberately minimal since T-030's fuller triage can absorb nuance later).
+3. **Gate**: any hit (a flagged ASMID that IS currently a representative) blocks launch until resolved (relabel like KCTC, or implement Option 1).
+4. **Standing policy**: a clean cross-reference on a rerun is sufficient to keep deferring Option 1; a *second* flagged-representative incident on any future rerun is the trigger to implement Option 1 for real.
+
+**Result of this run's check (2026-08-28, after the `query/`-prefix ANI-parsing bugfix below)**: 682 flagged ASMIDs (172 HIGH + updated REVIEW tier on the freshly-rerun ANI data), **0 currently representative** — clean, launch not blocked.
+
+**Alternatives considered**: (a) Full implementation of Option 1 now — rejected, disproportionate to the acute risk (only representative-promotion is dangerous) and its own open questions aren't resolved. (b) Full triage of all flagged species before launch — rejected as disproportionate effort for a guard whose only acute failure mode is representative promotion; the targeted cross-reference already narrows this to zero actionable cases for this run.
+
+**Consequences**: Option 1 remains a real gap (a future misidentified representative not caught by the sweep would still hard-crash `funannotate train` and block the batch, as KCTC did) — accepted risk per the standing policy above. T-030 updated to reference this targeted-triage approach.
+
+**Tags**: ani, funannotate, representative-pick, rnaseq, train, option-1, kctc, decision, risk-acceptance, grilling
+
+## D: Materialize the wgd container as a hash-pinned SIF in the shared cache; make it the profile default (2026-08-28)
+
+**Context**: User asked whether the paralogoscope pipeline uses a local cached sandbox instead of pulling the SIF each run. Audit found the profile default `wgd_sif` was `docker://ghcr.io/hyphaltip/container_wgd2_complete:2.0.38` (a network URI); the shared cache held only the biocontainers build (`wgd_2.0.38--pyhdfd78af_0.sif`) and an old `wgd.simg` — not the custom image — and `run_paralogoscope.sh` exported none of the `*CACHEDIR` env vars that `params.singularity_cache` resolves from (so the default would have pulled over the network on first use, or resolved to a broken empty path). A test exec without `NXF_APPTAINER_CACHEDIR` exported hung on the pull.
+
+**Decision**:
+1. Materialize the custom image into the shared cache as
+   `hyphaltip_wgd2_complete-2.0.38--9e3a9744900b_0.sif`
+   (444 MB; `9e3a9744900b` = 12-hex prefix of the .sif file's sha256 — the image carries no OCI digest label, so the file hash is the provenance anchor).
+2. Flip the profile default to `wgd_sif = "${params.singularity_cache}/hyphaltip_wgd2_complete-2.0.38--9e3a9744900b_0.sif"` (mirrors the `aaftf_sif` pattern).
+3. Add the repo-standard cache-env exports to `run_paralogoscope.sh` (NXF_APPTAINER_CACHEDIR/NXF_SINGULARITY_CACHEDIR/APPTAINER_CACHEDIR/SINGULARITY_CACHEDIR, backwards-compat default `/bigdata/stajichlab/shared/singularity_cache`).
+
+**Alternatives considered**: (a) Keep `docker://` default — rejected: first-use network pull, and per the AAFTF lesson an on-demand OCI→SIF conversion race under concurrent SLURM tasks corrupted the cache before. (b) Version-only name `hyphaltip_wgd2_complete-2.0.38.sif` — rejected: confusable with the different biocontainers `wgd_2.0.38--pyhdfd78af_0.sif` in the same cache; no rebuild provenance.
+
+**Consequences**: Production runs never pull over the network. Verified: renamed SIF executes (`wgd --help` rc=0); `nextflow config -profile paralogoscope` resolves `wgd_sif` to the cache path when the env var is set; `--wgd_sif` override still honored.
+
+**Tags**: wgd, paralogoscope, apptainer, singularity, sif, cache, container, decision
+
+## D: Terminate the paralogoscope workflow with a MERGE step that emits tables/wgd.ks.parquet (2026-08-28)
+
+**Context**: User asked for "a final script run after the workflow is done and create a file in the tables folder much like the other summary stats and BFD functional tools". The per-genome ks.tsv files (~45 GB raw for the full run) are a poor analysis surface: family IDs are per-genome (`GF00000001`...), and ~43 % of rows are NULL-dS placeholders. Compression/parquet benchmarks on a real arxii ks.tsv (11.79 MB, 38,591 rows): zstd -3 ≈ gzip -9 (9.2 %) but 5× faster; a 13-column-zstd parquet = 4.5 % of raw *(measured on the 13-col prototype; the final schema is 16 cols after `node` was added 2026-08-30)*.
+
+**Decision**:
+1. Add a terminal `MERGE_WGD_KSD` process (label 'merge', publishDir `tablesDir()`) that runs after the last `wgd ksd`, globbing *all* `*.ks.tsv` published so far off disk (`bin/merge_wgd_ks.py`, streaming file-by-file into one zstd parquet, 1.39 MB per 2 genomes → ~0.8–1 GB full run).
+2. Emit `tables/wgd.ks.parquet` (15 cols: genome + species_prefix + 13 analysis cols — 6 string `pair/family/g1/g2/gene1/gene2` + 7 float `N/S/dN/dN/dS/dS/alignmentlength/t`) and `tables/wgd.ks.summary.parquet` (n_pairs / n_pairs_with_ds / n_families per genome). *Schema superseded 2026-08-30: 16 cols — `node` added to the string set (see "Ks-peak summary framework" below); the 15-col wording above is historical.*
+3. The input channel is a completion gate only (data never flows through a live channel): `WGD_KSD.out.ks.collect()` — mirrors the gatedGlobIn wave/resume rationale, so a fully-cached `-resume` still rebuilds the merged table (validated empirically: only the merge task submitted, 72,755 rows).
+4. `tables` resolves (symlink) to `../Fungi_BFD_runs/tables` — the same shared dir as wolfpsort.parquet / pfam.parquet, and `tables/*parquet` is gitignored.
+
+**Alternatives considered**: (a) Per-task per-genome parquet + external gather — rejected: more files to manage, slower subset joins. (b) duckdb-COPY CSV route à la MERGE_WOLFPSORT — rejected: ~45 GB intermediate CSV traffic; pyarrow path writes straight from TSV→parquet with explicit schema/type control. (c) Returning only the KS-dating-successful rows (drop NULL-dS placeholders) — rejected: those rows are meaningful (non-dup paralog pairs), and parquet null bitmaps make them nearly free; keep raw semantics.
+
+**Consequences**: Analysis surface shrinks ~45×. The staged per-genome TSVs become the archive; subsets read via predicate pushdown on the merged table. Full 4,365-genome run blocked on the user's regenerated input/ tree, so the table accumulates per wave and is (re)built by the final run.
+
+**Tags**: wgd, paralogoscope, merge, parquet, zstd, tables, duckdb, decision
+
+## D: Expose wgd.ks* parquet in db/BFD.duckdb via guarded optional tables (2026-08-28)
+
+**Context**: Follow-up to the merge decision above. The user asked whether the BFD duckdb should expose wgd pairs. `nextflow/bin/build_BFD_duckDB.sh` builds the master `db/BFD.duckdb` from `tables/*.parquet`; the wgd tables are paralogoscope-only outputs, so they must not be required (and must not error) on plain BFD/Fungi_BFD_runs rebuilds.
+
+**Decision**: Add guarded `if [ -f "$SRC/wgd.ks.parquet" ]` blocks (same pattern as `telomere_*` / `busco_genome`) creating `wgd_ks` (indexed on species_prefix and genome) and `wgd_ks_summary` (unique index on genome) tables; skip with a log line when absent. Document in-script the two semantics that trip consumers up: (1) `genome` is the sampletag (filename stem) — join cross-tables on `species_prefix` (= LOCUSTAG), not genome; (2) NULL-dS rows are non-dup paralog pairs w/o valid Ka/Ks, not errors. Validated: the exact SQL block runs clean under duckdb 1.4.4 against the real 2-genome tables (wgd_ks 72,755 rows, null-dS 33,849).
+
+**Alternatives considered**: (a) Always-create-empty `wgd_ks` table — rejected: pollutes the master DB for pipelines that never run paralogoscope. (b) Separate wgd duckdb — rejected: defeats the single-DB cross-join story.
+
+**Consequences**: No SQL changes needed to existing consumers (optional table is additive). A paralogoscope run followed by a duckdb rebuild just works; a BFD-only rebuild prints "SKIP: ... wgd_ks table omitted".
+
+**Tags**: wgd, paralogoscope, duckdb, tables, decision
+
+## D: Reuse wgd's own mixture models for the per-genome Ks-peak summaries (2026-08-30)
+
+**Context**: User asked for summary scripts over the `wgd_ks` tables reporting, per genome, the *number of duplicates* and the *mean Ks from the peaks*, and whether the wgd package ships such software. In the wgd SIF (v2.0.38), `wgd` ships `mix` ("Mixture modeling of Ks distributions", GMM/BGMM, min-BIC model selection) and `peak` (KDE + CI + dating) — but **neither CLI exports the component means**: `mix` writes only per-pair posterior TSVs (`ks_gmm.tsv`) + SVG plots; `peak` without anchorpoints writes per-component-count posterior/plot files and an AIC/BIC PDF. The "mean Ks of the peaks" therefore lives only inside the fitted sklearn model objects, which wgd never serializes.
+
+**Decision**:
+1. **Frameworks answer**: wgd does ship peak/mixture machinery (`wgd mix`/`peak`), but not as a per-genome summary; we wrap `wgd.mix.fit_gmm`/`fit_bgmm` (the exact code `wgd mix` runs) in a thin container worker to capture the component means/weights the CLI discards.
+2. `analysis/WGD_PERFORMANCE_ANALYSIS/scripts/wgd_ks_mix_fit.py` — runs inside the wgd SIF; reproduces `wgd mix` semantics: `filter_group_data` (alignmentlength ≥ 300, 0 < dS ≤ 5) then node-averaged pairs, GMM full-cov 1–4 components (n_init=max_iter=200, seed 2352890 = wgd peak's default), best = min BIC; BGMM keeps max components (wgd behavior). Emits JSON: per-model BIC/AIC + per-component mean-Ks/sd/weight (ordered by mean) + silverman KDE on dS∈[0,5].
+3. `analysis/WGD_PERFORMANCE_ANALYSIS/scripts/build_wgd_ksd_summary.py` — host driver; slices `tables/wgd.ks.parquet` per genome, runs the worker in parallel (`--jobs`), assembles `wgd_ksd_summary.parquet` (per-genome duplicates counts + `n_ks_peaks` + wide `peak{1..4}_{mean_ks,sd,weight}`) + `wgd_ksd_density.parquet` (long genome × 200-bin grid). Resolves apptainer from PATH or the HPCC module install.
+4. **wgd.ks schema gains `node`** (15 → 16 cols): `filter_group_data` node-averages via `df.groupby(['family','node']).mean()`; the merged table dropped `node`, and on the 2-genome data it is real signal (21,975 valid-dS rows all carry node; 3,853 family×node groups vs 1,248 families). Without it the fit cannot reproduce `wgd mix`. duckdb loader is schema-agnostic (`SELECT * FROM read_parquet`), so no duckdb change needed — the DB table picks up the column on next rebuild.
+
+**Alternatives considered**: (a) Reimplement GMM with sklearn outside the SIF — rejected: duplicates wgd's fitted-method semantics and disconnects from the package the user asked about. (b) `scipy.signal.find_peaks` on the KDE (§6 plan) — kept only as an optional cross-check; the model-based peaks carry weights/CI and come straight from the published wgd method. (c) Restore `node` from the raw ks.tsv archives on the fly — rejected: the merged table is the analysis surface; carrying one string column is ~free.
+
+**Consequences**: The framework runs end-to-end on the 2-genome synb pair (fits reproduce a direct in-container `fit_gmm`; arxii 3 peaks 0.080/1.559/3.500 BIC 1388.57; pasadenensis 4 peaks 0.053/0.853/2.449/3.766 BIC 1052.96). ~2.5 CPU-min/genome at n_init=200 ≈ 180 core-h for 4,365 (~3 h at 64-way) — a post-merge step, no SLURM changes needed. Full-run execution is tracked under T-032.
+
+**Tags**: wgd, paralogoscope, mix, peak, gmm, ks, duplicates, wgd_ksd_summary, wgd_ksd_density, decision
