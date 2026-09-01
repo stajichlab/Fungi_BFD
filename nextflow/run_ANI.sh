@@ -17,7 +17,7 @@ mkdir -p logs/slurm logs/nextflow
 
 source /etc/profile.d/modules.sh 2>/dev/null || true
 module load nextflow
-module load singularity
+module load apptainer
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 
