@@ -24,7 +24,8 @@ process WGD_KSD {
 
     output:
     path("*.ks.tsv"),  emit: ks
-    path("*.ksd.pdf"), emit: ks_plot
+    path("*.ksd.pdf"), emit: ks_plot_pdf
+    path("*.ksd.svg"), emit: ks_plot_svg
 
     script:
     """
@@ -40,14 +41,14 @@ process WGD_KSD {
         ${families} ${cds}
 
     [ -f wgd_ksd/*.ks.tsv ] || { echo "ERROR: wgd ksd produced no ks.tsv output" >&2; exit 1; }
-    mv wgd_ksd/*.ks.tsv wgd_ksd/*.ksd.pdf .
+    mv wgd_ksd/*.ks.tsv wgd_ksd/*.ksd.pdf wgd_ksd/*.ksd.svg .
     """
 
     stub:
     """
     mkdir -p wgd_ksd
     printf 'pair\\tks\\n' > wgd_ksd/${families}.ks.tsv
-    touch wgd_ksd/${families}.ksd.pdf
+    touch wgd_ksd/${families}.ksd.pdf wgd_ksd/${families}.ksd.svg
     mv wgd_ksd/* .
     """
 }

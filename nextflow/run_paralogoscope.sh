@@ -13,12 +13,20 @@
 #   --group group.csv                    explicit LOCUSTAG,GROUP selection
 #   --ignore exclude.txt                 exclude these LOCUSTAGs
 #   --run_wgd_syn true                   enable wgd syn (i-ADHoRe synteny; heavy)
-#   --wgd_sif /path/to/wgd-2.0.38.sif    use a local SIF instead of ghcr docker URI
+#   --wgd_sif /path/to/other.sif          override image (default = cached SIF,
+#                                         hyphaltip_wgd2_complete-2.0.38)
 #   --n_test 10                          restrict to first 10 sample-sheet rows
 
 set -euo pipefail
 
 module load nextflow
+
+# Container cache (env-resolved params.singularity_cache): backwards-compat
+# default shared across this repo's launchers.
+export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
+export NXF_APPTAINER_CACHEDIR=${NXF_APPTAINER_CACHEDIR:-${NXF_SINGULARITY_CACHEDIR}}
+export SINGULARITY_CACHEDIR=${SINGULARITY_CACHEDIR:-$NXF_SINGULARITY_CACHEDIR}
+export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-$NXF_APPTAINER_CACHEDIR}
 
 mkdir -p logs/nextflow
 

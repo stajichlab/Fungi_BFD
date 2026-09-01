@@ -38,6 +38,14 @@ process WGD_SYN {
 
     [ -f wgd_syn/anchors.csv ] || [ -s wgd_syn/iadhore-out/anchorpoints.txt ] \
         || { echo "ERROR: wgd syn produced no i-ADHoRe output" >&2; exit 1; }
+    # wgd syn only writes anchors.csv when it finds collinear anchors; some
+    # inputs legitimately have none. Always emit an anchors table (empty when
+    # nothing found) so the storeDir publish has a file to materialize —
+    # zero-output tasks race on storeDir directory creation.
+    if [ ! -f wgd_syn/anchors.csv ]; then
+        echo "WARNING: no anchors found for $(basename ${families}); writing empty anchors.csv" >&2
+        : > wgd_syn/anchors.csv
+    fi
     mv wgd_syn/anchors.csv wgd_syn/*.dot.pdf . 2>/dev/null || true
     """
 
