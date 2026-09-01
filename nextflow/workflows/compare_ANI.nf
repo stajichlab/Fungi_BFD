@@ -100,8 +100,18 @@ workflow COMPARE_ANI {
     def ani_sync   = ani_tsv_ch.collect().map { true }.ifEmpty(true)
     def names_sync = REPORT_ANI.out.names.collect().map { true }.ifEmpty(true)
 
-    def ani_all = gatedGlobIn(ani_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*.ani.tsv")
-    def names_all = gatedGlobIn(names_sync, params.outdir, "${params.ani_method}/${params.compare}/**/*_genome_names.tsv")
+    // One level deep only ({group}/{group}.ani.tsv) -- NOT '**/*.ani.tsv'. When
+    // --skani_prefilter mash-precomputes components, ANI_COMPARE_METHOD also
+    // writes intermediate per-component files under {group}/batches/ (e.g.
+    // {group}.c1.ani.tsv, {group}.full.ani.tsv). A recursive glob here picks
+    // those up too, and combine_ani_table.py's group_from_ani_path() derives a
+    // bogus extra "group" ('{group}.c1') from each one -- with no matching
+    // {group}.c1_genome_names.tsv ever published, so labels come back blank
+    // and the batch data gets double-counted into COMBINE_ANI_TABLE's
+    // in-memory rows, which is large enough across ~1800 SPECIES groups to
+    // OOM-kill the 4 GB 'report' task (exit 137).
+    def ani_all = gatedGlobIn(ani_sync, params.outdir, "${params.ani_method}/${params.compare}/*/*.ani.tsv")
+    def names_all = gatedGlobIn(names_sync, params.outdir, "${params.ani_method}/${params.compare}/*/*_genome_names.tsv")
 
     COMBINE_ANI_TABLE(
         toManifest(ani_all,   'ani_tsv.manifest.txt'),
