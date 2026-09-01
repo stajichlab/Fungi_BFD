@@ -1,0 +1,14 @@
+Bootstrap: docker
+From: mariadb:10.3.9
+
+# `apptainer instance start <sif> <name> [args...]` only runs [args...] if the
+# image defines a %startscript -- Docker's ENTRYPOINT/CMD only populate
+# %runscript (used by `apptainer run`), which `instance start` never consults.
+# Without this, `instance start mariadb.sif mysqldb_x /usr/bin/mysqld_safe`
+# silently starts an empty instance and never launches mysqld_safe at all;
+# PASA then fails to connect ("Can't connect to MySQL server ... (111)").
+# Confirmed 2026-08-25 against the plain `apptainer pull`-cached sif and
+# against docker://mariadb:10.3.9 directly -- both lack a %startscript and
+# both fail identically.
+%startscript
+    exec /usr/bin/mysqld_safe
