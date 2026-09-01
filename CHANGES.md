@@ -334,3 +334,70 @@ construction.
   published TSVs confirmed; `wgd ksd` validated in-container (slow on real
   genomes, still running) — full run proceeds via SLURM.
 
+---
+
+# `main` — 2026-09-01: standalone-Trinity fallback for failed genome-guided assemblies
+
+Motivated by a scan (`Fungi_BFD_runs/do_annotation_asco/find_failed_ggtrinity.py`)
+that flagged 62 species where genome-guided Trinity (`RNASEQ_PREPARE`) collapsed to
+< 2000 transcripts despite tens of millions of normalized reads — including both
+parent species of the `Cryptococcus_neoformans_x_Cryptococcus_deneoformans` hybrid,
+whose composite Trinity stayed empty because both real-species inputs were bad.
+Usually caused by the representative genome being a poor match for the actual
+RNA-seq (an existing fix — `rnaseq_representative_override.csv` /
+`scripts/pick_rnaseq_representative_override.py` — tries a *different* reference);
+this adds the complementary fix of just running Trinity *without* a reference.
+
+## What was added
+
+- **`nextflow/modules/funannotate/rnaseq/COUNT_TRINITY_TRANSCRIPTS/main.nf`** — cheap
+  `grep -c '^>'` transcript count on each species' `trinity-GG.fasta`, no `storeDir`
+  (deliberately: adding a new required `storeDir` output to `RNASEQ_PREPARE` itself
+  would make every already-cached species look incomplete and force a full
+  `funannotate train` re-run pipeline-wide on the next pass).
+- **`nextflow/modules/funannotate/rnaseq/TRINITY_STANDALONE/main.nf`** — de novo
+  (non-genome-guided) `Trinity --no_normalize_reads` on the species' already-normalized
+  reads (`rnaseq_reads/*_norm_{R1,R2,SE}.fastq.gz`); own SLURM profile (`cpus 24`,
+  memory escalating 64→128→192 GB, time 48h→72h→96h across retries, `preempt`→default
+  queue, `c[01-30]` excluded — same AVX2/SIGILL issue as `RNASEQ_PREPARE`/
+  `FUNANNOTATE_TRAIN`). Publishes `${tag}.trinity-denovo.fasta` plus a **relative**
+  symlink `${tag}.trinity-GG.fasta -> ${tag}.trinity-denovo.fasta` in the same
+  `storeDir`, so downstream consumers (`FUNANNOTATE_TRAIN`,
+  `BUILD_HYBRID_COMPOSITE_TRINITY`) need zero changes — they keep reading
+  `trinity-GG.fasta` and just get the better assembly.
+- **`subworkflows/local/FUNANNOTATE_RNASEQ.nf`** — after `RNASEQ_PREPARE`, every
+  species' transcript count is checked and branched: below
+  `params.train_min_trinity_transcripts` (reused, not a new param — same guard
+  `FUNANNOTATE_TRAIN` already applies, so setting it to 0 disables this fallback too)
+  routes to `TRINITY_STANDALONE`; everyone else passes through unchanged. Hybrids need
+  no special-casing: `BUILD_HYBRID_COMPOSITE_TRINITY` reads each parent's own
+  `trinity-GG.fasta`, so fixing a parent here fixes any hybrid composite built from it
+  once rebuilt.
+- **`conf/profile_funannotate.config`** — `withName` blocks for both new processes.
+
+## Backfill of the 62 already-failing species
+
+Moved the 59 existing bad `trinity-GG.fasta` files aside to `misc/poor_trinity_gg/`
+in `Fungi_BFD_runs/` (one, `Cryptococcus_neoformans`, was already gone; `storeDir`
+output missing triggers a fresh `RNASEQ_PREPARE` attempt on next run). Two species —
+`Sporisorium_graminicola`, `Tetracladium_sp._T11_2_10C` — were excluded from the
+scan/backfill: their read `.fastq.gz` were corrupted (`gzip: unexpected end of file`)
+and were deleted by hand rather than backfilled; `Tetracladium_sp._T11_2_10C` turned
+out to be genuinely single-end SRA data (`SRR15914105`/`106`, `SINGLE` in
+`samples.rnaseq_sra.csv`), not a data-quality problem. `Sporisorium_graminicola` is
+separately flagged `SE_trinity` in `rnaseq_blacklist.csv`, so its stale/corrupted R1
+file was very likely an orphaned pre-blacklist download artifact rather than a live
+bug — a `storeDir`-cache-never-invalidates gap shared with the taxonomy-misID
+incident above, not fixed here. Chose to let the 59 backfill species pay for one more
+(likely-failing) genome-guided attempt before falling through to
+`TRINITY_STANDALONE`, rather than building a separate override-CSV bypass — simpler,
+uniform logic for a one-time cost on 59 species.
+
+## Test status
+
+- `nextflow lint` clean on all new/edited files (only pre-existing repo-wide style
+  warnings, e.g. discouraged `launchDir` in `storeDir`, already present in
+  `RNASEQ_PREPARE`).
+- `nextflow config -profile funannotate` resolves both new `withName` blocks.
+- Not yet run live on SLURM — pending the next full pipeline pass.
+
