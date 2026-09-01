@@ -147,9 +147,10 @@ def load_ani_pairs(ani_tsv_path: Path) -> dict:
                 ani = float(row[2])
             except (ValueError, IndexError):
                 continue
-            # Strip common sequence file extensions to get the asmid
-            q_asmid = _ASMID_EXT_RE.sub('', q_file)
-            r_asmid = _ASMID_EXT_RE.sub('', r_file)
+            # Strip any directory prefix (e.g. skani's 'query/' staging dir)
+            # before stripping the sequence file extension to get the asmid.
+            q_asmid = _ASMID_EXT_RE.sub('', os.path.basename(q_file))
+            r_asmid = _ASMID_EXT_RE.sub('', os.path.basename(r_file))
             if q_asmid and r_asmid:
                 pairs[(q_asmid, r_asmid)] = ani
                 pairs.setdefault((r_asmid, q_asmid), ani)
