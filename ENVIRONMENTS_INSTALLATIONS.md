@@ -76,3 +76,15 @@ when learnings/decisions change. The hooks' lightweight `python3 -c
     license forbids public redistribution of a *purpose-built* GeneMark
     image). Useful if a smaller, GeneMark-only image is preferred over
     braker3's full ~3.2 GB toolchain.
+
+- **Container cache location** is `params.singularity_cache`, which `nextflow.config`
+  resolves from the first set of `NXF_APPTAINER_CACHEDIR` / `NXF_SINGULARITY_CACHEDIR`
+  / `APPTAINER_CACHEDIR` / `SINGULARITY_CACHEDIR` (no hardcoded default — the shared
+  dir is `/bigdata/stajichlab/shared/singularity_cache`). Export one before an
+  interactive `nextflow run`; the `run_*.sh` launchers do this for you. BFD and
+  funannotate fail loudly at workflow start if it is unset. Warm/pre-mirror the cache
+  with `nextflow/bin/setup_singularity_cache.sh` (`--dry-run` first). Every `*_sif`
+  path param derives from it, so nothing else has a hardcoded cache path.
+- **Apptainer/singularity** must be loadable in the *launching* shell for
+  `apptainer.enabled = true` runs (driver-process needs it on PATH; see
+  `.living/learnings.md`).

@@ -68,7 +68,7 @@ def busco_lineage(phylum):
     if phylum in ('Ascomycota', 'Basidiomycota'):
         return 'dikarya'
     if phylum == 'Mucoromycota' or phylum == "Glomeromyocta" or phylum == "Calcarisporiellomycota":
-        return 'mucoromycota'
+        return 'fungi'
     if phylum == 'Microsporidia':
         return 'microsporidia'
     return 'fungi'

@@ -31,6 +31,7 @@ Exit code is the number of flagged species groups (0 = nothing found).
 
 import argparse
 import csv
+import os
 import sys
 from collections import defaultdict
 
@@ -54,11 +55,18 @@ def parse_args():
 
 
 def asmid_from_genome_name(name):
-    """'GCA_003277715.1_ASM327771v1.fa.gz' -> 'GCA_003277715.1_ASM327771v1'."""
+    """'query/GCA_003277715.1_ASM327771v1.fa.gz' -> 'GCA_003277715.1_ASM327771v1'.
+
+    skani's query/ref columns may carry a directory prefix (e.g. a 'query/'
+    staging dir) ahead of the genome filename; strip it via basename before
+    stripping the FASTA suffix, so ASMID lookup against samples.csv works
+    regardless of the path shape a given skani invocation uses.
+    """
+    base = os.path.basename(name)
     for suffix in (".fa.gz", ".fasta.gz", ".fa", ".fasta"):
-        if name.endswith(suffix):
-            return name[: -len(suffix)]
-    return name
+        if base.endswith(suffix):
+            return base[: -len(suffix)]
+    return base
 
 
 def load_species_map(samples_csv):

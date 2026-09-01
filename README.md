@@ -196,6 +196,18 @@ Setting these outputs as `storeDir` lets reruns reuse already-stored files
 re-annotated sample produces a new filename — a stale storeDir hit is never
 possible.
 
+After the last `wgd ksd` task the workflow's terminal merge (`MERGE_WGD_KSD`)
+globs all published ks.tsv and streams them into
+`tables/wgd.ks.parquet` (16-col zstd, `genome` = sampletag, `species_prefix` =
+LOCUSTAG; includes the wgd tree-node id `node`, needed by wgd's own
+mix/peak node-averaging) plus `tables/wgd.ks.summary.parquet` (n_pairs /
+n_pairs_with_ds / n_families per genome) — the BFD MERGE_*/tablesDir()
+pattern, so a fully-cached `-resume` still rebuilds the merged table. Those
+parquet files also load into `db/BFD.duckdb` (`wgd_ks`, `wgd_ks_summary`)
+when present. Per-genome Ks-peak summaries (number of duplicates + mean Ks
+of each peak, via wgd's own GMM) are derived with
+`analysis/WGD_PERFORMANCE_ANALYSIS/scripts/build_wgd_ksd_summary.py`.
+
 ---
 
 ## Recommended run order
