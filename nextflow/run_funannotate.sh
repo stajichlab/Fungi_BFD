@@ -60,7 +60,7 @@ if [ ! -f "$PARAMS_FILE" ]; then
 fi
 
 module load nextflow
-module load singularity
+module load apptainer
 export NXF_SINGULARITY_CACHEDIR=${NXF_SINGULARITY_CACHEDIR:-/bigdata/stajichlab/shared/singularity_cache}
 # Modules invoke `singularity exec docker://...` directly, bypassing Nextflow's
 # own cacheDir handling -- SINGULARITY_CACHEDIR/APPTAINER_CACHEDIR are what the
