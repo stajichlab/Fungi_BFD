@@ -13,6 +13,16 @@
 // not grant a license. See nextflow/docs/GENEMARK_RUN_DESIGN.md for the full
 // design and why this exists.
 //
+// Every empty-GTF skip (pre-flight small/fragmented, or GeneMark's own
+// post-attempt "too small" decline in ES/ET/fast-reuse mode) is recorded to
+// ${target}/genemark_skipped_too_small.tsv (added 2026-08-30) -- without
+// this, the only trace of a skip was a per-task stderr [WARN], which
+// `cleanup = true` deletes along with work/ after any successful pipeline
+// run, leaving no durable way to notice a genome silently got no GeneMark
+// evidence (FUNANNOTATE_PREDICT falls back to --auto-skip-genemark for an
+// empty genemark_gtf with no further signal). Mirrors
+// FUNANNOTATE_PREDICT's own predict_skipped_too_small.tsv pattern.
+//
 // Reuse mode (checked first, applies regardless of ES/ET -- gmes_petap.pl's
 // --predict_with is its own mutually-exclusive run mode, not a variant of
 // --ES/--ET): shared_mod set and force_independent != 'true' ->
@@ -119,6 +129,27 @@ process GENEMARK_RUN {
         *)    cp "\$GENOME_GZ" genome.fa ;;
     esac
 
+    # ── Persistent audit trail for empty/skipped GeneMark GTFs ──────────────
+    # GeneMark's own "too small" decline (both the pre-flight guard below and
+    # the post-attempt too_small_skip() cases further down) previously only
+    # logged a per-task stderr [WARN] -- with `cleanup = true` deleting work/
+    # after any successful pipeline run, that WARN and the empty GTF both
+    # vanish permanently, leaving no way to notice or audit which genomes
+    # silently got no GeneMark evidence (FUNANNOTATE_PREDICT falls back to
+    # --auto-skip-genemark for an empty genemark_gtf with no further signal).
+    # Mirrors FUNANNOTATE_PREDICT's own predict_skipped_too_small.tsv pattern
+    # (same ${params.target} dir, distinct filename since this fires earlier
+    # in the DAG and for a different reason: GeneMark's own internal contig
+    # selection found too little usable sequence, not this module's own
+    # pre-flight stats necessarily agreeing).
+    GENEMARK_SKIP_REPORT="${params.target}/genemark_skipped_too_small.tsv"
+    record_genemark_skip() {
+        local reason="\$1" asm_bp="\${2:-NA}" asm_ctg="\${3:-NA}" asm_n50="\${4:-NA}"
+        mkdir -p "${params.target}"
+        [ -s "\$GENEMARK_SKIP_REPORT" ] || printf 'out\tasmid\treason\ttotal_bp\tcontigs\tN50\n' > "\$GENEMARK_SKIP_REPORT"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "\$reason" "\$asm_bp" "\$asm_ctg" "\$asm_n50" >> "\$GENEMARK_SKIP_REPORT"
+    }
+
     # ── Too-small/fragmented-genome pre-flight guard ─────────────────────────
     # Mirrors FUNANNOTATE_PREDICT's own guard (same params.predict_min_asm_bp/
     # predict_frag_max_n50/predict_frag_max_contigs, same bin/asm_preflight_stats.py
@@ -139,6 +170,7 @@ process GENEMARK_RUN {
             --max-contigs ${params.predict_frag_max_contigs})
     if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
         echo "[WARN] GENEMARK_RUN ${out}: too small/fragmented (\$ASM_BP bp, \$ASM_CTG contigs, N50 \$ASM_N50); skipping GeneMark -- predict's own preflight guard will flag/report this genome" >&2
+        record_genemark_skip "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50"
         touch "${out}.genemark.gtf"
         rm -f genome.fa
         exit 0
@@ -195,6 +227,7 @@ process GENEMARK_RUN {
             cp output/gmhmm.mod "${out}.genemark.mod"
         elif too_small_skip; then
             echo "[WARN] GENEMARK_RUN ${out}: GeneMark-ET declined -- not enough usable (unmasked, >=10kb) training sequence after masking; skipping GeneMark for this genome" >&2
+            record_genemark_skip "ET_post_attempt_too_small"
             touch "${out}.genemark.gtf"
             rm -f genome.fa
             exit 0
@@ -214,6 +247,7 @@ process GENEMARK_RUN {
             cp output/gmhmm.mod "${out}.genemark.mod"
         elif too_small_skip; then
             echo "[WARN] GENEMARK_RUN ${out}: GeneMark-ES declined -- not enough usable (unmasked, >=10kb) training sequence after masking; skipping GeneMark for this genome" >&2
+            record_genemark_skip "ES_post_attempt_too_small"
             touch "${out}.genemark.gtf"
             rm -f genome.fa
             exit 0
@@ -226,6 +260,7 @@ process GENEMARK_RUN {
     if [ ! -s genemark.gtf ]; then
         if too_small_skip; then
             echo "[WARN] GENEMARK_RUN ${out}: GeneMark declined -- not enough usable training sequence; skipping GeneMark for this genome" >&2
+            record_genemark_skip "final_check_too_small"
             touch "${out}.genemark.gtf"
             rm -f genome.fa
             exit 0
