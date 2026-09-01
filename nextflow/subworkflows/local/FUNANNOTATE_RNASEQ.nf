@@ -30,6 +30,8 @@ include { WRITE_EMPTY_READS } from '../../modules/funannotate/rnaseq/WRITE_EMPTY
 include { SRA_FETCH         } from '../../modules/funannotate/rnaseq/SRA_FETCH/main.nf'
 include { SRA_FETCH_SE      } from '../../modules/funannotate/rnaseq/SRA_FETCH_SE/main.nf'
 include { RNASEQ_PREPARE    } from '../../modules/funannotate/rnaseq/RNASEQ_PREPARE/main.nf'
+include { COUNT_TRINITY_TRANSCRIPTS } from '../../modules/funannotate/rnaseq/COUNT_TRINITY_TRANSCRIPTS/main.nf'
+include { TRINITY_STANDALONE } from '../../modules/funannotate/rnaseq/TRINITY_STANDALONE/main.nf'
 include { FUNANNOTATE_TRAIN } from '../../modules/funannotate/predict/FUNANNOTATE_TRAIN/main.nf'
 // A dedicated process/storeDir, NOT a WRITE_EMPTY_READS alias -- see that module's
 // header comment for why aliasing it (same storeDir + filename as SRA_FETCH's real
@@ -274,7 +276,42 @@ workflow FUNANNOTATE_RNASEQ {
                 tuple(species_tag, empty_fa)
             }
 
-        def shared_ch = RNASEQ_PREPARE.out.shared.mix(empty_shared_ch)
+        // ── Genome-guided Trinity fallback: standalone (non-GG) Trinity ──────────
+        // Genome-guided Trinity occasionally collapses to a near-empty assembly when
+        // the representative genome is a poor match for the actual RNA-seq (see
+        // rnaseq_representative_override.csv for the "pick a better genome" fix; this
+        // is the "just run Trinity without the genome" fix). Reuses
+        // train_min_trinity_transcripts -- the same guard FUNANNOTATE_TRAIN already
+        // applies -- so a single threshold governs both checks, and setting it to 0
+        // disables this fallback too.
+        COUNT_TRINITY_TRANSCRIPTS(RNASEQ_PREPARE.out.shared)
+
+        def prepare_reads_ch = repr_branched.has_reads
+            .map { species_tag, _out, _asmid, _sp, _st, _lt, _bl, _hl, _tt, _gfa, r1, r2, se ->
+                tuple(species_tag, r1, r2, se)
+            }
+
+        // (species_tag, r1, r2, se, trinity_fa, n_transcripts)
+        def gg_branched = prepare_reads_ch
+            .combine(COUNT_TRINITY_TRANSCRIPTS.out.counted, by: 0)
+            .map { species_tag, r1, r2, se, trinity_fa, count_file ->
+                tuple(species_tag, r1, r2, se, trinity_fa, count_file.text.trim() as int)
+            }
+            .branch {
+                low: (it[5] as int) < (params.train_min_trinity_transcripts as int)
+                ok:  true
+            }
+
+        TRINITY_STANDALONE(gg_branched.low.map { species_tag, r1, r2, se, _tf, _n ->
+            tuple(species_tag, r1, r2, se)
+        })
+
+        def gg_ok_shared_ch = gg_branched.ok
+            .map { species_tag, _r1, _r2, _se, trinity_fa, _n -> tuple(species_tag, trinity_fa) }
+
+        def shared_ch = gg_ok_shared_ch
+            .mix(TRINITY_STANDALONE.out.shared)
+            .mix(empty_shared_ch)
 
         // ── ANI-tiered gating for shared-Trinity training ─────────────────────
         // Non-representative strains reuse the SAME Trinity-GG assembly built

@@ -185,31 +185,61 @@ process FUNANNOTATE_TRAIN {
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
-        MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
-        if [ ! -f \$MYSQL_SCRATCH/mysql/conf/my.cnf ]; then
-            echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
-            mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
-            rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
-                { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
-            cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
-                { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
-        fi
+        # Lives under \$TMPDIR (== node-local \$SCRATCH under SLURM, see the
+        # `export TMPDIR` above), NOT under training_target on shared storage.
+        # This datadir is pure per-task sidecar infra -- it's explicitly
+        # excluded from the results published to TRAINDIR below and nothing
+        # downstream ever reads it back -- so it never needs to survive past
+        # this task. Previously it lived under training_target (persistent,
+        # shared /bigdata) keyed only by species, so a prior attempt that
+        # crashed mid-write (OOM, node failure, job kill) could leave an
+        # orphaned InnoDB tablespace file behind; PASA's "-r"
+        # (drop-then-recreate) DROP DATABASE couldn't rmdir the stale
+        # directory (errno 39 "Directory not empty"), and the following
+        # CREATE DATABASE then failed with "database exists". Confirmed
+        # 2026-09-01 against Aspergillus_arachidicola_CBS_117612's
+        # pasa-assembly.log (orphaned splice_variation.ibd from an Aug 10
+        # attempt). Putting it on \$SCRATCH instead makes that bug class
+        # impossible: each SLURM job (== each task attempt) gets its own
+        # fresh, node-local scratch dir that SLURM tears down when the job
+        # ends, so there is nothing left for a later attempt to inherit. The
+        # \$TMPDIR:\$TMPDIR bind above already covers this path, so no extra
+        # SING_BINDS entry is needed for it.
+        MYSQL_SCRATCH=\$TMPDIR/mysql_db_${out}
+        rm -rf \$MYSQL_SCRATCH
+        mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
+        rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
+            { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
+        cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
+            { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
         PORT=\$(shuf -i3000-4999 -n1)
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
         sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
         perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
-        # Bind the WHOLE MYSQL_SCRATCH dir, not a subpath -- \$PASACONF
-        # (MYSQL_SCRATCH/conf/pasa-local-*.config.txt) is what the containerized
-        # funannotate exec needs to read, and MYSQL_SCRATCH/mysql_db (a prior
-        # value here) was never created by anything above (only
-        # MYSQL_SCRATCH/db and MYSQL_SCRATCH/conf are), so it was a dead bind
-        # source pointing nowhere. Appended to SING_BINDS (not a separate
-        # SINGULARITY_BINDPATH env var) so it's visible in the one \$SING exec
-        # command below, matching this project's SING_BINDS/SING convention.
-        SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
-        SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+        # Point MariaDB's on-disk temp-table dir at this job's own node-local
+        # \$TMPDIR (== \$SCRATCH, see the `export TMPDIR` above) instead of the
+        # my.cnf default of /tmp. The mysqld sidecar is started below without
+        # --containall, so it shares the host mount namespace and its "/tmp"
+        # is literally the compute node's real, SHARED /tmp -- when several
+        # FUNANNOTATE_TRAIN tasks land on the same node at once, their MariaDB
+        # instances all write large PASA-alignment MyISAM temp tables into
+        # that same shared /tmp concurrently, and once it fills, mysqld fails
+        # mid-write on a temp table and then fails again trying to delete the
+        # file it never finished creating -- surfaces in PASA as
+        # "Thread N terminated abnormally: ... Error on delete of
+        # '/tmp/#sql_....MAI' (Errcode: 2 'No such file or directory')".
+        # Confirmed 2026-08-29 against Alternaria_alternata_Z14's
+        # pasa-assembly.log. \$MYSQL_TMP is bound below to a fixed in-container
+        # path so this rewrite doesn't depend on \$TMPDIR's host-side value.
+        MYSQL_TMP="\$TMPDIR/pasa_mysql_tmp_${asmid}"
+        mkdir -p "\$MYSQL_TMP"
+        sed -i "s#^tmpdir[[:space:]]*=.*#tmpdir\t\t= /pasa_mysql_tmp#" \$MYSQL_SCRATCH/conf/my.cnf
+        # No separate SING_BINDS entry needed for \$MYSQL_SCRATCH (which the
+        # containerized funannotate exec needs to read \$PASACONF from) --
+        # it's now a subdirectory of \$TMPDIR, already covered by the
+        # \$TMPDIR:\$TMPDIR bind above.
         # >/dev/null too, not just stderr: apptainer/singularity prints its
         # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
         # the named instance is already gone, which happens on every run here
@@ -229,7 +259,7 @@ process FUNANNOTATE_TRAIN {
         # it, both lacking a real %startscript) starts an empty instance that
         # never launches mysqld at all -- PASA then fails to connect.
         singularity instance start --writable-tmpfs \\
-            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
+            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf,\$MYSQL_TMP:/pasa_mysql_tmp \\
             ${params.mariadb_sif} mysqldb_${asmid}
         pasa_db_arg="--pasa_db mysql"
         sleep 5

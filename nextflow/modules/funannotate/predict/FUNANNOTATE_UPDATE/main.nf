@@ -79,29 +79,32 @@ process FUNANNOTATE_UPDATE {
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
     # ── Optional per-task MariaDB for PASA ────────────────────────────────────
     if [ "${params.pasa_mysql}" = "true" ]; then
-        MYSQL_SCRATCH=${params.training_target}/${out}/training/mysql_db
-        if [ ! -f \$MYSQL_SCRATCH/mysql/conf/my.cnf ]; then
-            echo "[INFO] Setting up temporary MariaDB for PASA at \$MYSQL_SCRATCH"
-            mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
-            rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
-                { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
-            cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
-                { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
-        fi
+        # Lives under \$TMPDIR (== node-local \$SCRATCH under SLURM) rather
+        # than under training_target on shared storage -- see
+        # FUNANNOTATE_TRAIN/main.nf (confirmed 2026-09-01) for why: this
+        # datadir is pure per-task sidecar infra that nothing downstream ever
+        # reads back, so a persistent, species-keyed copy on /bigdata just
+        # let a crashed prior attempt strand an orphaned InnoDB tablespace
+        # file that broke PASA's "-r" drop-then-recreate ("Directory not
+        # empty" / "database exists"). Each SLURM job gets its own fresh
+        # node-local scratch dir, so that bug class is now impossible. The
+        # \$TMPDIR:\$TMPDIR bind above already covers this path.
+        MYSQL_SCRATCH=\$TMPDIR/mysql_db_${out}
+        rm -rf \$MYSQL_SCRATCH
+        mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
+        rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
+            { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
+        cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
+            { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
         PORT=\$(shuf -i3000-4999 -n1)
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
         sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
         perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
-        # Bind the WHOLE MYSQL_SCRATCH dir (see FUNANNOTATE_TRAIN/main.nf for
-        # why -- MYSQL_SCRATCH/mysql_db, a prior value, was never created by
-        # anything above and was a dead bind source; \$PASACONF lives under
-        # MYSQL_SCRATCH/conf, which this now correctly covers). Appended to
-        # SING_BINDS rather than a separate SINGULARITY_BINDPATH env var, to
-        # match this project's SING_BINDS/SING convention.
-        SING_BINDS="\${SING_BINDS},\$MYSQL_SCRATCH:\$MYSQL_SCRATCH"
-        SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+        # No separate SING_BINDS entry needed for \$MYSQL_SCRATCH (\$PASACONF
+        # lives under it) -- it's now a subdirectory of \$TMPDIR, already
+        # covered by the \$TMPDIR:\$TMPDIR bind above.
         # >/dev/null too, not just stderr: apptainer/singularity prints its
         # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
         # the named instance is already gone -- happens every run here since
