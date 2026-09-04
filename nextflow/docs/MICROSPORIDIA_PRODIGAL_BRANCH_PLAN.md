@@ -337,13 +337,37 @@ git commit -m "Add prodigal_hierarchy.py (standalone, not yet called)"
 
 - [ ] **Step 3: Add the Prodigal supplement, right after the existing pre-flight guard block**
 
-Insert after line 177 (right after the existing
-`if [ "\$ASM_VERDICT" = "small_fragmented" ]; then ... exit 0; fi` block — genomes
-tripping that block `exit 0` before reaching this new code, which is intentional:
-`FUNANNOTATE_PREDICT`'s own preflight guard would discard their Prodigal evidence
-anyway per Task 4 Step 3's note. The microsporidia gate below is evaluated
-independently of `ASM_VERDICT`, using `ASM_BP` directly, since `ASM_VERDICT`
-requires fragmentation too and would miss small-but-complete genomes like OC4):
+`other_gff` is declared as a non-optional `path` output (Step 2), so it must exist
+on every exit path of this script -- including the `small_fragmented` pre-flight
+skip's own `exit 0` a few lines above. **Do not** place `touch "${out}.other.gff3"`
+only inside the Prodigal-supplement block below the pre-flight guard: genomes that
+trip that guard `exit 0` before ever reaching this code, and since `other_gff` is
+not optional, Nextflow would then abort with "Missing output file(s)" for every
+`small_fragmented` genome (microsporidia or not) -- a real regression, not a
+harmless skip. Instead, touch it unconditionally right after `genome.fa` is
+inflated (around line 130, before the pre-flight guard block), so every exit path
+is covered:
+
+```bash
+    GENOME_GZ="${genome_fa}"
+    case "\$GENOME_GZ" in
+        *.gz) pigz -dc "\$GENOME_GZ" > genome.fa ;;
+        *)    cp "\$GENOME_GZ" genome.fa ;;
+    esac
+
+    # `other_gff` is a non-optional output, so it must exist on every exit
+    # path -- including the small_fragmented pre-flight skip below -- not
+    # just the Microsporidia Prodigal supplement path further down. Touch it
+    # unconditionally, right after genome.fa is inflated, before any guard
+    # that can `exit 0`.
+    touch "${out}.other.gff3"
+```
+
+Then insert the Prodigal supplement itself after line 177 (right after the
+existing `if [ "\$ASM_VERDICT" = "small_fragmented" ]; then ... exit 0; fi` block).
+The microsporidia gate below is evaluated independently of `ASM_VERDICT`, using
+`ASM_BP` directly, since `ASM_VERDICT` requires fragmentation too and would miss
+small-but-complete genomes like OC4:
 
 ```bash
     # ── Microsporidia Prodigal supplement ────────────────────────────────────
@@ -357,7 +381,9 @@ requires fragmentation too and would miss small-but-complete genomes like OC4):
     # if GeneMark independently fails on this genome, the existing empty-GTF
     # degradation further down already absorbs that; this block does not
     # change GeneMark's own success/failure handling at all.
-    touch "${out}.other.gff3"
+    # (${out}.other.gff3 is already touched above, right after genome.fa was
+    # inflated, so every exit path -- including the small_fragmented
+    # pre-flight guard -- has it.)
     if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
         echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
         module load prodigal
@@ -514,7 +540,7 @@ training and those are being zeroed anyway on this branch, see Step 4.)
     # this genome (is_microsporidia=true AND below predict_min_asm_bp).
     # AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
     # training models these genomes don't have (Microsporidia_predict
-    # PLAN.md 9.15) -- this does NOT change augustus/snap weighting for any
+    # STATUS.md:73-75) -- this does NOT change augustus/snap weighting for any
     # genome where other_gff is empty, which keeps today's default-on
     # behavior. --no-evm-partitions and --min_protlen 30 mirror the
     # validated recipe (microsporidia-default.json) for these near-zero-
@@ -586,10 +612,13 @@ training and those are being zeroed anyway on this branch, see Step 4.)
     # host-side `[ -s "${other_gff}" ]` check above having already confirmed
     # the file exists and is non-empty. Mirrors GENEMARK_RUN's own
     # training_bam dirname-binding pattern (GENEMARK_RUN/main.nf).
-    if [ -n "${other_gff}" ]; then
+    # -s not -n (matching the flag-construction checks above): a set-but-empty
+    # or set-but-missing path must not add a bind whose source doesn't exist --
+    # apptainer refuses to start if it does.
+    if [ -s "${other_gff}" ]; then
         SING_BINDS="$SING_BINDS,$(dirname "${other_gff}"):$(dirname "${other_gff}")"
     fi
-    if [ -n "${genemark_gtf}" ]; then
+    if [ -s "${genemark_gtf}" ]; then
         SING_BINDS="$SING_BINDS,$(dirname "${genemark_gtf}"):$(dirname "${genemark_gtf}")"
     fi
     SING="apptainer exec ${SING_BINDS} ${params.funannotate_sif}"
@@ -608,13 +637,20 @@ training and those are being zeroed anyway on this branch, see Step 4.)
         "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" || true
 ```
 
-- [ ] **Step 6: Verify no other caller of `FUNANNOTATE_PREDICT` needs updating**
+- [ ] **Step 6: Verify no other caller of `FUNANNOTATE_PREDICT` or `GENEMARK_RUN` needs updating**
 
-Run: `grep -rn "FUNANNOTATE_PREDICT(" nextflow/subworkflows/ nextflow/workflows/`
-Expected: only `FUNANNOTATE_PREDICT(rep_with_gtf)`/`FUNANNOTATE_PREDICT(rep_and_indep_with_gtf)`/
+Run: `grep -rn "FUNANNOTATE_PREDICT(\|GENEMARK_RUN(" nextflow/` (the whole `nextflow/`
+tree, not just `subworkflows/`/`workflows/` — a scope limited to those two
+directories misses standalone harnesses that live elsewhere, e.g.
+`nextflow/genemark_run_smoke.nf` at the tree's top level).
+Expected: `FUNANNOTATE_PREDICT(rep_with_gtf)`/`FUNANNOTATE_PREDICT(rep_and_indep_with_gtf)`/
 `FUNANNOTATE_PREDICT_SIB(sibling_predict_with_gtf)` in `FUNANNOTATE_PREDICTION.nf` —
 each already produces the correct 12-field tuple as of Task 3 Step 6, so no
-further edits needed at these call sites.
+further edits needed at these call sites — **plus** `GENEMARK_RUN(genemark_in)` in
+`nextflow/genemark_run_smoke.nf`, whose hand-built tuple must also grow to 11
+fields (append a literal `'false'` for `is_microsporidia`, since this smoke test
+isn't exercising the microsporidia branch) or it will fail with an arity
+mismatch against the now-11-field `GENEMARK_RUN` input.
 
 - [ ] **Step 7: Commit**
 
@@ -715,6 +751,32 @@ predict log shows both `--genemark_gtf` and `--other_gff` flags, and the resulti
 gene count is in the vicinity of the previously-validated Sn/Sp table (report as a
 before/after table per this project's collaboration norms — do not claim
 equivalence without the actual numbers).
+
+**Real single-genome validation result (job 28103120, completed 2026-09-04):** both
+required verification checks passed — `prodigal_selected_microsporidia.tsv` gained a
+row for this genome, and the predict log shows both `--genemark_gtf` and
+`--other_gff` flags in the captured command line. Gene counts, read directly from
+each run's own `predict_results/*.stats.json`:
+
+| Metric | Standalone reference (`Microsporidia_predict/genome_annotation/Ordospora_colligata_OC4_OC4/predict_results/Ordospora_colligata_OC4_OC4.stats.json`) | This Nextflow pipeline (job 28103120, `nextflow/tests/output/oc4_validation/genome_annotation/Ordospora_colligata_OC4/predict_results/Ordospora_colligata_OC4.stats.json`) |
+|---|---|---|
+| Genome | GCF_000803265.1_ASM80326v1 (OC4), 2,290,528 bp, 15 contigs, N50 228,601 | same genome, same masked sequence (reused, not re-cleaned) |
+| Recipe | `genemark:1` + `prodigal:5`, augustus:0, snap:0, `--no-evm-partitions --min_protlen 30` | identical weights/flags, confirmed used in the real captured command line |
+| Genes | 1,902 | 1,918 (+16, +0.8%) |
+| mRNA | 1,859 | 1,875 (+16) |
+| tRNA | 43 | 43 (identical) |
+| avg_gene_length | 1017.59 | 1015.31 |
+| single_exon_transcript | 1852 | 1866 |
+| multiple_exon_transcript | 7 | 9 |
+| avg_protein_length | 345.72 | 344.64 |
+
+**No ground-truth Sn/Sp comparison was computed.** Gene *count* agreement (within
+0.8%, identical tRNA count, near-identical exon/protein length distributions) is a
+strong consistency signal that this Nextflow port faithfully reproduces the
+standalone validated recipe's behavior — but it is not the same claim as a Sn/Sp
+number, which requires scoring both outputs against a real reference annotation via
+`Microsporidia_predict`'s own `score/` harness. That comparison is out of scope for
+this dispatch and should be done before Task 6's real-corpus rollout.
 
 - [ ] **Step 7: Commit**
 

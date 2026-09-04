@@ -68,6 +68,21 @@ process FUNANNOTATE_PREDICT {
     # missing-bind bug class as GENEMARK_RUN; manually-built \$SING commands
     # get none of Nextflow's automatic task-workdir binding.
     SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
+    # In the shared production funannotate_db, most BUSCO lineages (including
+    # microsporidia_odb10) are symlinks out to a separate DB tree (e.g.
+    # /srv/projects/db/BUSCO/...); binding funannotate_db itself does NOT
+    # bring the symlink TARGET into the container, so predict's own startup
+    # "--busco_db exists" check fails with "<lineage> busco database is not
+    # found" even though the symlink resolves fine on the host. Resolve the
+    # real (symlink-dereferenced) path dynamically and bind its parent dir,
+    # exactly like GM_KEY_DIR does in GENEMARK_RUN/main.nf for the GeneMark
+    # license symlink -- do NOT hardcode a host-specific prefix like /srv, so
+    # this stays portable across HPC systems (and a no-op, safe re-bind of an
+    # already-bound path, when the lineage is a real directory rather than a
+    # symlink, e.g. dikarya).
+    BUSCO_LINEAGE_REAL=\$(readlink -f "${params.funannotate_db}/${busco_lineage}" 2>/dev/null || echo "${params.funannotate_db}/${busco_lineage}")
+    BUSCO_LINEAGE_DIR=\$(dirname "\$BUSCO_LINEAGE_REAL")
+    SING_BINDS="\$SING_BINDS,\$BUSCO_LINEAGE_DIR:\$BUSCO_LINEAGE_DIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"
@@ -212,7 +227,7 @@ process FUNANNOTATE_PREDICT {
     # this genome (is_microsporidia=true AND below predict_min_asm_bp).
     # AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
     # training models these genomes don't have (Microsporidia_predict
-    # PLAN.md 9.15) -- this does NOT change augustus/snap weighting for any
+    # STATUS.md:73-75) -- this does NOT change augustus/snap weighting for any
     # genome where other_gff is empty, which keeps today's default-on
     # behavior. --no-evm-partitions and --min_protlen 30 mirror the
     # validated recipe (microsporidia-default.json) for these near-zero-
@@ -286,10 +301,13 @@ process FUNANNOTATE_PREDICT {
     # host-side `[ -s "${other_gff}" ]` check above having already confirmed
     # the file exists and is non-empty. Mirrors GENEMARK_RUN's own
     # training_bam dirname-binding pattern (GENEMARK_RUN/main.nf).
-    if [ -n "${other_gff}" ]; then
+    # -s not -n (matching the flag-construction checks above): a set-but-empty
+    # or set-but-missing path must not add a bind whose source doesn't exist --
+    # apptainer refuses to start if it does.
+    if [ -s "${other_gff}" ]; then
         SING_BINDS="\$SING_BINDS,\$(dirname "${other_gff}"):\$(dirname "${other_gff}")"
     fi
-    if [ -n "${genemark_gtf}" ]; then
+    if [ -s "${genemark_gtf}" ]; then
         SING_BINDS="\$SING_BINDS,\$(dirname "${genemark_gtf}"):\$(dirname "${genemark_gtf}")"
     fi
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"

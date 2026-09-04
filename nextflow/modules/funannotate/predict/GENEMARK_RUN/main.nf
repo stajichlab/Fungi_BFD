@@ -135,6 +135,13 @@ process GENEMARK_RUN {
         *)    cp "\$GENOME_GZ" genome.fa ;;
     esac
 
+    # `other_gff` is a non-optional output, so it must exist on every exit
+    # path -- including the small_fragmented pre-flight skip below -- not
+    # just the Microsporidia Prodigal supplement path further down. Touch it
+    # unconditionally, right after genome.fa is inflated, before any guard
+    # that can `exit 0`.
+    touch "${out}.other.gff3"
+
     # ── Persistent audit trail for empty/skipped GeneMark GTFs ──────────────
     # GeneMark's own "too small" decline (both the pre-flight guard below and
     # the post-attempt too_small_skip() cases further down) previously only
@@ -193,7 +200,9 @@ process GENEMARK_RUN {
     # if GeneMark independently fails on this genome, the existing empty-GTF
     # degradation further down already absorbs that; this block does not
     # change GeneMark's own success/failure handling at all.
-    touch "${out}.other.gff3"
+    # (${out}.other.gff3 is already touched above, right after genome.fa was
+    # inflated, so every exit path -- including the small_fragmented
+    # pre-flight guard -- has it.)
     if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
         echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
         module load prodigal
