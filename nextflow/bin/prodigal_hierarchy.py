@@ -2,9 +2,13 @@
 """Re-emit a Prodigal CDS-only GFF3 as full gene/mRNA/CDS blocks.
 
 EVM assembles gene models from gene/mRNA blocks; CDS-only features can only
-act as support, never define structure (validated on Ordospora colligata
-OC4: gene Sn 0.584 without this transform vs 0.849 for Prodigal alone --
-see Microsporidia_predict PLAN.md 9.15). Each single-exon Prodigal CDS
+act as support, never define structure. (An earlier version of this
+docstring cited a specific Ordospora colligata OC4 Sn comparison for this
+transform, attributed to Microsporidia_predict PLAN.md 9.15 -- that number
+does not actually appear in PLAN.md or STATUS.md and was a fabricated
+citation; removed 2026-09-04. The gene/mRNA/CDS-vs-CDS-only structural
+argument above is a mechanical fact about EVM's input format, independent
+of any specific benchmark number.) Each single-exon Prodigal CDS
 becomes its own gene/mRNA/CDS block, blocks separated by a blank line
 (EVM's lib.readBlocks in funannotate-runEVM.py expects every gene block
 immediately preceded by one -- no ##gff-version header, which would join
