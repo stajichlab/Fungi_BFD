@@ -219,20 +219,23 @@ process FUNANNOTATE_PREDICT {
     # intergenic compact genomes; both are new flags this pipeline didn't
     # pass before, applied ONLY on this branch.
     #
-    # Why zeroing the weight is enough, and no further BUSCO change is
-    # needed: funannotate's predict.py only populates RunModes["augustus"]/
-    # ["snap"] when their StartWeight > 0; RunBusco is only set True when
-    # some RunModes value == "busco". With augustus/snap/glimmerhmm all at
-    # weight 0, RunBusco never becomes True and BUSCO is never invoked at
-    # all -- not "invoked and tolerated despite too few models". The
-    # --min_training_models 30 check a few lines below is itself nested
-    # inside `if "augustus" in RunModes:`, so it stays unreachable dead code
-    # on this branch. This was confirmed by tracing predict.py directly (not
-    # just inferred) and matches the failure already documented in
-    # Microsporidia_predict/STATUS.md:73-82 (passing --busco_db
-    # microsporidia_odb10 with augustus/snap weight > 0 found only 36
-    # complete BUSCO models against a >=200 requirement and failed; the fix
-    # there was this same weight-zeroing, not any BUSCO-side workaround).
+    # CORRECTION (2026-09-04, superseding the paragraph this replaces): a
+    # real, non-stub run against Ordospora colligata OC4 proved the claim
+    # below wrong. predict.py sets RunModes["augustus"] (to "pretrained",
+    # "busco", or "pasa") UNCONDITIONALLY, independent of augustus/snap/
+    # glimmerhmm's EVM weight -- weight only controls whether that
+    # predictor's OUTPUT is included in the final EVM consensus, not
+    # whether predict.py attempts to prepare/train it at all. This is why
+    # --busco_seed_species (see below) is required regardless of weight.
+    # What zeroing the weight DOES still guarantee, confirmed by the real
+    # run's own gene count matching the standalone reference within ~1%
+    # (see Task 5 Step 6 in nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    # augustus/snap/glimmerhmm's training/reuse still happens (fast, via a
+    # pre-existing --busco_seed_species entry's info.json, not a fresh
+    # from-scratch BUSCO run against this genome's own too-few complete
+    # models -- Microsporidia_predict/STATUS.md:73-82's 36-vs-200 failure),
+    # but their EVM weight of 0 excludes their output from the final gene
+    # models regardless of what that training produced.
     # Do NOT also add --min_training_models 0 or drop --busco_db here --
     # neither is necessary and both would be pure noise.
     GENEMARK_GTF_FLAG=()
