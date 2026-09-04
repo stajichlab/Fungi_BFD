@@ -12,7 +12,7 @@
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
-include { makeSampleTag; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
+include { makeSampleTag; loadSuppressSet; suppressRowFilter; loadMicrosporidiaOutSet } from '../modules/common/utils.nf'
 include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride; loadHybridParentage } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
@@ -74,6 +74,11 @@ workflow FUNANNOTATE {
     if (forceIndependentGenemarkSet) {
         log.info "genemark_force_independent_strains: ${forceIndependentGenemarkSet.join(', ')}"
     }
+
+    // Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    // out values that get a Prodigal track alongside GeneMark-ES when also
+    // below predict_min_asm_bp.
+    def microsporidiaSet = loadMicrosporidiaOutSet()
 
     // ── Taxonomy filter ───────────────────────────────────────────────────────
     def taxonFilter
@@ -186,7 +191,7 @@ workflow FUNANNOTATE {
         return
     }
 
-    FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet, forceIndependentGenemarkSet)
+    FUNANNOTATE_PREDICTION(FUNANNOTATE_RNASEQ.out.predict_input, abinitioReuseMap, forceIndependentSet, forceIndependentGenemarkSet, microsporidiaSet)
 
     FUNANNOTATE_ANNOTATION(FUNANNOTATE_PREDICTION.out.metadata, FUNANNOTATE_RNASEQ.out.reads, taxonFilter, asmidFilter, suppressFilter)
 }
