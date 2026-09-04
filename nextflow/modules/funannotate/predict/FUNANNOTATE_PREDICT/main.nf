@@ -270,6 +270,27 @@ process FUNANNOTATE_PREDICT {
         WEIGHT_ARGS+=(genemark:1)
     fi
 
+    # other_gff/genemark_gtf are `val`, not `path`, in this process's input
+    # tuple -- Nextflow never stages/symlinks them into THIS task's own
+    # \$PWD, so they're referenced by their original absolute path under
+    # GENEMARK_RUN's own separate task work directory. Same missing-bind bug
+    # class already documented above for \$PWD/genome_input.fa: a path
+    # outside SING_BINDS's explicit list is invisible inside the container
+    # even though the host shell can read it fine. Confirmed empirically
+    # (2026-09-04, real non-stub run against Ordospora colligata OC4):
+    # without this, funannotate predict fails with "<path>/Ordospora_
+    # colligata_OC4.other.gff3 is not a valid file, exiting" despite the
+    # host-side `[ -s "${other_gff}" ]` check above having already confirmed
+    # the file exists and is non-empty. Mirrors GENEMARK_RUN's own
+    # training_bam dirname-binding pattern (GENEMARK_RUN/main.nf).
+    if [ -n "${other_gff}" ]; then
+        SING_BINDS="\$SING_BINDS,\$(dirname "${other_gff}"):\$(dirname "${other_gff}")"
+    fi
+    if [ -n "${genemark_gtf}" ]; then
+        SING_BINDS="\$SING_BINDS,\$(dirname "${genemark_gtf}"):\$(dirname "${genemark_gtf}")"
+    fi
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+
     \$SING funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
