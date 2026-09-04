@@ -481,9 +481,20 @@ workflow FUNANNOTATE_RNASEQ {
         // (checked first) catches shared-Trinity rows whose ANI tier says the
         // representative's transcriptome is too divergent (or unmeasured) to trust --
         // these bypass FUNANNOTATE_TRAIN exactly like genuinely RNA-seq-less strains.
+        //
+        // has_rnaseq REQUIRES real reads (r1 or se) -- a non-empty trinity_fa alone is
+        // NOT sufficient. `funannotate train --trinity <fa>` with no --left_norm/
+        // --right_norm/--single_norm hard-fails ("No short or long reads detected,
+        // cannot run training pipeline") in funannotate 1.9.0 regardless of --trinity,
+        // so any row with real reads currently absent (a stale/cached trinity_fa left
+        // over from before this species' reads were blacklisted/failed re-download, or
+        // a hybrid composite trinity_fa built with no reads at all) can NEVER complete
+        // FUNANNOTATE_TRAIN -- it just burns a 96GB/16cpu job and retries forever since
+        // the failure happens before PASA starts, so the composite-tier graceful-degrade
+        // check below (which greps for PASA's own summary line) never catches it either.
         def branched = train_input.branch {
             ani_skip:   it[13] == 'skip' && it[12].size() > 0
-            has_rnaseq: it[9].size() > 0 || it[11].size() > 0 || it[12].size() > 0
+            has_rnaseq: it[9].size() > 0 || it[11].size() > 0
             no_rnaseq:  true
         }
         def predict_no_rnaseq = branched.no_rnaseq.mix(branched.ani_skip)
