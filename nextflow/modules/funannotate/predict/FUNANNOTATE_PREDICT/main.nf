@@ -17,7 +17,7 @@ process FUNANNOTATE_PREDICT {
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), val(shared_params_json), val(genemark_gtf)
+          val(genome_fa), val(shared_params_json), val(genemark_gtf), val(other_gff)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -68,6 +68,21 @@ process FUNANNOTATE_PREDICT {
     # missing-bind bug class as GENEMARK_RUN; manually-built \$SING commands
     # get none of Nextflow's automatic task-workdir binding.
     SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
+    # In the shared production funannotate_db, most BUSCO lineages (including
+    # microsporidia_odb10) are symlinks out to a separate DB tree (e.g.
+    # /srv/projects/db/BUSCO/...); binding funannotate_db itself does NOT
+    # bring the symlink TARGET into the container, so predict's own startup
+    # "--busco_db exists" check fails with "<lineage> busco database is not
+    # found" even though the symlink resolves fine on the host. Resolve the
+    # real (symlink-dereferenced) path dynamically and bind its parent dir,
+    # exactly like GM_KEY_DIR does in GENEMARK_RUN/main.nf for the GeneMark
+    # license symlink -- do NOT hardcode a host-specific prefix like /srv, so
+    # this stays portable across HPC systems (and a no-op, safe re-bind of an
+    # already-bound path, when the lineage is a real directory rather than a
+    # symlink, e.g. dikarya).
+    BUSCO_LINEAGE_REAL=\$(readlink -f "${params.funannotate_db}/${busco_lineage}" 2>/dev/null || echo "${params.funannotate_db}/${busco_lineage}")
+    BUSCO_LINEAGE_DIR=\$(dirname "\$BUSCO_LINEAGE_REAL")
+    SING_BINDS="\$SING_BINDS,\$BUSCO_LINEAGE_DIR:\$BUSCO_LINEAGE_DIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"
@@ -157,7 +172,7 @@ process FUNANNOTATE_PREDICT {
             --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
             --max-contigs ${params.predict_frag_max_contigs})
     echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
-    if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
+    if [ "\$ASM_VERDICT" = "small_fragmented" ] && [ ! -s "${other_gff}" ]; then
         echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
         mkdir -p "${params.target}"
         [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
@@ -165,6 +180,8 @@ process FUNANNOTATE_PREDICT {
         touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
         touch ${out}.predict.done
         exit 0
+    elif [ "\$ASM_VERDICT" = "small_fragmented" ]; then
+        echo "[INFO] ${out} is small/fragmented but has Prodigal evidence (${other_gff}); proceeding instead of skipping" >&2
     fi
 
     # Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md):
@@ -205,18 +222,95 @@ process FUNANNOTATE_PREDICT {
     # replaces the whole list on a second -w occurrence rather than merging
     # (verified directly against argparse) -- a second `-w genemark:1` would
     # silently drop codingquarry:0/glimmerhmm:0 entirely.
+    # Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    # other_gff non-empty means GENEMARK_RUN ran the Prodigal supplement for
+    # this genome (is_microsporidia=true AND below predict_min_asm_bp).
+    # AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
+    # training models these genomes don't have (Microsporidia_predict
+    # STATUS.md:73-75) -- this does NOT change augustus/snap weighting for any
+    # genome where other_gff is empty, which keeps today's default-on
+    # behavior. --no-evm-partitions and --min_protlen 30 mirror the
+    # validated recipe (microsporidia-default.json) for these near-zero-
+    # intergenic compact genomes; both are new flags this pipeline didn't
+    # pass before, applied ONLY on this branch.
+    #
+    # CORRECTION (2026-09-04, superseding the paragraph this replaces): a
+    # real, non-stub run against Ordospora colligata OC4 proved the claim
+    # below wrong. predict.py sets RunModes["augustus"] (to "pretrained",
+    # "busco", or "pasa") UNCONDITIONALLY, independent of augustus/snap/
+    # glimmerhmm's EVM weight -- weight only controls whether that
+    # predictor's OUTPUT is included in the final EVM consensus, not
+    # whether predict.py attempts to prepare/train it at all. This is why
+    # --busco_seed_species (see below) is required regardless of weight.
+    # What zeroing the weight DOES still guarantee, confirmed by the real
+    # run's own gene count matching the standalone reference within ~1%
+    # (see Task 5 Step 6 in nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    # augustus/snap/glimmerhmm's training/reuse still happens (fast, via a
+    # pre-existing --busco_seed_species entry's info.json, not a fresh
+    # from-scratch BUSCO run against this genome's own too-few complete
+    # models -- Microsporidia_predict/STATUS.md:73-82's 36-vs-200 failure),
+    # but their EVM weight of 0 excludes their output from the final gene
+    # models regardless of what that training produced.
+    # Do NOT also add --min_training_models 0 or drop --busco_db here --
+    # neither is necessary and both would be pure noise.
     GENEMARK_GTF_FLAG=()
+    OTHER_GFF_FLAG=()
+    EXTRA_PREDICT_ARGS=()
     WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
+    if [ -s "${other_gff}" ]; then
+        echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
+        OTHER_GFF_FLAG=(--other_gff "${other_gff}:5")
+        WEIGHT_ARGS+=(augustus:0 snap:0)
+        # --busco_seed_species is REQUIRED here, not cosmetic: predict.py
+        # unconditionally sets RunModes["augustus"]="busco" and requires a
+        # pre-existing trained_species entry to seed it, REGARDLESS of
+        # augustus/snap EVM weight (confirmed directly: RunModes["augustus"]
+        # population happens before/independent of the weight-gated EVM
+        # combiner step -- our earlier belief that zeroing the weight alone
+        # skips this entirely was wrong for THIS code path). Without a valid
+        # entry, predict hard-aborts with "ERROR: --busco_seed_species {} is
+        # not valid" (confirmed by a real, non-stub run against Ordospora
+        # colligata OC4). The literal string "microsporidia" is NOT a valid
+        # seed species -- confirmed neither this project nor the shared
+        # production funannotate_db has ever registered an Augustus species
+        # by that name (checked directly: only real microsporidia strain
+        # entries like Encephalitozoon_cuniculi exist). Use an existing real
+        # trained species as the seed instead -- its own weight is 0 so its
+        # actual training output never influences the final EVM gene models,
+        # it only exists to satisfy this startup precondition.
+        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30 --busco_seed_species Encephalitozoon_cuniculi)
+    fi
     # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
-    # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf), so a
-    # non-empty-string check on the path would still pass --genemark_gtf
-    # <0-byte file> -w genemark:1 -- weight-1 evidence that contributes
-    # nothing while claiming to.
+    # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf).
     if [ -s "${genemark_gtf}" ]; then
         echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
         GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
         WEIGHT_ARGS+=(genemark:1)
     fi
+
+    # other_gff/genemark_gtf are `val`, not `path`, in this process's input
+    # tuple -- Nextflow never stages/symlinks them into THIS task's own
+    # \$PWD, so they're referenced by their original absolute path under
+    # GENEMARK_RUN's own separate task work directory. Same missing-bind bug
+    # class already documented above for \$PWD/genome_input.fa: a path
+    # outside SING_BINDS's explicit list is invisible inside the container
+    # even though the host shell can read it fine. Confirmed empirically
+    # (2026-09-04, real non-stub run against Ordospora colligata OC4):
+    # without this, funannotate predict fails with "<path>/Ordospora_
+    # colligata_OC4.other.gff3 is not a valid file, exiting" despite the
+    # host-side `[ -s "${other_gff}" ]` check above having already confirmed
+    # the file exists and is non-empty. Mirrors GENEMARK_RUN's own
+    # training_bam dirname-binding pattern (GENEMARK_RUN/main.nf).
+    # -s not -n (matching the flag-construction checks above): a set-but-empty
+    # or set-but-missing path must not add a bind whose source doesn't exist --
+    # apptainer refuses to start if it does.
+    if [ -s "${other_gff}" ]; then
+        SING_BINDS="\$SING_BINDS,\$(dirname "${other_gff}"):\$(dirname "${other_gff}")"
+    fi
+    if [ -s "${genemark_gtf}" ]; then
+        SING_BINDS="\$SING_BINDS,\$(dirname "${genemark_gtf}"):\$(dirname "${genemark_gtf}")"
+    fi
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     \$SING funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
@@ -225,7 +319,7 @@ process FUNANNOTATE_PREDICT {
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
-        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" || true
+        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" || true
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"

@@ -431,6 +431,11 @@
                     "description": "Pre-flight: contig count above this counts as 'fragmented'.",
                     "default": 1000
                 },
+                "microsporidia_phylum": {
+                    "type": "string",
+                    "default": "Microsporidia",
+                    "description": "samples.csv PHYLUM value that, combined with predict_min_asm_bp, gates the Prodigal ab-initio supplement. Empty string disables the feature."
+                },
                 "share_abinitio_params": {
                     "type": "boolean",
                     "description": "Reuse trained AUGUSTUS/SNAP/GeneMark-ES parameters from a species' ANI-qualified representative instead of retraining per strain. See todo/species_level_abinitio_reuse.md.",
