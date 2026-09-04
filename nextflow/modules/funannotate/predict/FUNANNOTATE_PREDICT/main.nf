@@ -243,7 +243,16 @@ process FUNANNOTATE_PREDICT {
         echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
         OTHER_GFF_FLAG=(--other_gff "${other_gff}:5")
         WEIGHT_ARGS+=(augustus:0 snap:0)
-        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30)
+        # --busco_seed_species microsporidia is REQUIRED here, not cosmetic:
+        # without it funannotate predict hard-aborts immediately with
+        # "ERROR: --busco_seed_species {} is not valid as it is not in
+        # database" regardless of augustus/snap weight (confirmed by a real,
+        # non-stub run against Ordospora colligata OC4 -- omitting this flag
+        # was a real gap this plan's original Task 4 Step 5 missed relative
+        # to the validated reference implementation, which always passes
+        # --busco_seed_species microsporidia; see
+        # ../../Microsporidia_predict/scripts/run_microsporidia_predict.py).
+        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30 --busco_seed_species microsporidia)
     fi
     # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
     # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf).
