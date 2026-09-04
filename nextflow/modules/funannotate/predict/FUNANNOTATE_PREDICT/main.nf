@@ -17,7 +17,7 @@ process FUNANNOTATE_PREDICT {
     input:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
-          val(genome_fa), val(shared_params_json), val(genemark_gtf)
+          val(genome_fa), val(shared_params_json), val(genemark_gtf), val(other_gff)
 
     output:
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
@@ -157,7 +157,7 @@ process FUNANNOTATE_PREDICT {
             --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
             --max-contigs ${params.predict_frag_max_contigs})
     echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
-    if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
+    if [ "\$ASM_VERDICT" = "small_fragmented" ] && [ ! -s "${other_gff}" ]; then
         echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
         mkdir -p "${params.target}"
         [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
@@ -165,6 +165,8 @@ process FUNANNOTATE_PREDICT {
         touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
         touch ${out}.predict.done
         exit 0
+    elif [ "\$ASM_VERDICT" = "small_fragmented" ]; then
+        echo "[INFO] ${out} is small/fragmented but has Prodigal evidence (${other_gff}); proceeding instead of skipping" >&2
     fi
 
     # Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md):
@@ -205,13 +207,46 @@ process FUNANNOTATE_PREDICT {
     # replaces the whole list on a second -w occurrence rather than merging
     # (verified directly against argparse) -- a second `-w genemark:1` would
     # silently drop codingquarry:0/glimmerhmm:0 entirely.
+    // Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    // other_gff non-empty means GENEMARK_RUN ran the Prodigal supplement for
+    // this genome (is_microsporidia=true AND below predict_min_asm_bp).
+    // AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
+    // training models these genomes don't have (Microsporidia_predict
+    // PLAN.md 9.15) -- this does NOT change augustus/snap weighting for any
+    // genome where other_gff is empty, which keeps today's default-on
+    // behavior. --no-evm-partitions and --min_protlen 30 mirror the
+    // validated recipe (microsporidia-default.json) for these near-zero-
+    // intergenic compact genomes; both are new flags this pipeline didn't
+    // pass before, applied ONLY on this branch.
+    //
+    // Why zeroing the weight is enough, and no further BUSCO change is
+    // needed: funannotate's predict.py only populates RunModes["augustus"]/
+    // ["snap"] when their StartWeight > 0; RunBusco is only set True when
+    // some RunModes value == "busco". With augustus/snap/glimmerhmm all at
+    // weight 0, RunBusco never becomes True and BUSCO is never invoked at
+    // all -- not "invoked and tolerated despite too few models". The
+    // --min_training_models 30 check a few lines below is itself nested
+    // inside `if "augustus" in RunModes:`, so it stays unreachable dead code
+    // on this branch. This was confirmed by tracing predict.py directly (not
+    // just inferred) and matches the failure already documented in
+    // Microsporidia_predict/STATUS.md:73-82 (passing --busco_db
+    // microsporidia_odb10 with augustus/snap weight > 0 found only 36
+    // complete BUSCO models against a >=200 requirement and failed; the fix
+    // there was this same weight-zeroing, not any BUSCO-side workaround).
+    // Do NOT also add --min_training_models 0 or drop --busco_db here --
+    // neither is necessary and both would be pure noise.
     GENEMARK_GTF_FLAG=()
+    OTHER_GFF_FLAG=()
+    EXTRA_PREDICT_ARGS=()
     WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
+    if [ -s "${other_gff}" ]; then
+        echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
+        OTHER_GFF_FLAG=(--other_gff "${other_gff}:5")
+        WEIGHT_ARGS+=(augustus:0 snap:0)
+        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30)
+    fi
     # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
-    # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf), so a
-    # non-empty-string check on the path would still pass --genemark_gtf
-    # <0-byte file> -w genemark:1 -- weight-1 evidence that contributes
-    # nothing while claiming to.
+    # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf).
     if [ -s "${genemark_gtf}" ]; then
         echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
         GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
@@ -225,7 +260,7 @@ process FUNANNOTATE_PREDICT {
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
-        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" || true
+        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" || true
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"
