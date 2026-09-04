@@ -68,10 +68,16 @@ process GENEMARK_RUN {
     input:
     tuple val(out), val(asmid), val(species), val(strain),
           val(genome_fa), val(transl_table), val(mode), val(training_bam),
-          val(force_independent), val(shared_mod)
+          val(force_independent), val(shared_mod), val(is_microsporidia)
 
     output:
     tuple val(out), path("${out}.genemark.gtf"), emit: gtf
+    // Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    // always emitted (empty file when is_microsporidia=false or this genome
+    // didn't qualify), never optional -- same "always emit, sometimes empty"
+    // convention as `gtf` above, so downstream joins stay simple 1:1 instead
+    // of needing optional-output handling.
+    tuple val(out), path("${out}.other.gff3"), emit: other_gff
     // Keyed tuple, not a bare path: a batch can mix fresh-train rows (which
     // emit this) and fast-reuse rows (which don't, --predict_with produces
     // no new .mod) -- a bare `optional: true` path output would desync
@@ -174,6 +180,30 @@ process GENEMARK_RUN {
         touch "${out}.genemark.gtf"
         rm -f genome.fa
         exit 0
+    fi
+
+    # ── Microsporidia Prodigal supplement ────────────────────────────────────
+    # Gated on PHYLUM (is_microsporidia, computed once in Groovy from
+    # loadMicrosporidiaOutSet()) AND total assembled bp -- NOT the
+    # small_fragmented composite verdict above, which also requires
+    # fragmentation and would miss the genome this recipe was validated on
+    # (Ordospora colligata OC4: 2.29 Mb, 15 contigs, N50 228,601 -- small but
+    # not fragmented). Runs alongside, not instead of, the GeneMark attempt
+    # below: the validated recipe used genemark:1 AND prodigal:5 together --
+    # if GeneMark independently fails on this genome, the existing empty-GTF
+    # degradation further down already absorbs that; this block does not
+    # change GeneMark's own success/failure handling at all.
+    touch "${out}.other.gff3"
+    if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
+        echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
+        module load prodigal
+        prodigal -i genome.fa -o "${out}.prodigal.raw.gff3" -f gff -p single -g "${transl_table}"
+        python "${workflow.projectDir}/bin/prodigal_hierarchy.py" \\
+            "${out}.prodigal.raw.gff3" "${out}.other.gff3"
+        PRODIGAL_REPORT="${params.target}/prodigal_selected_microsporidia.tsv"
+        mkdir -p "${params.target}"
+        [ -s "\$PRODIGAL_REPORT" ] || printf 'out\tasmid\treason\ttotal_bp\n' > "\$PRODIGAL_REPORT"
+        printf '%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "microsporidia_phylum_and_small" "\$ASM_BP" >> "\$PRODIGAL_REPORT"
     fi
 
     # ── --gcode support probe (funannotate's _genemark_supports_gcode()) ────
@@ -295,6 +325,7 @@ process GENEMARK_RUN {
     stub:
     """
     touch "${out}.genemark.gtf"
+    touch "${out}.other.gff3"
     if [ -z "${shared_mod}" ] || [ "${force_independent}" = "true" ]; then
         touch "${out}.genemark.mod"
     fi
