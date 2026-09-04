@@ -504,35 +504,35 @@ training and those are being zeroed anyway on this branch, see Step 4.)
 
 - [ ] **Step 4: Add the `--other_gff` flag, weight overrides, and the two missing validated-recipe flags** (replace lines 208-219)
 
-```groovy
-    // Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
-    // other_gff non-empty means GENEMARK_RUN ran the Prodigal supplement for
-    // this genome (is_microsporidia=true AND below predict_min_asm_bp).
-    // AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
-    // training models these genomes don't have (Microsporidia_predict
-    // PLAN.md 9.15) -- this does NOT change augustus/snap weighting for any
-    // genome where other_gff is empty, which keeps today's default-on
-    // behavior. --no-evm-partitions and --min_protlen 30 mirror the
-    // validated recipe (microsporidia-default.json) for these near-zero-
-    // intergenic compact genomes; both are new flags this pipeline didn't
-    // pass before, applied ONLY on this branch.
-    //
-    // Why zeroing the weight is enough, and no further BUSCO change is
-    // needed: funannotate's predict.py only populates RunModes["augustus"]/
-    // ["snap"] when their StartWeight > 0; RunBusco is only set True when
-    // some RunModes value == "busco". With augustus/snap/glimmerhmm all at
-    // weight 0, RunBusco never becomes True and BUSCO is never invoked at
-    // all -- not "invoked and tolerated despite too few models". The
-    // --min_training_models 30 check a few lines below is itself nested
-    // inside `if "augustus" in RunModes:`, so it stays unreachable dead code
-    // on this branch. This was confirmed by tracing predict.py directly (not
-    // just inferred) and matches the failure already documented in
-    // Microsporidia_predict/STATUS.md:73-82 (passing --busco_db
-    // microsporidia_odb10 with augustus/snap weight > 0 found only 36
-    // complete BUSCO models against a >=200 requirement and failed; the fix
-    // there was this same weight-zeroing, not any BUSCO-side workaround).
-    // Do NOT also add --min_training_models 0 or drop --busco_db here --
-    // neither is necessary and both would be pure noise.
+```bash
+    # Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
+    # other_gff non-empty means GENEMARK_RUN ran the Prodigal supplement for
+    # this genome (is_microsporidia=true AND below predict_min_asm_bp).
+    # AUGUSTUS/SNAP forced off here specifically -- both need >=200 BUSCO
+    # training models these genomes don't have (Microsporidia_predict
+    # PLAN.md 9.15) -- this does NOT change augustus/snap weighting for any
+    # genome where other_gff is empty, which keeps today's default-on
+    # behavior. --no-evm-partitions and --min_protlen 30 mirror the
+    # validated recipe (microsporidia-default.json) for these near-zero-
+    # intergenic compact genomes; both are new flags this pipeline didn't
+    # pass before, applied ONLY on this branch.
+    #
+    # Why zeroing the weight is enough, and no further BUSCO change is
+    # needed: funannotate's predict.py only populates RunModes["augustus"]/
+    # ["snap"] when their StartWeight > 0; RunBusco is only set True when
+    # some RunModes value == "busco". With augustus/snap/glimmerhmm all at
+    # weight 0, RunBusco never becomes True and BUSCO is never invoked at
+    # all -- not "invoked and tolerated despite too few models". The
+    # --min_training_models 30 check a few lines below is itself nested
+    # inside `if "augustus" in RunModes:`, so it stays unreachable dead code
+    # on this branch. This was confirmed by tracing predict.py directly (not
+    # just inferred) and matches the failure already documented in
+    # Microsporidia_predict/STATUS.md:73-82 (passing --busco_db
+    # microsporidia_odb10 with augustus/snap weight > 0 found only 36
+    # complete BUSCO models against a >=200 requirement and failed; the fix
+    # there was this same weight-zeroing, not any BUSCO-side workaround).
+    # Do NOT also add --min_training_models 0 or drop --busco_db here --
+    # neither is necessary and both would be pure noise.
     GENEMARK_GTF_FLAG=()
     OTHER_GFF_FLAG=()
     EXTRA_PREDICT_ARGS=()
