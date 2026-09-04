@@ -541,16 +541,23 @@ training and those are being zeroed anyway on this branch, see Step 4.)
         echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
         OTHER_GFF_FLAG=(--other_gff "${other_gff}:5")
         WEIGHT_ARGS+=(augustus:0 snap:0)
-        # --busco_seed_species microsporidia is REQUIRED here, not cosmetic:
-        # without it funannotate predict hard-aborts immediately with
-        # "ERROR: --busco_seed_species {} is not valid as it is not in
-        # database" regardless of augustus/snap weight (confirmed by a real,
-        # non-stub run against Ordospora colligata OC4 -- this plan's
-        # original version of this step missed this flag relative to the
-        # validated reference implementation, which always passes
-        # --busco_seed_species microsporidia; see
-        # ../../Microsporidia_predict/scripts/run_microsporidia_predict.py).
-        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30 --busco_seed_species microsporidia)
+        # --busco_seed_species is REQUIRED here, not cosmetic: predict.py
+        # unconditionally sets RunModes["augustus"]="busco" and requires a
+        # pre-existing trained_species entry to seed it, REGARDLESS of
+        # augustus/snap EVM weight (confirmed directly: RunModes["augustus"]
+        # population happens before/independent of the weight-gated EVM
+        # combiner step). Without a valid entry, predict hard-aborts with
+        # "ERROR: --busco_seed_species {} is not valid" (confirmed by a
+        # real, non-stub run against Ordospora colligata OC4). The literal
+        # string "microsporidia" is NOT a valid seed species -- confirmed
+        # neither this project nor the shared production funannotate_db has
+        # ever registered an Augustus species by that name (only real
+        # microsporidia strain entries like Encephalitozoon_cuniculi
+        # exist). Use an existing real trained species as the seed instead
+        # -- its own weight is 0 so its actual training output never
+        # influences the final EVM gene models, it only exists to satisfy
+        # this startup precondition.
+        EXTRA_PREDICT_ARGS+=(--no-evm-partitions --min_protlen 30 --busco_seed_species Encephalitozoon_cuniculi)
     fi
     # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
     # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf).
