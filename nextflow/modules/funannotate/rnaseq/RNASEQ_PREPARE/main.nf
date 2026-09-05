@@ -45,14 +45,23 @@ process RNASEQ_PREPARE {
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate/dev-1.9
-    module load fastp
+    module load apptainer
 
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    # Containerized funannotate/Trinity: same funannotate-live image (rust-optimized
+    # Trinity v2.16.1 + PASA/EVM/minimap2/hisat2/fastp) that FUNANNOTATE_TRAIN runs
+    # through, instead of the host `module load funannotate/dev-1.9` build -- keeps
+    # the genome-guided Trinity-GG assembly pinned to the same image/version as
+    # every other Trinity invocation in the pipeline. See "which" note in
+    # FUNANNOTATE_TRAIN/main.nf: harmless host-shell function leak, unset defensively.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
+
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
+
+    SING_BINDS="--bind \$PWD:\$PWD,${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # ── Run full funannotate train on the representative genome ───────────────
     # Use SCRATCH for the funannotate output dir so Trinity/HISAT2/normalize
@@ -68,7 +77,7 @@ process RNASEQ_PREPARE {
     esac
 
     if [ -s "${r1}" ]; then
-        funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
+        \$SING funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
             --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
@@ -78,7 +87,7 @@ process RNASEQ_PREPARE {
             --stop_after_trinity --no_trimmomatic
     else
         echo "[INFO] RNASEQ_PREPARE: using single-end reads for ${out}"
-        funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
+        \$SING funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
             --single_norm ${se} --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\

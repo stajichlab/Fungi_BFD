@@ -67,7 +67,17 @@ process FUNANNOTATE_PREDICT {
     # is not a valid file" once it actually needed the raw genome FASTA. Same
     # missing-bind bug class as GENEMARK_RUN; manually-built \$SING commands
     # get none of Nextflow's automatic task-workdir binding.
-    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},\$TMPDIR:\$TMPDIR"
+    #
+    # gene_prediction_shared_abinitio and workflow.workDir are ALSO required here,
+    # not covered above: shared_params_json and genemark_gtf are declared as `val`
+    # (not `path`) inputs, so Nextflow never stages/symlinks them into this task's
+    # own \$PWD -- they are raw absolute host paths pointing at another process's
+    # persistent store (gene_prediction_shared_abinitio/<species>/parameters.json)
+    # or a sibling GENEMARK_RUN task's own work subdir (workDir/funannotate/xx/...).
+    # Without these binds, funannotate's `-p <parameters.json>` open() call fails
+    # with FileNotFoundError even though the file exists and is readable on the
+    # host -- confirmed 2026-09-04 against Neurospora_tetrasperma_FGSC_2509.
+    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"

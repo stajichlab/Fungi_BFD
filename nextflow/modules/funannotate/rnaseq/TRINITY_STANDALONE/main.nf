@@ -29,26 +29,34 @@ process TRINITY_STANDALONE {
     script:
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate/dev-1.9
+    module load apptainer
+
+    # Containerized Trinity: same funannotate-live image (rust-optimized Trinity
+    # v2.16.1) that FUNANNOTATE_TRAIN runs PASA/EVM through, instead of the
+    # host `module load funannotate/dev-1.9` build -- keeps every Trinity
+    # invocation in the pipeline pinned to one image/version.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
 
     export TMPDIR=\${SCRATCH:-/tmp}
     OUTDIR="\${SCRATCH:?}/trinity_${species_tag}"
+
+    SING_BINDS="--bind \$PWD:\$PWD,\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # Reads in rnaseq_reads/ are already normalized (in-silico read normalization by
     # RNASEQ_PREPARE's funannotate train --stop_after_trinity run), so skip Trinity's
     # own normalization step.
     if [ -s "${r1}" ]; then
         echo "[INFO] TRINITY_STANDALONE: paired-end de novo Trinity for ${species_tag}"
-        Trinity --seqType fq --no_normalize_reads \\
+        \$SING Trinity --seqType fq --no_normalize_reads \\
             --left ${r1} --right ${r2} \\
             --max_memory ${task.memory.toGiga()}G --CPU ${task.cpus} \\
             --output "\$OUTDIR" --full_cleanup \\
             > ${species_tag}.trinity-standalone.log 2>&1
     else
         echo "[INFO] TRINITY_STANDALONE: single-end de novo Trinity for ${species_tag}"
-        Trinity --seqType fq --no_normalize_reads \\
+        \$SING Trinity --seqType fq --no_normalize_reads \\
             --single ${se} \\
             --max_memory ${task.memory.toGiga()}G --CPU ${task.cpus} \\
             --output "\$OUTDIR" --full_cleanup \\
