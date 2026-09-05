@@ -14,6 +14,9 @@
 pipeline: "compare_ani"
 samples: "samples.csv"
 
+# restrict
+taxon: ""
+
 # ── ANI method ─────────────────────────────────────────────────────────────
 # skani (default) | mash | sourmash | fastani
 ani_method: "skani"

@@ -7,7 +7,7 @@
 # Submit from the PROJECT ROOT directory (where samples.csv lives):
 #   sbatch nextflow/run_functional_all.sh
 #
-# Tool selection lives in nextflow/params/params_functional_all.yaml
+# Tool selection lives in nextflow/param_files/params_functional_all.yaml
 # (booleans must go in a -params-file, not CLI --flag overrides, on this
 # repo's installed nextflow/nf-schema version -- confirmed 2026-08-26, see
 # that file's header comment).
@@ -27,7 +27,7 @@ export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singu
 
 mkdir -p logs/nextflow
 
-PARAMS_FILE=nextflow/params/params_functional_all.yaml
+PARAMS_FILE=nextflow/param_files/params_functional_all.yaml
 if [ ! -f "$PARAMS_FILE" ]; then
     echo "ERROR: $PARAMS_FILE not found in $(pwd) -- run from the project root (where samples.csv lives)" >&2
     exit 1
