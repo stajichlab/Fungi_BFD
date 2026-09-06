@@ -48,6 +48,7 @@ workflow FUNANNOTATE_RNASEQ {
     predict_genome_ch   // tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
     abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
     rnaseqRepOverride     // species_tag -> out, from loadRnaseqRepresentativeOverride()
+    rnaseqSkipSet          // Set<out>, from loadRnaseqSkipSet() -- forces pasaTierFor() to 'skip'
     hybridParentage       // hybrid_species_tag -> [parent_species_tag, ...], from loadHybridParentage()
                            // see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md
 
@@ -333,6 +334,13 @@ workflow FUNANNOTATE_RNASEQ {
         // every shared-Trinity strain falls back to 'relaxed' unconditionally.
         def aniSystemActive = !abinitioReuseMap.isEmpty()
         def pasaTierFor = { String out ->
+            // Manual escape hatch (rnaseq_skip.csv / loadRnaseqSkipSet()) checked first --
+            // a strain listed here always routes to predict_no_rnaseq regardless of ANI,
+            // even the representative itself (ani_to_representative hardcoded 100.0 would
+            // otherwise always win 'stringent' -- see DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md
+            // "known gap"). Use this when switching the RNA-seq representative
+            // (rnaseq_representative_override.csv) still doesn't produce usable evidence.
+            if (rnaseqSkipSet.contains(out)) return 'skip'
             if (!aniSystemActive) return 'relaxed'
             def ani = abinitioReuseMap[out]?.ani_to_representative
             if (ani == null) return 'skip'

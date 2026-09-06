@@ -60,11 +60,12 @@ process FUNANNOTATE_PREDICT {
     export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
     export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
-    # \$PWD (the task workdir, where genome_input.fa is inflated below) is NOT
-    # covered by any of the other binds -- confirmed empirically (2026-08-24):
-    # predict got through startup/training-file parsing (those paths are
-    # bound via target/training_target) but then failed with "genome_input.fa
-    # is not a valid file" once it actually needed the raw genome FASTA. Same
+    # \$PWD (the task workdir) is NOT covered by any of the other binds -- confirmed
+    # empirically (2026-08-24): predict got through startup/training-file parsing
+    # (those paths are bound via target/training_target) but then failed with
+    # "genome_input.fa is not a valid file" once it actually needed the raw genome
+    # FASTA (at the time, inflated into \$PWD; it now inflates into \$TMPDIR instead --
+    # see below -- but \$PWD still holds this task's other relative-path outputs). Same
     # missing-bind bug class as GENEMARK_RUN; manually-built \$SING commands
     # get none of Nextflow's automatic task-workdir binding.
     #
@@ -77,7 +78,31 @@ process FUNANNOTATE_PREDICT {
     # Without these binds, funannotate's `-p <parameters.json>` open() call fails
     # with FileNotFoundError even though the file exists and is readable on the
     # host -- confirmed 2026-09-04 against Neurospora_tetrasperma_FGSC_2509.
-    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR"
+    # nextflow/patches/funannotate/{predict.py,library.py} overlay the image's own
+    # vendored copies (bind-mounted at container-launch time -- no image rebuild).
+    # Real root cause (confirmed 2026-09-06 against Austropuccinia_psidii_Au3-C622-
+    # A115012, reproduced on 4 separate SLURM attempts via `sacct -j <id>.batch
+    # --format=State,MaxRSS`, every one OUT_OF_MEMORY with MaxRSS pinned at the task's
+    # memory limit, plus "Detected N oom_kill event(s)" in .command.log): library.py's
+    # checkMasklowMem() spawns a multiprocessing.Pool to compute masking stats per
+    # scaffold; its worker function (maskingstats2bed) built a Python list with one
+    # int per masked base (~34 bytes/base) before grouping into BED runs -- on this
+    # genome's largest scaffolds (up to 86 Mbp, >90% soft-masked) that is several GB
+    # PER WORKER, OOM-killing the cgroup. Once SIGKILL takes out a worker mid-task,
+    # Pool.join() blocks forever waiting on that worker's never-arriving result
+    # (CPython bpo-22393) -- explains the observed 12+ hour near-zero-CPU stall on
+    # every attempt: not an I/O hang, just OOM-then-deadlock. Fixed by rewriting
+    # maskingstats2bed to scan runs via regex (re.finditer) instead of a per-base
+    # list -- numerically identical output, and per-worker memory drops to roughly
+    # the sequence string itself plus a small list of (start,end) run tuples.
+    # (The prior comment here blamed an NFS rmtree hang on checkMasklowMem's tmpdir
+    # living under args.out instead of args.tmpdir/\$SCRATCH -- that bind is still
+    # applied below since it's harmless and arguably correct hygiene, but it was
+    # NOT the actual fix: job 28163305 already had this exact predict.py bind
+    # mounted and still OOM-hung identically. Don't trust that theory.)
+    PREDICT_PY_PATCH="${workflow.projectDir}/patches/funannotate/predict.py"
+    LIBRARY_PY_PATCH="${workflow.projectDir}/patches/funannotate/library.py"
+    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR,\$PREDICT_PY_PATCH:/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/predict.py,\$LIBRARY_PY_PATCH:/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/library.py"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     PREDICTDIR="${params.target}/${out}"
@@ -146,9 +171,19 @@ process FUNANNOTATE_PREDICT {
 
     # Inflate a gzipped clean/masked genome to a local uncompressed copy; funannotate
     # cannot read a gzipped FASTA via -i. Plain (uncompressed) genomes pass through.
+    # Inflated into \$TMPDIR (node-local \$SCRATCH, exported above), NOT \$PWD (this
+    # task's workdir, which lives on /bigdata/NFS): predict rereads this multi-GB
+    # genome file across its own steps, and node-local scratch is the right place for
+    # it regardless. NOTE (2026-09-06): this was originally written up as fixing an
+    # "NFS-latency-bound genome parse" for Austropuccinia_psidii_Au3-C622-A115012 --
+    # that theory was wrong (the actual 20-scaffold, ~1.1 GB genome parses to
+    # per-scaffold FASTA files in ~10s from NFS; the real 12+ hour stall was an
+    # OOM-kill + multiprocessing.Pool.join() deadlock inside checkMasklowMem, see
+    # SING_BINDS/LIBRARY_PY_PATCH above). Kept as a legitimate hygiene improvement,
+    # not because it was load-bearing for that failure.
     GENOME_FA="${genome_fa}"
     case "\$GENOME_FA" in
-        *.gz) echo "[INFO] Inflating compressed genome \$GENOME_FA"; pigz -dc "\$GENOME_FA" > genome_input.fa; GENOME_IN="\$(pwd)/genome_input.fa" ;;
+        *.gz) echo "[INFO] Inflating compressed genome \$GENOME_FA to \$TMPDIR"; pigz -dc "\$GENOME_FA" > "\$TMPDIR/genome_input.fa"; GENOME_IN="\$TMPDIR/genome_input.fa" ;;
         *)    GENOME_IN="\$GENOME_FA" ;;
     esac
 

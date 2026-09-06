@@ -504,6 +504,11 @@
                     "format": "file-path",
                     "description": "hybrid_species_tag,parent_species rows for interspecific hybrid-cross species (e.g. \"Saccharomyces cerevisiae x Saccharomyces eubayanus\"), generated/relinted by scripts/bootstrap_hybrid_metadata.py. A hybrid species_tag present here is routed to composite parent-transcript RNA-seq evidence instead of the normal per-species representative pick; see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md."
                 },
+                "rnaseq_skip_csv": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "out,reason rows for strains that should skip PASA/RNA-seq training outright and go straight to ab-initio-only prediction, regardless of ani_to_representative -- for cases where switching the RNA-seq representative still doesn't produce usable evidence (e.g. the shared Trinity-GG genuinely doesn't map to this strain's genome no matter which sibling strain's reads built it). Unlike suppress.txt, this keeps the strain in ANI/ab-initio reuse and every other stage. Absent by default -- every strain then keeps its normal ANI-based tier."
+                },
                 "antismash_sif": {
                     "type": "string",
                     "description": "antiSMASH Singularity image used by funannotate's ANTISMASH_RUN/SETUP_ANTISMASH_DB modules, pinned to the exact bioconda build backing the antismash_databases directory (distinct from the BFD pipeline's antismash_standalone_sif, which is a different, incompatible image+DB)."
