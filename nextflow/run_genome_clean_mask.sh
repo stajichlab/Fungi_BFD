@@ -5,7 +5,7 @@
 
 # Run the funannotate pipeline through genome cleaning + tantan soft-masking,
 # then stop -- no RNA-seq acquisition, training, prediction, or annotation.
-# Params in nextflow/params/params_genome_clean_mask.yaml
+# Params in nextflow/param_files/params_genome_clean_mask.yaml
 # (stop_after_genome_prep: true, run_repeatmasker: true).
 #
 # Differs from run_clean_genome.sh's --only_clean: that stops BEFORE masking
@@ -44,7 +44,7 @@ mkdir -p logs/nextflow
 # resolve incorrectly once this runs inside a SLURM job's environment; see
 # ~/.claude/CLAUDE.md). Matches run_funannotate.sh's PARAMS_FILE convention:
 # submit from the project root, where samples.csv lives.
-PARAMS_FILE=nextflow/params/params_genome_clean_mask.yaml
+PARAMS_FILE=nextflow/param_files/params_genome_clean_mask.yaml
 if [ ! -f "$PARAMS_FILE" ]; then
     echo "ERROR: $PARAMS_FILE not found in $(pwd) -- run from the project root (where samples.csv lives)" >&2
     exit 1

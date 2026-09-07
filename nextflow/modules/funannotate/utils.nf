@@ -221,6 +221,37 @@ def loadRnaseqRepresentativeOverride() {
     return m
 }
 
+// Eagerly loads rnaseq_skip_csv into a Set<String> of `out` ASMIDs that should
+// bypass PASA/RNA-seq training entirely, regardless of ani_to_representative --
+// see pasaTierFor() in nextflow/subworkflows/local/FUNANNOTATE_RNASEQ.nf, which
+// checks this set before falling back to its normal ANI-based tiering and returns
+// 'skip' unconditionally for a listed strain (routes to predict_no_rnaseq, same
+// path as a genuinely RNA-seq-less strain). Unlike suppress.txt this does NOT
+// remove the strain from ANI/ab-initio reuse or any other stage -- only the RNA-seq
+// tier is affected. Returns an empty set when no CSV exists yet -- every strain
+// then keeps its normal ANI-based tier.
+def loadRnaseqSkipSet() {
+    def s = [] as Set
+    def csv = file(params.rnaseq_skip_csv as String)
+    if (!csv.exists()) return s
+    def lines = csv.readLines()
+    if (lines.size() < 2) return s
+    def header = lines[0].split(',', -1)*.trim()
+    def iOut = header.indexOf('out')
+    if (iOut < 0) {
+        log.warn "rnaseq_skip_csv ${csv} missing 'out' column -- ignoring"
+        return s
+    }
+    lines.drop(1).each { line ->
+        if (!line.trim()) return
+        def f = line.split(',', -1)
+        if (f.size() <= iOut) return
+        s << f[iOut].trim()
+    }
+    log.info "Loaded ${s.size()} RNA-seq skip entries from ${csv}"
+    return s
+}
+
 // Eagerly loads hybrid_parentage_csv into hybrid_species_tag -> [parent_species, ...].
 // See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Narrow/long format -- one row
 // per (hybrid, parent) pair, so 2-way through N-way crosses need no schema change

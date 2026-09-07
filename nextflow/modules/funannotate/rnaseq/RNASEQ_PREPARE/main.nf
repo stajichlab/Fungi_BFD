@@ -22,6 +22,19 @@ process RNASEQ_PREPARE {
     path("${species_tag}.funannotate-trinity.log"), optional: true, emit: train_log
 
     script:
+    // Real, symlink-resolved location of rnaseq_reads/ (itself a top-level
+    // symlink into ../rnaseq_reads from launchDir) -- same missing-bind bug
+    // class documented in FUNANNOTATE_TRAIN/main.nf: funannotate's
+    // --left_norm/--right_norm handling resolves its read arguments to their
+    // realpath() before symlinking them into its own scratch output tree, so
+    // without this bind the container can create the symlink (doesn't
+    // require the target to exist) but can never stat through it -- every
+    // invocation fails with "Read normalization failed, .../left.norm.fq.gz
+    // does not exist" even though the shell-level readlink -f below resolves
+    // the path correctly. RNASEQ_PREPARE never got this fix when
+    // FUNANNOTATE_TRAIN did (confirmed reproducing Albifimbria_verrucaria_Mv01
+    // 2026-09-05).
+    def rnaseqReadsDir = file("${launchDir}/rnaseq_reads").toRealPath()
     """
     # ── Empty-reads sentinel: no RNA-seq found by SRA_FETCH / SRA_FETCH_SE ──
     if [ ! -s "${r1}" ] && [ ! -s "${se}" ]; then
@@ -45,14 +58,23 @@ process RNASEQ_PREPARE {
     fi
 
     source /etc/profile.d/modules.sh 2>/dev/null || true
-    module load miniconda3
-    eval "\$(conda shell.bash hook)"
-    module load funannotate/dev-1.9
-    module load fastp
+    module load apptainer
 
-    export AUGUSTUS_CONFIG_PATH=${params.augustus_config}
-    export FUNANNOTATE_DB=${params.funannotate_db}
+    # Containerized funannotate/Trinity: same funannotate-live image (rust-optimized
+    # Trinity v2.16.1 + PASA/EVM/minimap2/hisat2/fastp) that FUNANNOTATE_TRAIN runs
+    # through, instead of the host `module load funannotate/dev-1.9` build -- keeps
+    # the genome-guided Trinity-GG assembly pinned to the same image/version as
+    # every other Trinity invocation in the pipeline. See "which" note in
+    # FUNANNOTATE_TRAIN/main.nf: harmless host-shell function leak, unset defensively.
+    unset -f which 2>/dev/null || true
+    unset which_declare 2>/dev/null || true
+
+    export APPTAINERENV_AUGUSTUS_CONFIG_PATH=${params.augustus_config}
+    export APPTAINERENV_FUNANNOTATE_DB=${params.funannotate_db}
     export TMPDIR=\${SCRATCH:-/tmp}
+
+    SING_BINDS="--bind \$PWD:\$PWD,${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${rnaseqReadsDir}:${rnaseqReadsDir},\$TMPDIR:\$TMPDIR"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # ── Run full funannotate train on the representative genome ───────────────
     # Use SCRATCH for the funannotate output dir so Trinity/HISAT2/normalize
@@ -67,9 +89,25 @@ process RNASEQ_PREPARE {
         *)    GENOME_IN="\$GENOME_FA" ;;
     esac
 
+    # Resolve r1/r2/se to their real, symlink-resolved location before handing
+    # them to funannotate. Nextflow stages them as symlinks directly in this
+    # task's own \$PWD -- passing them as-is can make funannotate's
+    # dirname(tmpdir) != dirname(left_norm) check (train.py) compare \$PWD to
+    # \$PWD and evaluate equal, which skips creating normalize/*.norm.fq.gz
+    # entirely ("Read normalization failed, .../left.norm.fq.gz does not
+    # exist") and silently produces a 0-transcript Trinity-GG assembly. Same
+    # fix as FUNANNOTATE_TRAIN/main.nf; whether this bites depends on how the
+    # task's \$PWD relates to the read path, so it doesn't reproduce every run.
+    R1_REAL="${r1}"
+    [ -e "\$R1_REAL" ] && R1_REAL="\$(readlink -f "\$R1_REAL")"
+    R2_REAL="${r2}"
+    [ -e "\$R2_REAL" ] && R2_REAL="\$(readlink -f "\$R2_REAL")"
+    SE_REAL="${se}"
+    [ -e "\$SE_REAL" ] && SE_REAL="\$(readlink -f "\$SE_REAL")"
+
     if [ -s "${r1}" ]; then
-        funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
-            --left_norm ${r1} --right_norm ${r2} --aligners minimap2 \\
+        \$SING funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
+            --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
@@ -78,8 +116,8 @@ process RNASEQ_PREPARE {
             --stop_after_trinity --no_trimmomatic
     else
         echo "[INFO] RNASEQ_PREPARE: using single-end reads for ${out}"
-        funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
-            --single_norm ${se} --aligners minimap2 \\
+        \$SING funannotate train -i "\$GENOME_IN" -o \$SCRATCH/${out} \\
+            --single_norm "\$SE_REAL" --aligners minimap2 \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\

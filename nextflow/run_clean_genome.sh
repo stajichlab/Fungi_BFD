@@ -4,7 +4,7 @@
 #SBATCH --output=logs/clean_genome_launch.%j.log
 
 # Run the funannotate pipeline ONLY through the genome-cleaning step, then stop.
-# only_clean (nextflow/params/params_only_clean.yaml) gates every downstream
+# only_clean (nextflow/param_files/params_only_clean.yaml) gates every downstream
 # process (masking, SRA fetch, train, predict, annotate) so just
 # SETUP_TAXONDB + cleaning run. Cleaned assemblies land in
 # input_clean_genomes/<asmid>.fa. For clean + tantan masking, then stop, see
@@ -20,7 +20,7 @@
 #   sbatch nextflow/run_clean_genome.sh
 #
 # Common overrides (safe on the CLI -- non-boolean; booleans must go in
-# nextflow/params/params_only_clean.yaml instead, confirmed 2026-08-26, see
+# nextflow/param_files/params_only_clean.yaml instead, confirmed 2026-08-26, see
 # that file's header comment):
 #   sbatch nextflow/run_clean_genome.sh --taxon 'PHYLUM:Basidiomycota'
 #   sbatch nextflow/run_clean_genome.sh --asmid GCA_000000000.1
@@ -39,7 +39,7 @@ export APPTAINER_CACHEDIR=${APPTAINER_CACHEDIR:-/bigdata/stajichlab/shared/singu
 
 mkdir -p logs/nextflow
 
-PARAMS_FILE=nextflow/params/params_only_clean.yaml
+PARAMS_FILE=nextflow/param_files/params_only_clean.yaml
 if [ ! -f "$PARAMS_FILE" ]; then
     echo "ERROR: $PARAMS_FILE not found in $(pwd) -- run from the project root (where samples.csv lives)" >&2
     exit 1

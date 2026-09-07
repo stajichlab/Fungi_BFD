@@ -190,6 +190,32 @@ When on:
      "this representative's own evidence is unusable" tier. See
      `DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md` for the incident this produced
      and the proposed alignment-floor fix (not yet implemented).
+   - **Known gap (2026-09-03, `Collybia_sordida_NBRC_112841`,
+     `GCA_010725545.3_Ls_assembly01`)**: `ani_to_representative` measures
+     whole-genome k-mer/composition similarity and doesn't detect localized,
+     indel-heavy assembly problems at transcribed loci. This strain's ANI to
+     representative `Lds1` was `98.23` (well over the `97.0` `stringent`
+     cutoff), but its PASA run aligned only ~100 of ~40k shared Trinity-GG
+     transcripts: `alignment.validations.output` showed ~35,200 of 35,460
+     alignment records failing, clustered at 80-90% (mostly 83-86%) identity
+     and spread across 190/192 scaffolds — a genome-wide pattern of
+     "Incontiguous alignment" / splice-site-validation failures consistent
+     with an unpolished or otherwise low-per-base-accuracy assembly, not real
+     strain divergence (which would show as scattered SNP mismatches, not
+     fragmented exon structure). Because the failure is assembly quality, not
+     divergence, reclassifying this strain to `relaxed` would not reliably
+     fix it (relaxed's 85% identity floor sits inside the observed 83-86%
+     cluster, and its 70% `%aligned` floor is still above many of the
+     observed values) — it would just risk building `FUNANNOTATE_TRAIN`
+     models on fragmented, low-confidence alignments. Resolution was to
+     suppress the assembly outright (added to `suppress.txt`) rather than
+     retier it. **Takeaway**: a high `ani_to_representative` is necessary but
+     not sufficient for `stringent` to be safe — if a `stringent`-tiered
+     strain aligns almost nothing, check `alignment.validations.output` for
+     an identity/fragmentation pattern spread across most scaffolds before
+     assuming the tiering threshold needs adjusting; that pattern points to
+     assembly quality and is a suppress-candidate, not a tier-tuning
+     candidate.
 7. Additional gates inside `FUNANNOTATE_TRAIN`
    (`modules/funannotate/predict/FUNANNOTATE_TRAIN/main.nf`):
    `train_min_trinity_transcripts` (default 2000, set 0 to disable) skips

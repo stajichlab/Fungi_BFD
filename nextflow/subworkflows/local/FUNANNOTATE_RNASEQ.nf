@@ -48,6 +48,7 @@ workflow FUNANNOTATE_RNASEQ {
     predict_genome_ch   // tuple(out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid)
     abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
     rnaseqRepOverride     // species_tag -> out, from loadRnaseqRepresentativeOverride()
+    rnaseqSkipSet          // Set<out>, from loadRnaseqSkipSet() -- forces pasaTierFor() to 'skip'
     hybridParentage       // hybrid_species_tag -> [parent_species_tag, ...], from loadHybridParentage()
                            // see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md
 
@@ -333,6 +334,13 @@ workflow FUNANNOTATE_RNASEQ {
         // every shared-Trinity strain falls back to 'relaxed' unconditionally.
         def aniSystemActive = !abinitioReuseMap.isEmpty()
         def pasaTierFor = { String out ->
+            // Manual escape hatch (rnaseq_skip.csv / loadRnaseqSkipSet()) checked first --
+            // a strain listed here always routes to predict_no_rnaseq regardless of ANI,
+            // even the representative itself (ani_to_representative hardcoded 100.0 would
+            // otherwise always win 'stringent' -- see DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md
+            // "known gap"). Use this when switching the RNA-seq representative
+            // (rnaseq_representative_override.csv) still doesn't produce usable evidence.
+            if (rnaseqSkipSet.contains(out)) return 'skip'
             if (!aniSystemActive) return 'relaxed'
             def ani = abinitioReuseMap[out]?.ani_to_representative
             if (ani == null) return 'skip'
@@ -481,9 +489,20 @@ workflow FUNANNOTATE_RNASEQ {
         // (checked first) catches shared-Trinity rows whose ANI tier says the
         // representative's transcriptome is too divergent (or unmeasured) to trust --
         // these bypass FUNANNOTATE_TRAIN exactly like genuinely RNA-seq-less strains.
+        //
+        // has_rnaseq REQUIRES real reads (r1 or se) -- a non-empty trinity_fa alone is
+        // NOT sufficient. `funannotate train --trinity <fa>` with no --left_norm/
+        // --right_norm/--single_norm hard-fails ("No short or long reads detected,
+        // cannot run training pipeline") in funannotate 1.9.0 regardless of --trinity,
+        // so any row with real reads currently absent (a stale/cached trinity_fa left
+        // over from before this species' reads were blacklisted/failed re-download, or
+        // a hybrid composite trinity_fa built with no reads at all) can NEVER complete
+        // FUNANNOTATE_TRAIN -- it just burns a 96GB/16cpu job and retries forever since
+        // the failure happens before PASA starts, so the composite-tier graceful-degrade
+        // check below (which greps for PASA's own summary line) never catches it either.
         def branched = train_input.branch {
             ani_skip:   it[13] == 'skip' && it[12].size() > 0
-            has_rnaseq: it[9].size() > 0 || it[11].size() > 0 || it[12].size() > 0
+            has_rnaseq: it[9].size() > 0 || it[11].size() > 0
             no_rnaseq:  true
         }
         def predict_no_rnaseq = branched.no_rnaseq.mix(branched.ani_skip)
