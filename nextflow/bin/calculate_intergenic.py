@@ -58,8 +58,8 @@ def parse_gff_get_distances(gff, debug=False):
                     continue
                 gene_id = group_data["ID"]
                 if gene_id in genedata:
-                    print(f"WARNING: Duplicate gene ID {gene_id} in {gff}")
-                    continue
+                    sys.exit(f"ERROR: Duplicate gene ID {gene_id} in {gff} -- refusing to continue")
+
                 genedata[gene_id] = {
                     "chrom": fields[0],
                     "start": fstart,
