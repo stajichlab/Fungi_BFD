@@ -41,43 +41,24 @@ rm -f "$DB"
 
 echo "Building $DB from $SRC"
 
-# ─── species ──────────────────────────────────────────────────────────────────
-duckdb -c "
-CREATE TABLE species AS SELECT * FROM read_parquet('$SRC/species.parquet');
-CREATE UNIQUE INDEX idx_species_locustag ON species(LOCUSTAG);
-CREATE UNIQUE INDEX idx_species_asm      ON species(ASMID);
--- Non-unique: a genus-level taxonomy tuple is shared by multiple species.
-CREATE INDEX idx_species_taxonomy ON species(PHYLUM, CLASS, \"ORDER\", FAMILY, GENUS);
-" "$DB"
-
-# ─── asm_stats ────────────────────────────────────────────────────────────────
-# Source has ASMID/gc_pct/total_length_bp; we join to species for LOCUSTAG
-# and alias columns to match existing R-script conventions (GC_PERCENT, TOTAL_LENGTH).
-duckdb -c "
-CREATE TABLE asm_stats AS
-SELECT
-    sp.LOCUSTAG,
-    a.ASMID,
-    a.contig_count,
-    a.total_length_bp   AS TOTAL_LENGTH,
-    a.min_contig_bp,
-    a.max_contig_bp,
-    a.median_contig_bp,
-    a.mean_contig_bp,
-    a.L50, a.N50_bp, a.L90, a.N90_bp,
-    a.gc_pct            AS GC_PERCENT,
-    a.n_gap_count,
-    a.total_n_bases,
-    a.masked_bases,
-    a.masked_pct,
-    a.t2t_scaffolds,
-    a.telomere_fwd,
-    a.telomere_rev
-FROM read_parquet('$SRC/asm_stats.parquet') AS a
-JOIN species AS sp USING(ASMID);
-CREATE UNIQUE INDEX idx_asm_locustag ON asm_stats(LOCUSTAG);
-CREATE UNIQUE INDEX idx_asm_asmid    ON asm_stats(ASMID);
-" "$DB"
+# ─── species / asm_stats / busco_genome: schema-contract-driven VIEWs ───────
+# These three are VIEWs over tables/*.parquet, not materialized copies -- see
+# sql/table_schema.json and
+# docs/superpowers/specs/2026-09-09-bfd-duckdb-datalake-design.md. Everything
+# below this block is still a materialized CREATE TABLE copy (fast-follow
+# migrates the rest to the same pattern).
+BIN_DIR="${BIN_DIR:?BIN_DIR must be set to an absolute path to nextflow/bin}"
+SCHEMA="${SCHEMA:?SCHEMA must be set to an absolute path to sql/table_schema.json}"
+# A VIEW's read_parquet('...') path is evaluated at *query* time by whatever
+# process opens db/BFD.duckdb (e.g. the MCP server, possibly from a
+# different cwd), so it must be absolute -- resolve $SRC defensively even
+# though the production caller (BUILD_DUCKDB/main.nf) already passes
+# params.tables, which is itself already absolute.
+SRC_ABS="$(cd "$SRC" && pwd)"
+CATALOG_SQL="$(mktemp)"
+python3 "$BIN_DIR/generate_bfd_catalog_sql.py" --schema "$SCHEMA" --tables-dir "$SRC_ABS" > "$CATALOG_SQL"
+duckdb "$DB" < "$CATALOG_SQL"
+rm -f "$CATALOG_SQL"
 
 # ─── telomeres ────────────────────────────────────────────────────────────────
 # Produced by the dedicated telomere-finder pipeline (MERGE_TELOMERES), separate
@@ -121,35 +102,6 @@ HAVING count(DISTINCT end_type) = 2;
 " "$DB"
 else
     echo "SKIP: $SRC/telomere_tracts.parquet not found; telomere_tracts table omitted."
-fi
-
-# ─── busco_genome ───────────────────────────────────────────────────────────────
-# Assembly-level BUSCO completeness (BUSCO_GENOME), keyed by ASMID -- joined to
-# species for LOCUSTAG, same pattern as asm_stats. Not to be confused with
-# BUSCO_PEP (annotation-level, protein-set completeness), which is a separate
-# downstream QC metric and is not merged here.
-# run_busco_genome defaults false (cost at 5K+ species scale), so this table is
-# skipped -- not created empty -- when the parquet hasn't been produced yet.
-if [ -f "$SRC/busco_genome.parquet" ]; then
-    duckdb -c "
-CREATE TABLE busco_genome AS
-SELECT
-    sp.LOCUSTAG,
-    b.ASMID,
-    b.complete_pct,
-    b.single_pct,
-    b.duplicated_pct,
-    b.fragmented_pct,
-    b.missing_pct,
-    b.n_markers,
-    b.lineage
-FROM read_parquet('$SRC/busco_genome.parquet') AS b
-JOIN species AS sp USING(ASMID);
-CREATE UNIQUE INDEX idx_busco_genome_locustag ON busco_genome(LOCUSTAG);
-CREATE UNIQUE INDEX idx_busco_genome_asmid    ON busco_genome(ASMID);
-" "$DB"
-else
-    echo "SKIP: $SRC/busco_genome.parquet not found (run_busco_genome likely false); busco_genome table omitted."
 fi
 
 # ─── gene tables ──────────────────────────────────────────────────────────────
