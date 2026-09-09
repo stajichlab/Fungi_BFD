@@ -18,6 +18,10 @@ import gzip
 import os
 import re
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bfd_common import assert_unique_key  # noqa: E402
 
 _COMPLETE_RE = re.compile(
     r"C:(\d+\.\d+)%\[S:(\d+\.\d+)%,D:(\d+\.\d+)%\],F:(\d+\.\d+)%,M:(\d+\.\d+)%,n:(\d+)")
@@ -113,6 +117,8 @@ def main():
             print(f"  {u}", file=sys.stderr)
         if len(unparsed) > 10:
             print(f"  ... and {len(unparsed) - 10} more", file=sys.stderr)
+
+    assert_unique_key(rows, "ASMID", "busco_genome")
 
     with open_out(args.output) as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
