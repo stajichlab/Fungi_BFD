@@ -1,0 +1,76 @@
+{
+  "species": {
+    "version": 1,
+    "key": "LOCUSTAG",
+    "source_parquet": "species.parquet",
+    "columns": [
+      {"name": "ASMID", "type": "VARCHAR"},
+      {"name": "LOCUSTAG", "type": "VARCHAR"},
+      {"name": "PHYLUM", "type": "VARCHAR"},
+      {"name": "SUBPHYLUM", "type": "VARCHAR"},
+      {"name": "CLASS", "type": "VARCHAR"},
+      {"name": "ORDER", "type": "VARCHAR"},
+      {"name": "FAMILY", "type": "VARCHAR"},
+      {"name": "GENUS", "type": "VARCHAR"},
+      {"name": "SPECIES", "type": "VARCHAR"},
+      {"name": "BUSCO_LINEAGE", "type": "VARCHAR"},
+      {"name": "SUBCLASS", "type": "VARCHAR"},
+      {"name": "NCBI_TAXONID", "type": "BIGINT"},
+      {"name": "STRAIN", "type": "VARCHAR"}
+    ],
+    "changelog": [
+      "v1 (2026-09-09): matches build_species_table.py's REQUIRED_COLUMNS + OPTIONAL_COLUMNS output exactly (confirmed against live tables/species.parquet during design review -- do not add TRANSL_TABLE, samples.csv has it but build_species_table.py never copies it)"
+    ]
+  },
+  "asm_stats": {
+    "version": 1,
+    "key": "ASMID",
+    "source_parquet": "asm_stats.parquet",
+    "join": {"table": "species", "on": "ASMID", "how": "left"},
+    "columns": [
+      {"name": "LOCUSTAG", "type": "VARCHAR", "from": "species.LOCUSTAG"},
+      {"name": "ASMID", "type": "VARCHAR"},
+      {"name": "contig_count", "type": "BIGINT"},
+      {"name": "TOTAL_LENGTH", "type": "BIGINT", "from": "total_length_bp"},
+      {"name": "min_contig_bp", "type": "BIGINT"},
+      {"name": "max_contig_bp", "type": "BIGINT"},
+      {"name": "median_contig_bp", "type": "DOUBLE"},
+      {"name": "mean_contig_bp", "type": "DOUBLE"},
+      {"name": "L50", "type": "BIGINT"},
+      {"name": "N50_bp", "type": "BIGINT"},
+      {"name": "L90", "type": "BIGINT"},
+      {"name": "N90_bp", "type": "BIGINT"},
+      {"name": "GC_PERCENT", "type": "DOUBLE", "from": "gc_pct"},
+      {"name": "n_gap_count", "type": "BIGINT"},
+      {"name": "total_n_bases", "type": "BIGINT"},
+      {"name": "masked_bases", "type": "BIGINT"},
+      {"name": "masked_pct", "type": "DOUBLE"},
+      {"name": "t2t_scaffolds", "type": "BIGINT"},
+      {"name": "telomere_fwd", "type": "BIGINT"},
+      {"name": "telomere_rev", "type": "BIGINT"}
+    ],
+    "changelog": [
+      "v1 (2026-09-09): matches build_BFD_duckDB.sh's pre-migration asm_stats CREATE TABLE"
+    ]
+  },
+  "busco_genome": {
+    "version": 1,
+    "key": "ASMID",
+    "source_parquet": "busco_genome.parquet",
+    "join": {"table": "species", "on": "ASMID", "how": "left"},
+    "columns": [
+      {"name": "LOCUSTAG", "type": "VARCHAR", "from": "species.LOCUSTAG"},
+      {"name": "ASMID", "type": "VARCHAR"},
+      {"name": "complete_pct", "type": "DOUBLE"},
+      {"name": "single_pct", "type": "DOUBLE"},
+      {"name": "duplicated_pct", "type": "DOUBLE"},
+      {"name": "fragmented_pct", "type": "DOUBLE"},
+      {"name": "missing_pct", "type": "DOUBLE"},
+      {"name": "n_markers", "type": "BIGINT"},
+      {"name": "lineage", "type": "VARCHAR"}
+    ],
+    "changelog": [
+      "v1 (2026-09-09): initial schema-contract entry"
+    ]
+  }
+}
