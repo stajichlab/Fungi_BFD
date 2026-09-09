@@ -431,6 +431,24 @@
                     "description": "Pre-flight: contig count above this counts as 'fragmented'.",
                     "default": 1000
                 },
+                "predict_evm_repeat_pct_threshold": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Pre-flight: repeat-masked pct at/above which FUNANNOTATE_PREDICT enables repeat-aware EVM mode (--repeats2evm, wider --evm-partition-interval). 0 disables the guard.",
+                    "default": 60
+                },
+                "predict_evm_repeat_aware_interval": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "--evm-partition-interval used in repeat-aware EVM mode. Left at funannotate's own default (1500, a no-op override) -- widening it caused oversized partitions and OOM on a chromosome-scale assembly (see profile_funannotate.config comment).",
+                    "default": 1500
+                },
+                "predict_evm_repeat_aware_drop_snap": {
+                    "type": "boolean",
+                    "description": "Also pass -w snap:0 in repeat-aware EVM mode.",
+                    "default": true
+                },
                 "share_abinitio_params": {
                     "type": "boolean",
                     "description": "Reuse trained AUGUSTUS/SNAP/GeneMark-ES parameters from a species' ANI-qualified representative instead of retraining per strain. See todo/species_level_abinitio_reuse.md.",

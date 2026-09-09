@@ -13,7 +13,7 @@
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 include { makeSampleTag; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
-include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride; loadRnaseqSkipSet; loadHybridParentage } from '../modules/funannotate/utils.nf'
+include { loadAbinitioReuseMap; loadRnaseqRepresentativeOverride; loadRnaseqSkipSet; loadTrinityStandaloneSkipSet; loadHybridParentage } from '../modules/funannotate/utils.nf'
 
 // ── Subworkflows ────────────────────────────────────────────────────────────
 include { FUNANNOTATE_GENOME_PREP }       from '../subworkflows/local/FUNANNOTATE_GENOME_PREP.nf'
@@ -171,6 +171,14 @@ workflow FUNANNOTATE {
     // (no rnaseq_skip.csv yet) means every strain keeps its normal ANI-based tier.
     def rnaseqSkipSet = loadRnaseqSkipSet()
 
+    // species_tags that should never enter TRINITY_STANDALONE (the standalone-Trinity
+    // fallback for species whose genome-guided Trinity produced too few transcripts) --
+    // for a species whose standalone Trinity run is stuck/thrashing and needs to be
+    // shelved for now (see loadTrinityStandaloneSkipSet()). Empty set (no
+    // trinity_standalone_skip.csv yet) means every low-transcript species falls
+    // through to standalone Trinity as before.
+    def trinityStandaloneSkipSet = loadTrinityStandaloneSkipSet()
+
     // hybrid_species_tag -> [parent_species_tag, ...] for interspecific hybrid-cross
     // species -- routes them to composite parent-transcript RNA-seq evidence instead
     // of the normal per-species representative pick (see
@@ -178,7 +186,7 @@ workflow FUNANNOTATE {
     // yet) means every species behaves exactly as before this feature existed.
     def hybridParentage = loadHybridParentage()
 
-    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap, rnaseqRepOverride, rnaseqSkipSet, hybridParentage)
+    FUNANNOTATE_RNASEQ(FUNANNOTATE_GENOME_PREP.out.predict_genome, abinitioReuseMap, rnaseqRepOverride, rnaseqSkipSet, trinityStandaloneSkipSet, hybridParentage)
 
     // FUNANNOTATE_RNASEQ only assigns its predict_input emission past the
     // stop_after_sra_fetch/stop_after_sra_query gates (see its "end if" markers);

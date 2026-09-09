@@ -18,11 +18,13 @@ process FUNANNOTATE_TRAIN {
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
           val(genome_fa), emit: predict_input
-    // Audit row emitted only when a composite/composite_fallback-tier run gracefully
-    // degrades (see the TRAIN_STATUS handling near the end) -- collected by
-    // FUNANNOTATE_RNASEQ.nf into one reviewable TSV, same convention as
-    // repr_assignments.tsv/rnaseq_blacklist_candidates.csv elsewhere in this project.
-    path("${out}.composite_train_failed.tsv"), optional: true, emit: composite_failed
+    // Audit row emitted only when a run (any pasa_tier) gracefully degrades to
+    // ab-initio-only because PASA completed alignment/assignment but assigned too
+    // few loci to build a training set (see the TRAIN_STATUS handling near the
+    // end) -- collected by FUNANNOTATE_RNASEQ.nf into one reviewable TSV, same
+    // convention as repr_assignments.tsv/rnaseq_blacklist_candidates.csv
+    // elsewhere in this project.
+    path("${out}.pasa_train_failed.tsv"), optional: true, emit: pasa_failed
 
     script:
     def pasa_db_arg = "--pasa_db sqlite"
@@ -63,15 +65,20 @@ process FUNANNOTATE_TRAIN {
 
     # ── Skip if training is already resolved and evidence is not newer ────────────
     # "Resolved" is either a real published PASA GFF3, OR a durable marker recording
-    # that a composite/composite_fallback-tier attempt legitimately couldn't train
-    # from transcript evidence (see the TRAIN_STATUS handling near the end and
-    # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Without this marker, a
-    # gracefully-degraded hybrid strain would never publish anything and would be
-    # re-attempted on every single future run/-resume forever -- the marker makes
-    # that outcome durable, the same way a real GFF3 makes success durable.
+    # that an attempt (any pasa_tier) legitimately couldn't train from transcript
+    # evidence -- PASA completed alignment/assignment but assigned too few loci to
+    # build a training set (see the TRAIN_STATUS handling near the end,
+    # nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md, and
+    # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md, which introduced this
+    # marker (as .composite_train_failed) for the composite tiers only, before
+    # it was generalized to every tier and renamed to .pasa_train_failed
+    # 2026-09-06). Without this marker, a gracefully-degraded strain would
+    # never publish anything and would be re-attempted on every single future
+    # run/-resume forever -- the marker makes that outcome durable, the same way
+    # a real GFF3 makes success durable.
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
-    TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.composite_train_failed"
+    TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.pasa_train_failed"
     PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
     [ -f "\$PREDICT_GBK" ] || PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk.gz"
     RESOLVED_MARKER=""
@@ -122,7 +129,7 @@ process FUNANNOTATE_TRAIN {
                 ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet \\
                     "${params.training_target}/${out}/training" || true
             else
-                echo "[INFO] ${out} previously determined not trainable from composite transcript evidence (pasa_tier=${pasa_tier}); skipping re-attempt"
+                echo "[INFO] ${out} previously determined not trainable from transcript evidence (pasa_tier=${pasa_tier}); skipping re-attempt"
             fi
             exit 0
         fi
@@ -408,27 +415,34 @@ process FUNANNOTATE_TRAIN {
     } 2>&1 | tee funannotate_train_capture.log
     TRAIN_STATUS=\${PIPESTATUS[0]}
     if [ "\$TRAIN_STATUS" -ne 0 ]; then
-        # 'composite'/'composite_fallback' failures get one chance to degrade
-        # gracefully instead of the usual hard-fail+retry: only when PASA itself
-        # actually completed its alignment/assignment step (its own
-        # "PASA assigned N transcripts to M loci" summary line appears in the
-        # captured output -- same signal DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md's
-        # still-unimplemented Option 1 proposes generally, applied here just for
-        # this tier). Absence of that line means PASA (or something before it --
-        # MySQL, OOM, a crash) never finished, which is exactly the kind of infra
-        # failure that SHOULD keep retrying with more memory, not get silently
-        # absorbed into "this hybrid isn't trainable" -- conflating the two would
-        # mask real infra bugs across every hybrid strain. See "Should we degrade
-        # gracefully on composite-tier failure?" in
-        # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md.
-        if { [ "${pasa_tier}" = "composite" ] || [ "${pasa_tier}" = "composite_fallback" ]; } && \\
-           grep -qE 'PASA assigned [0-9]+ transcripts to [0-9]+ loci' funannotate_train_capture.log; then
-            echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this composite-tier (pasa_tier=${pasa_tier}) run -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
+        # Any tier gets one chance to degrade gracefully instead of the usual
+        # hard-fail+retry, PROVIDED PASA itself actually completed its
+        # alignment/assignment step (its own "PASA assigned N transcripts to M
+        # loci" summary line appears in the captured output). Originally this
+        # only fired for 'composite'/'composite_fallback' -- but a forensic
+        # sweep of a full failed run (2026-09-06) found 207/207 FUNANNOTATE_TRAIN
+        # failures share this exact signature (pasa_asmbls_to_training_set.dbi
+        # CMD ERROR) across 'stringent' (197) and 'relaxed' (10) tiers too, with
+        # a median of 5 assigned loci (max 249, all < 500) -- i.e. PASA finished
+        # but had almost nothing to build a training set from. Relaxing
+        # per-tier identity/coverage thresholds further would not rescue these
+        # (the transcripts aren't aligning at all, not aligning-but-rejected),
+        # so the same "not enough usable transcript evidence -> ab-initio-only"
+        # degrade generalizes cleanly to every tier. Absence of the PASA summary
+        # line still means PASA (or something before it -- MySQL, OOM, a crash)
+        # never finished, which is exactly the kind of infra failure that SHOULD
+        # keep retrying with more memory/resources, not get silently absorbed
+        # into "this strain isn't trainable" -- conflating the two would mask
+        # real infra bugs. See nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md
+        # (Option 1) and nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md for the
+        # original composite-only version of this reasoning.
+        if grep -qE 'PASA assigned [0-9]+ transcripts to [0-9]+ loci' funannotate_train_capture.log; then
+            echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this run (pasa_tier=${pasa_tier}) -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
             mkdir -p "${params.training_target}/${out}/training"
-            : > "${params.training_target}/${out}/training/.composite_train_failed"
+            : > "${params.training_target}/${out}/training/.pasa_train_failed"
             printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\n%s\\t%s\\t%s\\t%s\\t%s\\n" \\
                 "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" \\
-                > "${out}.composite_train_failed.tsv"
+                > "${out}.pasa_train_failed.tsv"
             exit 0
         fi
         echo "[ERROR] funannotate train failed for ${out} (exit \$TRAIN_STATUS); not publishing \$LOCAL_TRAIN over ${params.training_target}/${out}/training" >&2
