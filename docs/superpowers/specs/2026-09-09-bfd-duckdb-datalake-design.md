@@ -45,7 +45,7 @@ Two changes from the old materialized build:
   (Fable found 2 such rows in the live data) — `LEFT JOIN` keeps them (with `LOCUSTAG` null),
   and a per-table row-count check (view row count vs. that table's own manifest `row_count`,
   see part 2) surfaces the mismatch instead of hiding it.
-- **Explicit typed columns from `table_schema.yaml`** (part 3), not `SELECT *`. DuckDB 1.1.3
+- **Explicit typed columns from `table_schema.json`** (part 3), not `SELECT *`. DuckDB 1.1.3
   invalidates a view outright on any schema change to the underlying Parquet, even adding a
   column (`Binder Error: Contents of view were altered: types don't match!`, confirmed by
   Fable) — the view stays broken until the catalog is rebuilt. Driving explicit types from the
@@ -103,36 +103,42 @@ exposes the same sidecars as a `_table_manifest` view via `read_json_auto('table
 for SQL-side consumers; a consumer that only reads Parquet directly (DeltaGain's current
 pattern) reads the JSON sidecar with no DuckDB dependency at all.
 
-`schema_version` is a bare per-table int, versioned in `table_schema.yaml` with a changelog
+`schema_version` is a bare per-table int, versioned in `table_schema.json` with a changelog
 comment there — per-column version history was considered and rejected as over-engineering for
 this workload (occasional bulk reads by a stable key, not point lookups or streaming).
 
-### 3. Schema contract: `sql/table_schema.yaml` replaces `sql/schema.sql`
+### 3. Schema contract: `sql/table_schema.json` replaces `sql/schema.sql`
 
 `sql/schema.sql` was confirmed drifted during the README rewrite (lists tables the build script
 doesn't create — `funguild`, `chrom_info`, `mmseqs_orthogroup_clusters`,
 `mmseqs_orthogroup_cluster_count`, `prosite`, `pfam_UoT`, `gene_pairwise_distances` — and is
 missing several it does — `telomere_summary`, `telomere_tracts`, `busco_genome`, `wolfpsort`,
 `predgpi`, `gene_CDS`, `gene_intergenic_distances`, `wgd_ks`, `wgd_ks_summary`, and all 3 views).
-Replace it with one machine-readable file, per table:
+Replace it with one machine-readable file, per table. JSON, not YAML — implementation surfaced a
+real footgun: PyYAML's YAML-1.1 boolean coercion silently turns a bare `on` dict key (as in
+`join: {..., on: ASMID, ...}`) into the boolean `True`, and PyYAML isn't installed in every Python
+environment this pipeline's Nextflow labels use anyway. JSON has neither problem.
 
-```yaml
-asm_stats:
-  version: 1
-  key: ASMID
-  source_parquet: tables/asm_stats.parquet
-  join: {table: species, on: ASMID, how: left}
-  columns:
-    - {name: ASMID, type: VARCHAR}
-    - {name: LOCUSTAG, type: VARCHAR}       # from the species join
-    - {name: TOTAL_LENGTH, type: BIGINT}    # aliased from total_length_bp
-    # ...
+```json
+{
+  "asm_stats": {
+    "version": 1,
+    "key": "ASMID",
+    "source_parquet": "asm_stats.parquet",
+    "join": {"table": "species", "on": "ASMID", "how": "left"},
+    "columns": [
+      {"name": "ASMID", "type": "VARCHAR"},
+      {"name": "LOCUSTAG", "type": "VARCHAR", "from": "species.LOCUSTAG"},
+      {"name": "TOTAL_LENGTH", "type": "BIGINT", "from": "total_length_bp"}
+    ]
+  }
+}
 ```
 
 This is load-bearing, used to (a) drive the typed `COPY ... (FORMAT PARQUET)` at merge time (no
 more `read_csv_auto` inference drift between runs), (b) generate the `CREATE VIEW` catalog SQL,
 (c) generate human-readable docs, (d) a lint step that runs `DESCRIBE` on each real Parquet file
-and diffs it against this YAML to catch drift automatically going forward, rather than by manual
+and diffs it against this schema contract to catch drift automatically going forward, rather than by manual
 audit.
 
 ### 4. Atomic writes + integrity guards
@@ -188,7 +194,7 @@ join key DeltaGain and the manifest depend on.
   the MCP server runs: Parquet + views are version-neutral, and trivial-to-rebuild views make a
   mismatch a non-issue if it ever occurs — actually a benefit of dropping materialization.
 - Stray files already in `tables/` (`telomeres.parquet.bak.*`, `BUSCO.csv.gz`): harmless once
-  the catalog is generated from the YAML allowlist rather than a glob; add a lint warning for
+  the catalog is generated from the schema-contract allowlist rather than a glob; add a lint warning for
   unrecognized files rather than treating it as blocking.
 
 ## Out of scope for this design
