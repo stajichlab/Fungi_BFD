@@ -41,7 +41,7 @@ include { FUNANNOTATE_TRAIN } from '../../modules/funannotate/predict/FUNANNOTAT
 include { WRITE_EMPTY_HYBRID_READS } from '../../modules/funannotate/rnaseq/WRITE_EMPTY_HYBRID_READS/main.nf'
 include { BUILD_HYBRID_COMPOSITE_TRINITY } from '../../modules/funannotate/rnaseq/BUILD_HYBRID_COMPOSITE_TRINITY/main.nf'
 
-include { gbkResult; staleRnaseq; pasaTrainMarkerCurrent } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; pasaTrainMarkerCurrent; trinityTooIncompleteCurrent } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_RNASEQ {
     take:
@@ -519,18 +519,22 @@ workflow FUNANNOTATE_RNASEQ {
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
 
-        // A species is "resolved" (no FUNANNOTATE_TRAIN job needed) either via a real
-        // published PASA GFF3, or via a durable .pasa_train_failed marker recording that
-        // PASA already completed alignment/assignment but assigned too few loci to build
-        // a training set from (pasaTrainMarkerCurrent, in modules/funannotate/utils.nf) --
-        // without the marker case, an already-"not trainable" species gets a fresh
-        // 16cpu/96GB job resubmitted on every relaunch just to re-derive the same verdict
-        // and exit 0. Shared between train_todo/train_done so the two stay an exact
-        // logical complement of each other over branched.has_rnaseq (same requirement
-        // FUNANNOTATE_ANNOTATION.nf documents for its predict/annotate split).
+        // A species is "resolved" (no FUNANNOTATE_TRAIN job needed) via a real published
+        // PASA GFF3, OR via either of two durable markers recording a legitimate reason
+        // PASA was never going to produce one: .pasa_train_failed (PASA completed
+        // alignment/assignment but assigned too few loci) or .trinity_too_incomplete (the
+        // shared Trinity-GG assembly itself had too few transcripts to even attempt PASA)
+        // -- both in modules/funannotate/utils.nf. Without these, an already-resolved
+        // species gets a fresh 16cpu/96GB job resubmitted on every relaunch just to
+        // re-derive the same verdict and exit 0. Shared between train_todo/train_done so
+        // the two stay an exact logical complement of each other over branched.has_rnaseq
+        // (same requirement FUNANNOTATE_ANNOTATION.nf documents for its predict/annotate
+        // split).
         def isTrainResolved = { out, gfa, tf ->
             def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
-            (gff3.exists() && gff3.size() > 0) || pasaTrainMarkerCurrent(out as String, gfa, tf)
+            (gff3.exists() && gff3.size() > 0) ||
+                pasaTrainMarkerCurrent(out as String, gfa, tf) ||
+                trinityTooIncompleteCurrent(out as String, gfa, tf)
         }
 
         // Skip TRAIN at the channel level when already resolved, UNLESS the rnaseq reads

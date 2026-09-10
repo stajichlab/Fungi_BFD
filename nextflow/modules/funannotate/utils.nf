@@ -107,18 +107,37 @@ def staleGenome(String out, String asmid) {
 // Only checks the marker -- callers combine this with their own gff3.exists() check,
 // since the existing gff3/success path's staleness semantics (staleRnaseq only, no
 // genome/trinity check) are intentionally left as-is here, not expanded.
-def pasaTrainMarkerCurrent(String out, def genome_fa, def trinity_fa) {
-    def marker = file("${params.training_target}/${out}/training/.pasa_train_failed")
+//
+// Parameterized on markerName so multiple durable "resolved, don't resubmit" marker
+// files can share this one staleness algorithm instead of drifting into near-duplicate
+// copies -- see trinityTooIncompleteCurrent() below for the second concrete use.
+def trainMarkerCurrent(String out, String markerName, def genome_fa, def trinity_fa) {
+    def marker = file("${params.training_target}/${out}/training/${markerName}")
     if (!marker.exists()) return false
     def gfa = file(genome_fa as String)
     def tf  = file(trinity_fa as String)
     def genome_newer  = gfa.exists() && gfa.size() > 0 && gfa.lastModified() > marker.lastModified()
     def trinity_newer = tf.exists()  && tf.size() > 0  && tf.lastModified()  > marker.lastModified()
     if (genome_newer || trinity_newer) {
-        log.info "stale prediction for ${out}: genome/trinity evidence newer than .pasa_train_failed marker — scheduling retrain"
+        log.info "stale prediction for ${out}: genome/trinity evidence newer than ${markerName} marker — scheduling retrain"
         return false
     }
     return true
+}
+
+def pasaTrainMarkerCurrent(String out, def genome_fa, def trinity_fa) {
+    trainMarkerCurrent(out, '.pasa_train_failed', genome_fa, trinity_fa)
+}
+
+// Mirrors FUNANNOTATE_TRAIN's thin-Trinity skip (main.nf, "Skip if the shared Trinity-GG
+// assembly is too thin to train on"), which writes an empty .trinity_too_incomplete
+// marker instead of ever attempting PASA. Without this, a species whose Trinity-GG
+// assembly is (and stays) too thin gets a fresh 16cpu/96GB job resubmitted on every
+// relaunch just to re-derive the same "too thin" verdict and exit 0 -- same pathology
+// staleGenome()/pasaTrainMarkerCurrent() above already fix for the "PASA ran but too few
+// loci" case.
+def trinityTooIncompleteCurrent(String out, def genome_fa, def trinity_fa) {
+    trainMarkerCurrent(out, '.trinity_too_incomplete', genome_fa, trinity_fa)
 }
 
 // ── Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md) ──

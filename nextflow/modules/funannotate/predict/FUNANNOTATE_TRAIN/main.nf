@@ -59,6 +59,17 @@ process FUNANNOTATE_TRAIN {
         TRINITY_TX_COUNT=\$(grep -c '^>' "${trinity_fa}" || true)
         if [ "\$TRINITY_TX_COUNT" -lt "${params.train_min_trinity_transcripts}" ]; then
             echo "[WARN] ${out}: shared Trinity-GG assembly has only \$TRINITY_TX_COUNT transcripts (< ${params.train_min_trinity_transcripts}); likely assembled against the wrong reference strain. Skipping funannotate train -- rerun scripts/fix_low_trinity.py to pick a better reference." >&2
+            # Durable marker (mirrors .pasa_train_failed's purpose, distinct name since
+            # the reason differs: this is "assembly itself too thin to even attempt PASA",
+            # not "PASA ran but assigned too few loci"). Lets the Groovy-level train_todo
+            # gate in FUNANNOTATE_RNASEQ.nf (trinityTooIncompleteCurrent(), utils.nf) skip
+            # resubmitting this species entirely instead of relying on this cheap-but-not-
+            # free grep re-check firing on every relaunch. No RESOLVED_MARKER handling
+            # needed below for this marker: this check already re-derives its verdict
+            # fresh from trinity_fa's current content every time it runs, so it has no
+            # staleness of its own to protect against the way the PASA marker does.
+            mkdir -p "${params.training_target}/${out}/training"
+            : > "${params.training_target}/${out}/training/.trinity_too_incomplete"
             exit 0
         fi
     fi
