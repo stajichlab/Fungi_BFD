@@ -18,11 +18,13 @@ process FUNANNOTATE_TRAIN {
     tuple val(out), val(asmid), val(species), val(strain), val(locustag),
           val(busco_lineage), val(header_length), val(transl_table),
           val(genome_fa), emit: predict_input
-    // Audit row emitted only when a composite/composite_fallback-tier run gracefully
-    // degrades (see the TRAIN_STATUS handling near the end) -- collected by
-    // FUNANNOTATE_RNASEQ.nf into one reviewable TSV, same convention as
-    // repr_assignments.tsv/rnaseq_blacklist_candidates.csv elsewhere in this project.
-    path("${out}.composite_train_failed.tsv"), optional: true, emit: composite_failed
+    // Audit row emitted only when a run (any pasa_tier) gracefully degrades to
+    // ab-initio-only because PASA completed alignment/assignment but assigned too
+    // few loci to build a training set (see the TRAIN_STATUS handling near the
+    // end) -- collected by FUNANNOTATE_RNASEQ.nf into one reviewable TSV, same
+    // convention as repr_assignments.tsv/rnaseq_blacklist_candidates.csv
+    // elsewhere in this project.
+    path("${out}.pasa_train_failed.tsv"), optional: true, emit: pasa_failed
 
     script:
     def pasa_db_arg = "--pasa_db sqlite"
@@ -63,15 +65,20 @@ process FUNANNOTATE_TRAIN {
 
     # ── Skip if training is already resolved and evidence is not newer ────────────
     # "Resolved" is either a real published PASA GFF3, OR a durable marker recording
-    # that a composite/composite_fallback-tier attempt legitimately couldn't train
-    # from transcript evidence (see the TRAIN_STATUS handling near the end and
-    # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md). Without this marker, a
-    # gracefully-degraded hybrid strain would never publish anything and would be
-    # re-attempted on every single future run/-resume forever -- the marker makes
-    # that outcome durable, the same way a real GFF3 makes success durable.
+    # that an attempt (any pasa_tier) legitimately couldn't train from transcript
+    # evidence -- PASA completed alignment/assignment but assigned too few loci to
+    # build a training set (see the TRAIN_STATUS handling near the end,
+    # nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md, and
+    # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md, which introduced this
+    # marker (as .composite_train_failed) for the composite tiers only, before
+    # it was generalized to every tier and renamed to .pasa_train_failed
+    # 2026-09-06). Without this marker, a gracefully-degraded strain would
+    # never publish anything and would be re-attempted on every single future
+    # run/-resume forever -- the marker makes that outcome durable, the same way
+    # a real GFF3 makes success durable.
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
-    TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.composite_train_failed"
+    TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.pasa_train_failed"
     PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
     [ -f "\$PREDICT_GBK" ] || PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk.gz"
     RESOLVED_MARKER=""
@@ -122,7 +129,7 @@ process FUNANNOTATE_TRAIN {
                 ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet \\
                     "${params.training_target}/${out}/training" || true
             else
-                echo "[INFO] ${out} previously determined not trainable from composite transcript evidence (pasa_tier=${pasa_tier}); skipping re-attempt"
+                echo "[INFO] ${out} previously determined not trainable from transcript evidence (pasa_tier=${pasa_tier}); skipping re-attempt"
             fi
             exit 0
         fi
@@ -208,61 +215,122 @@ process FUNANNOTATE_TRAIN {
         MYSQL_SCRATCH=\$TMPDIR/mysql_db_${out}
         rm -rf \$MYSQL_SCRATCH
         mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
-        rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
-            { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
+        # ── mariadb_sif retired: mariadbd now runs through \$SING ─────────────
+        # Both the fresh-init step and the mysqld sidecar itself now run
+        # through \$SING (apptainer exec ${params.funannotate_sif}) instead of
+        # a separate params.mariadb_sif (docker://mariadb:10.3.9, kept alive
+        # only via the custom %startscript workaround in the now-unused
+        # nextflow/docs/mariadb-10.3.9.def). Once funannotate-live's
+        # Dockerfile.base bundles mariadb-server (see its apt-get install
+        # block), the funannotate image itself has mysql_install_db/
+        # mariadb-install-db and mariadbd/mysqld_safe on PATH, so there is no
+        # longer any reason to launch a second, separate database container --
+        # one image, one exec wrapper, for both funannotate and PASA's mysql
+        # backend. This also drops the old ${params.mysql_datadir} template-copy
+        # dependency (see nf_funannotate1's identical change for the full
+        # rationale: a pre-staged ~121MB/89-file blob at a hardcoded host path
+        # is not self-contained, and mysql_install_db/mariadb-install-db is a
+        # few-second op regardless).
+        # \$SING already binds \$TMPDIR:\$TMPDIR (see SING_BINDS above), and
+        # \$MYSQL_SCRATCH lives under \$TMPDIR, so no extra bind is needed here
+        # -- unlike the old singularity-instance sidecar, which needed
+        # explicit -B flags to map \$MYSQL_SCRATCH's subpaths into fixed
+        # in-container locations (/etc/mysql/my.cnf, /var/lib/mysql, ...).
+        # NOT yet verified end-to-end (image not rebuilt/tested at the time
+        # this was written) -- confirm mysql_install_db/mariadb-install-db and
+        # mariadbd/mysqld_safe are actually on the rebuilt image's PATH, that
+        # PASA can connect, and that killing \$MYSQLD_PID actually terminates
+        # the containerized mariadbd (apptainer normally forwards signals to
+        # the exec'd process, but this specific case hasn't been tested)
+        # before retiring params.mariadb_sif from profile_funannotate.config.
+        MYSQL_INSTALL_BIN=\$(\$SING sh -c 'command -v mariadb-install-db || command -v mysql_install_db')
+        if [ -z "\$MYSQL_INSTALL_BIN" ]; then
+            echo "ERROR: no mariadb-install-db/mysql_install_db found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        echo "[INFO] Initializing fresh MariaDB system tables via \$MYSQL_INSTALL_BIN"
+        \$SING "\$MYSQL_INSTALL_BIN" --datadir=\$MYSQL_SCRATCH/db/mysql \\
+            --auth-root-authentication-method=normal || \\
+            { echo "ERROR: \$MYSQL_INSTALL_BIN failed" >&2; exit 1; }
         cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
             { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
         PORT=\$(shuf -i3000-4999 -n1)
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
-        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
+        # 127.0.0.1, not \$MYHOSTNAME: mariadbd binds loopback-only (see
+        # my.cnf bind-address) and PASA runs in the same node/namespace, so
+        # this connection never needs to leave loopback. Routing it through
+        # the node's real hostname instead round-trips over the cluster
+        # network fabric -- confirmed 2026-09-09 that this made MariaDB's
+        # host-ACL check reject the connection (reverse-DNS resolved the
+        # peer to the InfiniBand FQDN, which matched none of the ACL
+        # entries mariadb-install-db creates), failing every
+        # FUNANNOTATE_TRAIN task with pasa_mysql=true.
+        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=127.0.0.1:\${PORT}/" \$PASACONF
         perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
+        # Read the account PASA will actually connect as straight out of
+        # \$PASACONF, rather than hardcoding a second copy here that can
+        # drift out of sync with conf.txt (as happened 2026-09-09: this
+        # step originally hardcoded 'BFD'/'runBFD' and conf.txt was changed
+        # to 'funannotate'/'PASAfun' without updating this CREATE USER,
+        # which would have made PASA fail with Access denied).
+        PASA_MYSQL_USER=\$(grep '^MYSQL_RW_USER=' \$PASACONF | cut -d= -f2)
+        PASA_MYSQL_PASS=\$(grep '^MYSQL_RW_PASSWORD=' \$PASACONF | cut -d= -f2)
         # Point MariaDB's on-disk temp-table dir at this job's own node-local
         # \$TMPDIR (== \$SCRATCH, see the `export TMPDIR` above) instead of the
-        # my.cnf default of /tmp. The mysqld sidecar is started below without
-        # --containall, so it shares the host mount namespace and its "/tmp"
-        # is literally the compute node's real, SHARED /tmp -- when several
-        # FUNANNOTATE_TRAIN tasks land on the same node at once, their MariaDB
-        # instances all write large PASA-alignment MyISAM temp tables into
-        # that same shared /tmp concurrently, and once it fills, mysqld fails
-        # mid-write on a temp table and then fails again trying to delete the
-        # file it never finished creating -- surfaces in PASA as
-        # "Thread N terminated abnormally: ... Error on delete of
-        # '/tmp/#sql_....MAI' (Errcode: 2 'No such file or directory')".
-        # Confirmed 2026-08-29 against Alternaria_alternata_Z14's
-        # pasa-assembly.log. \$MYSQL_TMP is bound below to a fixed in-container
-        # path so this rewrite doesn't depend on \$TMPDIR's host-side value.
+        # my.cnf default of /tmp -- \$SING shares the host mount namespace (no
+        # --containall), so its "/tmp" is literally the compute node's real,
+        # SHARED /tmp; when several FUNANNOTATE_TRAIN tasks land on the same
+        # node at once, their MariaDB instances all write large
+        # PASA-alignment MyISAM temp tables into that same shared /tmp
+        # concurrently, and once it fills, mysqld fails mid-write on a temp
+        # table and then fails again trying to delete the file it never
+        # finished creating -- surfaces in PASA as "Thread N terminated
+        # abnormally: ... Error on delete of '/tmp/#sql_....MAI' (Errcode: 2
+        # 'No such file or directory')". Confirmed 2026-08-29 against
+        # Alternaria_alternata_Z14's pasa-assembly.log. \$MYSQL_TMP is a plain
+        # \$TMPDIR subdirectory now (not a fixed in-container bind target like
+        # the old /pasa_mysql_tmp -- \$SING's \$TMPDIR:\$TMPDIR bind already
+        # makes the same path visible inside and outside).
         MYSQL_TMP="\$TMPDIR/pasa_mysql_tmp_${asmid}"
         mkdir -p "\$MYSQL_TMP"
-        sed -i "s#^tmpdir[[:space:]]*=.*#tmpdir\t\t= /pasa_mysql_tmp#" \$MYSQL_SCRATCH/conf/my.cnf
-        # No separate SING_BINDS entry needed for \$MYSQL_SCRATCH (which the
-        # containerized funannotate exec needs to read \$PASACONF from) --
-        # it's now a subdirectory of \$TMPDIR, already covered by the
-        # \$TMPDIR:\$TMPDIR bind above.
-        # >/dev/null too, not just stderr: apptainer/singularity prints its
-        # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
-        # the named instance is already gone, which happens on every run here
-        # -- the EXIT trap below always re-fires this after the explicit
-        # stop_mysqldb call a few lines from the end of the script already
-        # stopped it, so the second, redundant call is expected and silenced.
-        stop_mysqldb() { singularity instance stop mysqldb_${asmid} >/dev/null 2>/dev/null || true; }
+        sed -i "s#^tmpdir[[:space:]]*=.*#tmpdir\t\t= \$MYSQL_TMP#" \$MYSQL_SCRATCH/conf/my.cnf
+        MYSQLD_BIN=\$(\$SING sh -c 'command -v mariadbd || command -v mysqld_safe')
+        if [ -z "\$MYSQLD_BIN" ]; then
+            echo "ERROR: no mariadbd/mysqld_safe found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container)"
+        \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
+            --datadir=\$MYSQL_SCRATCH/db/mysql \\
+            --socket=\$MYSQL_SCRATCH/mysqld.sock \\
+            --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
+        MYSQLD_PID=\$!
+        stop_mysqldb() { kill \$MYSQLD_PID 2>/dev/null || true; wait \$MYSQLD_PID 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
-        # No trailing "/usr/bin/mysqld_safe" here: `instance start` only runs
-        # trailing args THROUGH the image's %startscript (see --help), and
-        # Docker's ENTRYPOINT/CMD populate %runscript, not %startscript --
-        # mariadb_sif is a custom build (nextflow/docs/mariadb-10.3.9.def)
-        # whose %startscript itself execs mysqld_safe, so it needs no args.
-        # Confirmed 2026-08-25: passing mysqld_safe as a trailing arg to a
-        # plain docker://mariadb:10.3.9 (or an `apptainer pull`-cached sif of
-        # it, both lacking a real %startscript) starts an empty instance that
-        # never launches mysqld at all -- PASA then fails to connect.
-        singularity instance start --writable-tmpfs \\
-            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf,\$MYSQL_TMP:/pasa_mysql_tmp \\
-            ${params.mariadb_sif} mysqldb_${asmid}
         pasa_db_arg="--pasa_db mysql"
         sleep 5
+        # mariadb-install-db (--auth-root-authentication-method=normal, above)
+        # only creates root@localhost/127.0.0.1/::1/<hostname> with no
+        # password -- it never creates the account conf.txt tells PASA to
+        # connect as. This is a fresh, throwaway, loopback-only DB that
+        # lives for one task, so a shared generic account is fine; create
+        # it now, before PASA's first connection.
+        MYSQL_CLIENT_BIN=\$(\$SING sh -c 'command -v mariadb || command -v mysql')
+        if [ -z "\$MYSQL_CLIENT_BIN" ]; then
+            echo "ERROR: no mariadb/mysql client found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        # Grant to '...'@'127.0.0.1', not '...@localhost': MariaDB's ACL
+        # matches the literal connecting host/IP, and a TCP connection to
+        # 127.0.0.1 is not treated as 'localhost' (that name is reserved
+        # for Unix-socket connections) -- confirmed 2026-09-09, this is the
+        # exact same class of ACL mismatch as the MYSQLSERVER fix above.
+        \$SING "\$MYSQL_CLIENT_BIN" -uroot -h127.0.0.1 -P\${PORT} -e \
+            "CREATE USER IF NOT EXISTS '\${PASA_MYSQL_USER}'@'127.0.0.1' IDENTIFIED BY '\${PASA_MYSQL_PASS}'; GRANT ALL ON *.* TO '\${PASA_MYSQL_USER}'@'127.0.0.1'; FLUSH PRIVILEGES;" || \
+            { echo "ERROR: failed to create \${PASA_MYSQL_USER} mysql user" >&2; exit 1; }
     fi
 
     # Inflate a gzipped clean genome to a local uncompressed copy; funannotate cannot
@@ -408,27 +476,34 @@ process FUNANNOTATE_TRAIN {
     } 2>&1 | tee funannotate_train_capture.log
     TRAIN_STATUS=\${PIPESTATUS[0]}
     if [ "\$TRAIN_STATUS" -ne 0 ]; then
-        # 'composite'/'composite_fallback' failures get one chance to degrade
-        # gracefully instead of the usual hard-fail+retry: only when PASA itself
-        # actually completed its alignment/assignment step (its own
-        # "PASA assigned N transcripts to M loci" summary line appears in the
-        # captured output -- same signal DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md's
-        # still-unimplemented Option 1 proposes generally, applied here just for
-        # this tier). Absence of that line means PASA (or something before it --
-        # MySQL, OOM, a crash) never finished, which is exactly the kind of infra
-        # failure that SHOULD keep retrying with more memory, not get silently
-        # absorbed into "this hybrid isn't trainable" -- conflating the two would
-        # mask real infra bugs across every hybrid strain. See "Should we degrade
-        # gracefully on composite-tier failure?" in
-        # nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md.
-        if { [ "${pasa_tier}" = "composite" ] || [ "${pasa_tier}" = "composite_fallback" ]; } && \\
-           grep -qE 'PASA assigned [0-9]+ transcripts to [0-9]+ loci' funannotate_train_capture.log; then
-            echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this composite-tier (pasa_tier=${pasa_tier}) run -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
+        # Any tier gets one chance to degrade gracefully instead of the usual
+        # hard-fail+retry, PROVIDED PASA itself actually completed its
+        # alignment/assignment step (its own "PASA assigned N transcripts to M
+        # loci" summary line appears in the captured output). Originally this
+        # only fired for 'composite'/'composite_fallback' -- but a forensic
+        # sweep of a full failed run (2026-09-06) found 207/207 FUNANNOTATE_TRAIN
+        # failures share this exact signature (pasa_asmbls_to_training_set.dbi
+        # CMD ERROR) across 'stringent' (197) and 'relaxed' (10) tiers too, with
+        # a median of 5 assigned loci (max 249, all < 500) -- i.e. PASA finished
+        # but had almost nothing to build a training set from. Relaxing
+        # per-tier identity/coverage thresholds further would not rescue these
+        # (the transcripts aren't aligning at all, not aligning-but-rejected),
+        # so the same "not enough usable transcript evidence -> ab-initio-only"
+        # degrade generalizes cleanly to every tier. Absence of the PASA summary
+        # line still means PASA (or something before it -- MySQL, OOM, a crash)
+        # never finished, which is exactly the kind of infra failure that SHOULD
+        # keep retrying with more memory/resources, not get silently absorbed
+        # into "this strain isn't trainable" -- conflating the two would mask
+        # real infra bugs. See nextflow/docs/DIVERGENT_REPRESENTATIVE_RNASEQ_PLAN.md
+        # (Option 1) and nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md for the
+        # original composite-only version of this reasoning.
+        if grep -qE 'PASA assigned [0-9]+ transcripts to [0-9]+ loci' funannotate_train_capture.log; then
+            echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this run (pasa_tier=${pasa_tier}) -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
             mkdir -p "${params.training_target}/${out}/training"
-            : > "${params.training_target}/${out}/training/.composite_train_failed"
+            : > "${params.training_target}/${out}/training/.pasa_train_failed"
             printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\n%s\\t%s\\t%s\\t%s\\t%s\\n" \\
                 "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" \\
-                > "${out}.composite_train_failed.tsv"
+                > "${out}.pasa_train_failed.tsv"
             exit 0
         fi
         echo "[ERROR] funannotate train failed for ${out} (exit \$TRAIN_STATUS); not publishing \$LOCAL_TRAIN over ${params.training_target}/${out}/training" >&2

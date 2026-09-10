@@ -48,8 +48,40 @@ process TRINITY_STANDALONE {
     # (broken-from-its-perspective) symlink and dies with "cannot locate file:
     # <species>_norm_R1.fastq.gz" even though the file is right there on the host.
     # Confirmed 2026-09-05 against Microsporum_canis.
-    SING_BINDS="--bind \$PWD:\$PWD,${launchDir}/rnaseq_reads:${launchDir}/rnaseq_reads,\$TMPDIR:\$TMPDIR"
-    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+    #
+    # ${launchDir}/rnaseq_reads alone is NOT enough: storeDir outputs are keyed by
+    # the *launchDir of the run that produced them*, which need not match this run's
+    # launchDir when Nextflow is invoked from a subdirectory (e.g. reads produced by
+    # a run launched from the parent dir, this run launched from a child dir with its
+    # own launchDir/rnaseq_reads being just a symlink back up -- the symlink resolves
+    # fine on the host but the container never sees the real path unless it's bound
+    # too). Confirmed 2026-09-06 against Albifimbria_verrucaria: r1/r2 resolved to
+    # <parent>/rnaseq_reads/..., one level above this run's launchDir/rnaseq_reads.
+    # So resolve each staged read file's real (symlink-followed) parent dir at
+    # runtime and bind that too, in addition to the launchDir-relative guess above.
+    EXTRA_BINDS=""
+    for f in "${r1}" "${r2}" "${se}"; do
+        if [ -e "\$f" ]; then
+            realdir=\$(dirname "\$(readlink -f "\$f")")
+            case ",\$EXTRA_BINDS," in
+                *",\$realdir,"*) ;;
+                *) EXTRA_BINDS="\${EXTRA_BINDS:+\$EXTRA_BINDS,}\$realdir:\$realdir" ;;
+            esac
+        fi
+    done
+    SING_BINDS="--bind \$PWD:\$PWD,${launchDir}/rnaseq_reads:${launchDir}/rnaseq_reads\${EXTRA_BINDS:+,\$EXTRA_BINDS},\$TMPDIR:\$TMPDIR"
+    # --cleanenv: without it, apptainer passes the submitting shell's env straight
+    # through, including whatever `module load java/...` set on the host (JAVA_HOME,
+    # LD_LIBRARY_PATH pointing at that Java's lib/server/). That leaks the host JVM's
+    # shared library over the container's own bundled JDK, producing a CDS
+    # ("shared archive file version 0x12 does not match required version 0x13")
+    # mismatch on EVERY java invocation -- and Trinity's Butterfly phase launches one
+    # JVM per assembled component, so this isn't just log noise, it's real per-task
+    # overhead multiplied hundreds of thousands of times. Confirmed 2026-09-07 against
+    # Microsporum_canis (job 28174732: 19+ hours, 84% through Butterfly, 420MB log of
+    # nothing but these warnings). --env TMPDIR=\$TMPDIR keeps the one host var Trinity
+    # actually needs (java.io.tmpdir / scratch fallback) despite --cleanenv stripping it.
+    SING="apptainer exec --cleanenv --env TMPDIR=\$TMPDIR \${SING_BINDS} ${params.funannotate_sif}"
 
     # Reads in rnaseq_reads/ are already normalized (in-silico read normalization by
     # RNASEQ_PREPARE's funannotate train --stop_after_trinity run), so skip Trinity's

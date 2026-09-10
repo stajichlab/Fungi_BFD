@@ -49,6 +49,9 @@ workflow FUNANNOTATE_RNASEQ {
     abinitioReuseMap     // out -> [species, reuse_eligible, is_representative], from loadAbinitioReuseMap()
     rnaseqRepOverride     // species_tag -> out, from loadRnaseqRepresentativeOverride()
     rnaseqSkipSet          // Set<out>, from loadRnaseqSkipSet() -- forces pasaTierFor() to 'skip'
+    trinityStandaloneSkipSet // Set<species_tag>, from loadTrinityStandaloneSkipSet() -- keeps
+                             // a species on its (below-threshold) GG Trinity instead of
+                             // running TRINITY_STANDALONE
     hybridParentage       // hybrid_species_tag -> [parent_species_tag, ...], from loadHybridParentage()
                            // see nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md
 
@@ -294,12 +297,17 @@ workflow FUNANNOTATE_RNASEQ {
 
         // (species_tag, r1, r2, se, trinity_fa, n_transcripts)
         def gg_branched = prepare_reads_ch
+            .combine(RNASEQ_PREPARE.out.shared, by: 0)
             .combine(COUNT_TRINITY_TRANSCRIPTS.out.counted, by: 0)
             .map { species_tag, r1, r2, se, trinity_fa, count_file ->
                 tuple(species_tag, r1, r2, se, trinity_fa, count_file.text.trim() as int)
             }
             .branch {
-                low: (it[5] as int) < (params.train_min_trinity_transcripts as int)
+                // trinityStandaloneSkipSet (it[0] = species_tag) wins over the transcript-count
+                // threshold -- a shelved species stays on its below-threshold GG Trinity rather
+                // than entering TRINITY_STANDALONE (see loadTrinityStandaloneSkipSet()).
+                low: (it[5] as int) < (params.train_min_trinity_transcripts as int) &&
+                     !trinityStandaloneSkipSet.contains(it[0])
                 ok:  true
             }
 
@@ -498,8 +506,9 @@ workflow FUNANNOTATE_RNASEQ {
         // over from before this species' reads were blacklisted/failed re-download, or
         // a hybrid composite trinity_fa built with no reads at all) can NEVER complete
         // FUNANNOTATE_TRAIN -- it just burns a 96GB/16cpu job and retries forever since
-        // the failure happens before PASA starts, so the composite-tier graceful-degrade
-        // check below (which greps for PASA's own summary line) never catches it either.
+        // the failure happens before PASA starts, so the graceful-degrade check inside
+        // FUNANNOTATE_TRAIN (which greps for PASA's own summary line, any pasa_tier)
+        // never catches it either.
         def branched = train_input.branch {
             ani_skip:   it[13] == 'skip' && it[12].size() > 0
             has_rnaseq: it[9].size() > 0 || it[11].size() > 0
@@ -528,11 +537,11 @@ workflow FUNANNOTATE_RNASEQ {
         FUNANNOTATE_TRAIN(train_todo)
         predict_input_ch = FUNANNOTATE_TRAIN.out.predict_input.mix(train_done).mix(predict_no_rnaseq)
 
-        // Audit trail for composite/composite_fallback-tier graceful degrades --
+        // Audit trail for graceful degrades to ab-initio-only (any pasa_tier) --
         // one reviewable file, same convention as rnaseq_se_candidates.csv/
         // rnaseq_blacklist_candidates.csv above. Empty when nothing degraded.
-        FUNANNOTATE_TRAIN.out.composite_failed
-            .collectFile(name: 'composite_train_failed.tsv', storeDir: launchDir,
+        FUNANNOTATE_TRAIN.out.pasa_failed
+            .collectFile(name: 'pasa_train_failed.tsv', storeDir: launchDir,
                          keepHeader: true, skip: 1)
         } // end if (!params.stop_after_sra_fetch)
         } // end if (!params.stop_after_sra_query)

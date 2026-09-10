@@ -252,6 +252,30 @@ def loadRnaseqSkipSet() {
     return s
 }
 
+// Eagerly loads trinity_standalone_skip_csv into a Set<String> of species_tags that
+// should never enter TRINITY_STANDALONE (the standalone-Trinity fallback for species
+// whose genome-guided Trinity produced too few transcripts -- see FUNANNOTATE_RNASEQ.nf,
+// gg_branched). Use this for a species whose standalone Trinity run is stuck/thrashing
+// (e.g. Microsporum_canis, 2026-09-07: 19+ hours on preempt, 84% through butterfly
+// assembly with no sign of finishing) and needs to be shelved for now. A skipped
+// species just keeps its (below-threshold) genome-guided Trinity-GG assembly instead
+// of the standalone one -- unlike rnaseq_skip_csv, this does NOT force pasaTierFor()
+// to 'skip'; ANI-based tiering still applies against whatever GG evidence exists.
+// Returns an empty set when no CSV exists yet -- every low-transcript species then
+// falls through to standalone Trinity as before.
+def loadTrinityStandaloneSkipSet() {
+    def s = [] as Set
+    def csv = file(params.trinity_standalone_skip_csv as String)
+    if (!csv.exists()) return s
+    csv.readLines().each { line ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) return
+        s << trimmed.split(',')[0].trim()
+    }
+    log.info "Loaded ${s.size()} Trinity-standalone skip entries from ${csv}"
+    return s
+}
+
 // Eagerly loads hybrid_parentage_csv into hybrid_species_tag -> [parent_species, ...].
 // See nextflow/docs/HYBRID_SPECIES_RNASEQ_SKIP_PLAN.md. Narrow/long format -- one row
 // per (hybrid, parent) pair, so 2-way through N-way crosses need no schema change

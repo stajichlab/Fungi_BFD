@@ -197,11 +197,11 @@ process FUNANNOTATE_PREDICT {
     # Requires BOTH gates so complete small genomes (e.g. Malassezia) are unaffected.
     # See analysis/funannotate_model_failures/. Disabled when predict_min_asm_bp=0.
     SKIP_REPORT="${params.target}/predict_skipped_too_small.tsv"
-    read ASM_BP ASM_CTG ASM_N50 ASM_VERDICT < <(
+    read ASM_BP ASM_CTG ASM_N50 ASM_VERDICT ASM_REPEAT_PCT < <(
         python "${workflow.projectDir}/bin/asm_preflight_stats.py" "\$GENOME_IN" \\
             --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
-            --max-contigs ${params.predict_frag_max_contigs})
-    echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}"
+            --max-contigs ${params.predict_frag_max_contigs} --report-repeat-pct)
+    echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}, \${ASM_REPEAT_PCT}% repeat-masked"
     if [ "\$ASM_VERDICT" = "small_fragmented" ] && [ ! -s "${other_gff}" ]; then
         echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
         mkdir -p "${params.target}"
@@ -342,6 +342,22 @@ process FUNANNOTATE_PREDICT {
     fi
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
+    # ── Repeat-aware EVM mode ─────────────────────────────────────────────────
+    # See profile_funannotate.config's predict_evm_repeat_pct_threshold comment
+    # for the Austropuccinia_psidii/GCA_003724095.1 "Evidence modeler has
+    # failed" failures this addresses. \$ASM_REPEAT_PCT comes from the same
+    # preflight FASTA pass as the small-genome guard above (no second scan).
+    EVM_REPEAT_FLAGS=()
+    THRESHOLD=${params.predict_evm_repeat_pct_threshold}
+    if [ "\$THRESHOLD" != "0" ] && awk -v p="\$ASM_REPEAT_PCT" -v t="\$THRESHOLD" 'BEGIN{exit !(p>=t)}'; then
+        echo "[INFO] ${out}: \${ASM_REPEAT_PCT}% repeat-masked >= \${THRESHOLD}% threshold -- enabling repeat-aware EVM mode (--repeats2evm, --evm-partition-interval ${params.predict_evm_repeat_aware_interval})"
+        EVM_REPEAT_FLAGS=(--repeats2evm --evm-partition-interval ${params.predict_evm_repeat_aware_interval})
+        if [ "${params.predict_evm_repeat_aware_drop_snap}" = "true" ]; then
+            echo "[INFO] ${out}: repeat-aware mode also zeroing SNAP's EVM weight (predict_evm_repeat_aware_drop_snap=true)"
+            WEIGHT_ARGS+=(snap:0)
+        fi
+    fi
+
     \$SING funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
@@ -349,7 +365,7 @@ process FUNANNOTATE_PREDICT {
         --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
-        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" || true
+        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" "\${EVM_REPEAT_FLAGS[@]}" || true
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"
