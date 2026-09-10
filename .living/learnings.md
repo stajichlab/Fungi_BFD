@@ -1493,3 +1493,19 @@ linear fits on n=2 (use per-genome rows, not the slope, for tiny traces).
 - **`-stub-run` of the pipeline did not clobber the already-published `tables/wgd.ks.parquet`** (touch-stub outputs were not copied over the real 1.39 MB file); the real artifact survived the stub test byte-for-byte.
 
 **Tags**: wgd, paralogoscope, merge, parquet, glob, workdir, relative-path, cached, resume, collect, gate, nextflow
+
+### [2026-09-09] Duplicate "stale prediction" log lines were misattributed to FUNANNOTATE_ANNOTATION's CSV rescan; actual cause was two independent .filter{}s over the same channel
+
+**Category**: gotcha
+
+**What happened**: An initial investigation into ~5,664 duplicate "stale prediction for X" log lines (only 3,687 unique genomes, some appearing up to 6x) in one `do_annotation_asco` pipeline pass attributed the duplication to `FUNANNOTATE_ANNOTATION.nf`'s `postpredict` channel construction, which independently re-reads all of `samples.csv` and re-runs `staleRnaseq()`/`staleGenome()` from scratch. A later, more rigorous review — a per-message-type breakdown plus timing analysis against the real `.nextflow.log` — showed this was wrong: the CSV rescan produces exactly one log line per stale genome it encounters; there is no duplication within it. The actual, unconditional source was `FUNANNOTATE_RNASEQ.nf`'s `train_todo`/`train_done`: two independent `.filter{}` calls over the same `branched.has_rnaseq` channel, each separately calling `isTrainResolved()`/`staleRnaseq()` (which `log.info` on every `true`/stale result) for every row — so every stale genome got logged (and re-stat'd) twice, unconditionally, on every single pipeline pass.
+
+**Why it matters**: Two subworkflows independently computing "is this genome stale" is a real design smell (the `FUNANNOTATE_ANNOTATION.nf` header comment claiming the predict/postpredict split is "disjoint by construction" is currently false — see `.living/decisions.md` 2026-09-09), and it's natural to assume cross-subworkflow duplication is the source of an observed symptom when that smell exists. But that cross-subworkflow redundancy is *conditional* — it only double-checks a genome that is simultaneously already-predicted, currently stale, and in the current run's scope — and was empirically near-zero in the analyzed run (`--predict_scope representative_only`, where only 1 genome actually reached `FUNANNOTATE_PREDICT` that pass). The `train_todo`/`train_done` double-filter, by contrast, is *unconditional*: it double-evaluates every row of one channel on every single run regardless of scope, and was the real, dominant, measurable cost. Acting on the first (architecturally more interesting) hypothesis without measuring against the actual log data would have led to a large, risky refactor (see the shelved consolidation, T-033) that would not have fixed the observed symptom at all.
+
+**Resolution**: Fixed by converting `train_todo`/`train_done` to a single `.branch{}` evaluating `isTrainResolved`/`staleRnaseq` once per row (commit `191ab3a`). The CSV-rescan redundancy remains real but was deliberately shelved — see `.living/decisions.md` (2026-09-09) and `todo/funannotate_predict_annotate_dedup.md` (T-033) — since it was not the cause of the measured symptom and has unmeasured benefit against a concrete implementation risk.
+
+**Tags**: funannotate, nextflow, stale, staleRnaseq, staleGenome, branch, filter, duplicate-logging, debugging, misattribution, root-cause, gotcha
+
+**mitigation_type**: ambient-awareness
+
+**structural_mitigation_candidate**: A small log-audit script (count occurrences of each `(genome, "stale prediction for")` pair per `.nextflow.log` and flag any count > 1) would catch this class of bug directly and immediately, and would have prevented the initial misattribution by pointing straight at which channel/operator produced the duplicate lines. Not yet implemented.
