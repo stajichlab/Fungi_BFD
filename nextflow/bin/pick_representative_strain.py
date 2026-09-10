@@ -242,7 +242,11 @@ def _atomic_write_csv(path: Path, fieldnames: list, rows: list):
     directory replace, no old-file-must-move-aside dance needed here)."""
     tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}")
     with open(tmp_path, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=fieldnames)
+        # lineterminator="\n": csv.DictWriter defaults to "\r\n" regardless
+        # of platform, which -- combined with the newline="" this function
+        # already sets on open() to stop that "\r\n" being doubled -- would
+        # still leave every row ending in a literal "\r\n" rather than "\n".
+        w = csv.DictWriter(fh, fieldnames=fieldnames, lineterminator="\n")
         w.writeheader()
         for row in rows:
             w.writerow(row)

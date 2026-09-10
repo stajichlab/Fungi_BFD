@@ -252,10 +252,13 @@ def compute_assignments(samples: dict, ani_pairs: dict, busco_by_asmid: dict, an
 def write_assignments(assignments: list, out_path: Path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", newline="") as fh:
+        # lineterminator="\n": see pick_representative_strain.py's
+        # _atomic_write_csv() -- csv.DictWriter defaults to "\r\n"
+        # regardless of platform.
         w = csv.DictWriter(fh, fieldnames=[
             "species", "out", "is_representative", "representative_out",
             "ani_to_representative", "reuse_eligible",
-        ])
+        ], lineterminator="\n")
         w.writeheader()
         for row in assignments:
             w.writerow(row)
