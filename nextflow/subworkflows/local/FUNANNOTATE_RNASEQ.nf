@@ -297,6 +297,7 @@ workflow FUNANNOTATE_RNASEQ {
 
         // (species_tag, r1, r2, se, trinity_fa, n_transcripts)
         def gg_branched = prepare_reads_ch
+            .combine(RNASEQ_PREPARE.out.shared, by: 0)
             .combine(COUNT_TRINITY_TRANSCRIPTS.out.counted, by: 0)
             .map { species_tag, r1, r2, se, trinity_fa, count_file ->
                 tuple(species_tag, r1, r2, se, trinity_fa, count_file.text.trim() as int)

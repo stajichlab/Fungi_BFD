@@ -92,42 +92,78 @@ process FUNANNOTATE_UPDATE {
         MYSQL_SCRATCH=\$TMPDIR/mysql_db_${out}
         rm -rf \$MYSQL_SCRATCH
         mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
-        rsync -a ${params.mysql_datadir}/mysql \$MYSQL_SCRATCH/db/ || \
-            { echo "ERROR: Failed to copy mysql data from ${params.mysql_datadir}" >&2; exit 1; }
+        # ── mariadb_sif retired: mariadbd now runs through \$SING ─────────────
+        # Same change as FUNANNOTATE_TRAIN/main.nf -- see there for the full
+        # rationale. Both the fresh-init step and the mysqld sidecar itself
+        # now run through \$SING (apptainer exec ${params.funannotate_sif})
+        # instead of a separate params.mariadb_sif, and no longer depend on
+        # the old ${params.mysql_datadir} template-copy either. \$SING already
+        # binds \$TMPDIR:\$TMPDIR (see SING_BINDS above), covering
+        # \$MYSQL_SCRATCH -- no extra bind needed. NOT yet verified
+        # end-to-end -- confirm mysql_install_db/mariadb-install-db and
+        # mariadbd/mysqld_safe are on the rebuilt image's PATH, that PASA can
+        # connect, and that killing \$MYSQLD_PID actually terminates the
+        # containerized mariadbd, before retiring params.mariadb_sif from
+        # profile_funannotate.config.
+        MYSQL_INSTALL_BIN=\$(\$SING sh -c 'command -v mariadb-install-db || command -v mysql_install_db')
+        if [ -z "\$MYSQL_INSTALL_BIN" ]; then
+            echo "ERROR: no mariadb-install-db/mysql_install_db found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        echo "[INFO] Initializing fresh MariaDB system tables via \$MYSQL_INSTALL_BIN"
+        \$SING "\$MYSQL_INSTALL_BIN" --datadir=\$MYSQL_SCRATCH/db/mysql \\
+            --auth-root-authentication-method=normal || \\
+            { echo "ERROR: \$MYSQL_INSTALL_BIN failed" >&2; exit 1; }
         cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
             { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
         PORT=\$(shuf -i3000-4999 -n1)
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
-        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=\${MYHOSTNAME}:\${PORT}/" \$PASACONF
+        # 127.0.0.1, not \$MYHOSTNAME -- see FUNANNOTATE_TRAIN/main.nf
+        # (confirmed 2026-09-09): routing this through the node's real
+        # hostname round-trips over the cluster network fabric and makes
+        # MariaDB's host-ACL check reject the connection, even though
+        # mariadbd and PASA are on the same node/namespace and never need
+        # to leave loopback.
+        sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=127.0.0.1:\${PORT}/" \$PASACONF
         perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
-        # No separate SING_BINDS entry needed for \$MYSQL_SCRATCH (\$PASACONF
-        # lives under it) -- it's now a subdirectory of \$TMPDIR, already
-        # covered by the \$TMPDIR:\$TMPDIR bind above.
-        # >/dev/null too, not just stderr: apptainer/singularity prints its
-        # "Usage: ... instance stop ..." help text to STDOUT (not stderr) when
-        # the named instance is already gone -- happens every run here since
-        # the EXIT trap always re-fires this after the explicit stop_mysqldb
-        # call near the end of the script already stopped it (see
-        # FUNANNOTATE_TRAIN/main.nf, same pattern).
-        stop_mysqldb() { singularity instance stop mysqldb_${asmid} >/dev/null 2>/dev/null || true; }
+        # Read the account PASA will actually connect as straight out of
+        # \$PASACONF -- see FUNANNOTATE_TRAIN/main.nf for why this isn't
+        # hardcoded here a second time.
+        PASA_MYSQL_USER=\$(grep '^MYSQL_RW_USER=' \$PASACONF | cut -d= -f2)
+        PASA_MYSQL_PASS=\$(grep '^MYSQL_RW_PASSWORD=' \$PASACONF | cut -d= -f2)
+        MYSQLD_BIN=\$(\$SING sh -c 'command -v mariadbd || command -v mysqld_safe')
+        if [ -z "\$MYSQLD_BIN" ]; then
+            echo "ERROR: no mariadbd/mysqld_safe found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container)"
+        \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
+            --datadir=\$MYSQL_SCRATCH/db/mysql \\
+            --socket=\$MYSQL_SCRATCH/mysqld.sock \\
+            --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
+        MYSQLD_PID=\$!
+        stop_mysqldb() { kill \$MYSQLD_PID 2>/dev/null || true; wait \$MYSQLD_PID 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
-        # No trailing "/usr/bin/mysqld_safe" here: `instance start` only runs
-        # trailing args THROUGH the image's %startscript (see --help), and
-        # Docker's ENTRYPOINT/CMD populate %runscript, not %startscript --
-        # mariadb_sif is a custom build (nextflow/docs/mariadb-10.3.9.def)
-        # whose %startscript itself execs mysqld_safe, so it needs no args.
-        # Same fix as FUNANNOTATE_TRAIN/main.nf, confirmed 2026-08-25: a plain
-        # docker://mariadb:10.3.9 (or an `apptainer pull`-cached sif of it,
-        # both lacking a real %startscript) starts an empty instance that
-        # never launches mysqld at all -- PASA then fails to connect.
-        singularity instance start --writable-tmpfs \\
-            -B \$MYSQL_SCRATCH/conf/my.cnf:/etc/mysql/my.cnf,\$MYSQL_SCRATCH/db/:/var/lib/mysql,\$MYSQL_SCRATCH/conf:/usr/conf \\
-            ${params.mariadb_sif} mysqldb_${asmid}
         pasa_db_arg="--pasa_db mysql"
         sleep 5
+        # mariadb-install-db only creates root@localhost/127.0.0.1/::1/<hostname>
+        # with no password -- see FUNANNOTATE_TRAIN/main.nf for the full
+        # rationale (confirmed 2026-09-09 against the real container: root
+        # connects passwordless over TCP to 127.0.0.1, and an account
+        # created here logs in fine). This is a fresh, throwaway,
+        # loopback-only DB for one task, so a shared generic account is
+        # fine.
+        MYSQL_CLIENT_BIN=\$(\$SING sh -c 'command -v mariadb || command -v mysql')
+        if [ -z "\$MYSQL_CLIENT_BIN" ]; then
+            echo "ERROR: no mariadb/mysql client found in ${params.funannotate_sif}" >&2
+            exit 1
+        fi
+        \$SING "\$MYSQL_CLIENT_BIN" -uroot -h127.0.0.1 -P\${PORT} -e \
+            "CREATE USER IF NOT EXISTS '\${PASA_MYSQL_USER}'@'127.0.0.1' IDENTIFIED BY '\${PASA_MYSQL_PASS}'; GRANT ALL ON *.* TO '\${PASA_MYSQL_USER}'@'127.0.0.1'; FLUSH PRIVILEGES;" || \
+            { echo "ERROR: failed to create \${PASA_MYSQL_USER} mysql user" >&2; exit 1; }
     fi
 
     # Link training data into work dir so funannotate update finds it at the relative path it expects.
