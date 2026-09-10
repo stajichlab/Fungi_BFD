@@ -526,10 +526,7 @@ workflow FUNANNOTATE_RNASEQ {
         // shared Trinity-GG assembly itself had too few transcripts to even attempt PASA)
         // -- both in modules/funannotate/utils.nf. Without these, an already-resolved
         // species gets a fresh 16cpu/96GB job resubmitted on every relaunch just to
-        // re-derive the same verdict and exit 0. Shared between train_todo/train_done so
-        // the two stay an exact logical complement of each other over branched.has_rnaseq
-        // (same requirement FUNANNOTATE_ANNOTATION.nf documents for its predict/annotate
-        // split).
+        // re-derive the same verdict and exit 0.
         def isTrainResolved = { out, gfa, tf ->
             def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
             (gff3.exists() && gff3.size() > 0) ||
@@ -539,14 +536,24 @@ workflow FUNANNOTATE_RNASEQ {
 
         // Skip TRAIN at the channel level when already resolved, UNLESS the rnaseq reads
         // or trinity FASTA is newer than the existing prediction GBK (staleRnaseq), in
-        // which case we re-run training so predict can be refreshed too.
-        def train_todo = branched.has_rnaseq.filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, gfa, _r1, _r2, _se, tf, _tier ->
-            !isTrainResolved.call(out, gfa, tf) || staleRnaseq(out as String, sp as String)
+        // which case we re-run training so predict can be refreshed too. One .branch{}
+        // (not two independent .filter{}s) so isTrainResolved/staleRnaseq -- each of
+        // which does real filesystem stat()s and logs on a stale hit -- are evaluated
+        // exactly once per row instead of twice; two filters over the same channel was
+        // measured as the actual source of ~2,200 duplicate "stale prediction for X" log
+        // lines in a single pipeline pass (not the FUNANNOTATE_ANNOTATION CSV rescan, as
+        // originally suspected). branch{} also makes todo/done mutually exclusive by
+        // construction rather than by keeping two hand-written boolean complements in
+        // sync (same "exact logical complement" requirement FUNANNOTATE_ANNOTATION.nf
+        // documents for its own predict/annotate split).
+        def train_branched = branched.has_rnaseq.branch { out, _a, sp, _st, _lt, _bl, _hl, _tt, gfa, _r1, _r2, _se, tf, _tier ->
+            def resolved = isTrainResolved.call(out, gfa, tf)
+            def stale    = staleRnaseq(out as String, sp as String)
+            todo: !resolved || stale
+            done: true
         }
-        def train_done = branched.has_rnaseq
-            .filter { out, _a, sp, _st, _lt, _bl, _hl, _tt, gfa, _r1, _r2, _se, tf, _tier ->
-                isTrainResolved.call(out, gfa, tf) && !staleRnaseq(out as String, sp as String)
-            }
+        def train_todo = train_branched.todo
+        def train_done = train_branched.done
             .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf, _tier ->
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
