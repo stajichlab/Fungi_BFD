@@ -276,6 +276,53 @@ def loadSuppressSet() {
     return suppressSet
 }
 
+// Build the set of `out` values (see makeSampleTag()) whose samples.csv
+// PHYLUM matches params.microsporidia_phylum. Mirrors loadSuppressSet()'s
+// synchronous-read pattern: read once, return a plain Set for O(1)
+// .contains() checks in FUNANNOTATE_PREDICTION.nf's per-row closures.
+//
+// MUST key off SPECIES/STRAIN (via makeSampleTag), matching exactly how
+// workflows/funannotate.nf builds `out` for the jobs channel (line 110) --
+// NOT SPECIES_IN, a separate raw/unnormalized column that produces a
+// different, non-matching tag.
+//
+// Plain comma-split (not a full CSV parser) matches every other synchronous
+// loader in this file (loadSuppressSet, loadAbinitioReuseMap in
+// modules/funannotate/utils.nf) -- if embedded commas in quoted fields ever
+// bite here, fix it in all of them together, not just this one.
+def loadMicrosporidiaOutSet() {
+    def phylum = (params.microsporidia_phylum ?: '').trim()
+    if (!phylum) {
+        return ([] as Set)
+    }
+    def f = file(params.samples as String)
+    if (!f.exists()) {
+        return ([] as Set)
+    }
+    def lines = f.readLines()
+    if (lines.size() < 2) {
+        return ([] as Set)
+    }
+    def header  = lines[0].split(',', -1)*.trim()
+    def iSpecies = header.indexOf('SPECIES')
+    def iStrain  = header.indexOf('STRAIN')
+    def iPhylum  = header.indexOf('PHYLUM')
+    if (iSpecies < 0 || iStrain < 0 || iPhylum < 0) {
+        log.warn "loadMicrosporidiaOutSet: samples.csv missing SPECIES/STRAIN/PHYLUM column; microsporidia_phylum gate is a no-op"
+        return ([] as Set)
+    }
+    def outSet = lines.drop(1)
+        .collect { it.split(',', -1) }
+        .findAll { f2 -> f2.size() > [iSpecies, iStrain, iPhylum].max() }
+        .findAll { f2 -> f2[iPhylum].trim().equalsIgnoreCase(phylum) }
+        .collect { f2 -> makeSampleTag(f2[iSpecies].trim(), f2[iStrain].trim()) }
+        .toSet()
+    if (outSet) {
+        log.info "loadMicrosporidiaOutSet: ${outSet.size()} genome(s) tagged PHYLUM=${phylum}"
+    }
+    return outSet
+}
+
 // Build the samples.csv row filter for the suppress list produced by
 // loadSuppressSet(). Mirrors taxonRowFilter()/asmidRowFilter() above: pass
 // its result straight to .filter() and it's a no-op when the set is empty.
