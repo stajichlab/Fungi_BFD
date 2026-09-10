@@ -11,16 +11,21 @@ are left untouched.
 
 Why this is safe re: re-download
 --------------------------------
-The pipeline uses two independent storeDir caches:
-  * SRA_FETCH      -> storeDir rnaseq_reads/  (downloads + trims + bbnorm-normalizes)
-                      outputs <tag>_norm_{R1,R2,SE}.fastq.gz
-  * RNASEQ_PREPARE -> storeDir rnaseq_data/   (runs Trinity)
-                      output  <tag>.trinity-GG.fasta
+The pipeline uses three independent storeDir caches:
+  * SRA_FETCH               -> storeDir rnaseq_reads/  (downloads + trims + bbnorm-normalizes)
+                               outputs <tag>_norm_{R1,R2,SE}.fastq.gz
+  * RNASEQ_PREPARE          -> storeDir rnaseq_data/   (runs Trinity)
+                               output  <tag>.trinity-GG.fasta
+  * COUNT_TRINITY_TRANSCRIPTS -> storeDir rnaseq_data/counts/  (grep -c '^>' count)
+                               output  <tag>.n_transcripts.txt
 Nextflow skips a storeDir process only when ALL its declared outputs already exist.
 Deleting an empty rnaseq_data/<tag>.trinity-GG.fasta re-triggers RNASEQ_PREPARE only
 (a Trinity re-assembly fed by the already-cached normalized reads). SRA_FETCH stays
 cached because its rnaseq_reads/ outputs are intact, so NO NCBI re-download happens.
-(A re-download would only be triggered by deleting files in rnaseq_reads/.)
+(A re-download would only be triggered by deleting files in rnaseq_reads/.) This script
+also removes the matching rnaseq_data/counts/<tag>.n_transcripts.txt so
+COUNT_TRINITY_TRANSCRIPTS recounts the rebuilt assembly instead of serving the stale
+(and, before rebuild, correct-but-about-to-be-wrong) 0-transcript count.
 
 Stale-training short-circuit
 ----------------------------
@@ -248,13 +253,21 @@ def main():
 
     removed_fa = 0
     removed_dirs = 0
+    removed_counts = 0
+    counts_dir = rnaseq_data / "counts"
     for r in rows:
         r["trinity_path"].unlink()
         removed_fa += 1
+        count_file = counts_dir / f"{r['species_tag']}.n_transcripts.txt"
+        if count_file.exists():
+            count_file.unlink()
+            removed_counts += 1
         if args.clean_stale_training:
             for d in r["stale_dirs"]:
                 shutil.rmtree(d)
                 removed_dirs += 1
+    print(f"[APPLY] Cleared {removed_counts} stale cached counts from {counts_dir} "
+          f"(clears COUNT_TRINITY_TRANSCRIPTS's storeDir cache so it recounts the rebuild)")
     print(f"\n[APPLY] Removed {removed_fa} empty Trinity files"
           + (f" and {removed_dirs} stale training dirs." if args.clean_stale_training
              else f"; {n_stale} stale training dirs left in place "

@@ -303,12 +303,20 @@ def main():
     # Move / dry-run
     if args.move:
         poor_dir.mkdir(parents=True, exist_ok=True)
+        counts_dir = rnaseq_dir / "counts"
         moved = 0
+        counts_cleared = 0
         for fasta_path, tx_count in low_count_files:
             dest = poor_dir / fasta_path.name
             shutil.move(str(fasta_path), str(dest))
             moved += 1
+            count_file = counts_dir / f"{species_tag_from_filename(fasta_path.name)}.n_transcripts.txt"
+            if count_file.exists():
+                count_file.unlink()
+                counts_cleared += 1
         print(f"[INFO] Moved {moved} files to {poor_dir}")
+        print(f"[INFO] Cleared {counts_cleared} stale cached counts from {counts_dir} "
+              f"(clears COUNT_TRINITY_TRANSCRIPTS's storeDir cache so it recounts the rebuild)")
     else:
         print(f"\n[DRY-RUN] {len(low_count_files)} files would be moved to {poor_dir}")
         print("  Re-run with --move to perform the actual move.")
