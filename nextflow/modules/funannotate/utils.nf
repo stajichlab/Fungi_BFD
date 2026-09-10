@@ -84,6 +84,43 @@ def staleGenome(String out, String asmid) {
     return false
 }
 
+// A species can be "resolved" for FUNANNOTATE_TRAIN purposes without a real PASA GFF3:
+// a durable .pasa_train_failed marker records that a prior attempt (any pasa_tier)
+// completed PASA alignment/assignment but assigned too few loci to build a training set
+// -- see FUNANNOTATE_TRAIN/main.nf's TRAIN_STATUS handling, which writes this marker.
+// Without this check at the Groovy level, a species already known "not trainable" gets a
+// fresh 16cpu/96GB FUNANNOTATE_TRAIN job resubmitted on every relaunch, purely so the
+// job's own in-script RESOLVED_MARKER logic (main.nf ~lines 66-136) can re-derive the
+// same "nothing to do" conclusion and exit 0.
+//
+// This function mirrors that in-script staleness check -- and must be AT LEAST as
+// strict, not just similar -- because the in-script check only ever runs if the job is
+// submitted; if this function wrongly says "resolved and current", the job is never
+// submitted and nothing downstream gets a chance to catch the mistake. Compares the
+// marker's mtime against genome_fa (the cleaned/masked genome FUNANNOTATE_TRAIN actually
+// receives, e.g. input_clean_genomes/<asmid>.masked.fasta[.gz]) and trinity_fa (the
+// shared Trinity/composite evidence file from the channel, whatever tier produced it) --
+// deliberately NOT genomeSourceFile(asmid) (the raw NCBI download staleGenome() above
+// uses for a different purpose; confirmed the two files have independently different
+// mtimes, e.g. a re-masking updates one but not the other).
+//
+// Only checks the marker -- callers combine this with their own gff3.exists() check,
+// since the existing gff3/success path's staleness semantics (staleRnaseq only, no
+// genome/trinity check) are intentionally left as-is here, not expanded.
+def pasaTrainMarkerCurrent(String out, def genome_fa, def trinity_fa) {
+    def marker = file("${params.training_target}/${out}/training/.pasa_train_failed")
+    if (!marker.exists()) return false
+    def gfa = file(genome_fa as String)
+    def tf  = file(trinity_fa as String)
+    def genome_newer  = gfa.exists() && gfa.size() > 0 && gfa.lastModified() > marker.lastModified()
+    def trinity_newer = tf.exists()  && tf.size() > 0  && tf.lastModified()  > marker.lastModified()
+    if (genome_newer || trinity_newer) {
+        log.info "stale prediction for ${out}: genome/trinity evidence newer than .pasa_train_failed marker — scheduling retrain"
+        return false
+    }
+    return true
+}
+
 // ── Species-level ab-initio parameter reuse (todo/species_level_abinitio_reuse.md) ──
 // Backfilled/refreshed out-of-band by nextflow/bin/species_reuse_clusters.py, which
 // writes both abinitio_reuse_csv and the per-species
