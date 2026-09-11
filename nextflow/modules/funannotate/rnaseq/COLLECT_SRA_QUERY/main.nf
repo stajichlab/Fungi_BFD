@@ -18,9 +18,7 @@ process COLLECT_SRA_QUERY {
     script:
     """
     printf 'species_tag,taxonid,sra_accession,spots,platform,layout\n' > ${stem}.rnaseq_sra.csv
-    for f in ${query_csvs}; do
-        tail -n +2 "\$f" >> ${stem}.rnaseq_sra.csv
-    done
+    awk 'FNR>1' ${query_csvs} >> ${stem}.rnaseq_sra.csv
     NSPECIES=\$(awk -F',' 'NR>1{print \$1}' ${stem}.rnaseq_sra.csv | sort -u | wc -l)
     NACCESSIONS=\$(awk 'NR>1' ${stem}.rnaseq_sra.csv | wc -l)
     echo "[INFO] ${stem}.rnaseq_sra.csv: \$NACCESSIONS accessions across \$NSPECIES species with RNA-seq data"
