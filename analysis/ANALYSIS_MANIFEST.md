@@ -380,3 +380,33 @@ embeddings, plotly report). Reproduce: `collect_measurements.py
 /scratch/jstajich/27843486/plg_real outputs/wgd_perf_measurements.tsv`
 then `estimate_throughput.py outputs/wgd_perf_measurements.tsv 4365
 --median-genes 9105 --out outputs/wgd_throughput_estimate.tsv`.
+
+### funannotate_runtime_scaling
+
+```yaml
+name: funannotate-runtime-scaling
+type: performance-profiling
+status: active
+created: 2026-09-11
+last_updated: 2026-09-11
+datasets: [Fungi_BFD_runs/{do_annotation,do_annotation_asco,do_annotation_Rhod}/logs/nextflow/funannotate_trace*.txt (181 files), Fungi_BFD_runs/results/genome_stats_by_name/ (asm_stats + gene_stats DB), Fungi_BFD_runs/analysis/funannotate_runtime_metadata.parquet (59,965 rows)]
+algorithms: [Fungi_BFD_runs/do_annotation_asco/scripts/build_runtime_metadata_table.py, Fungi_BFD_runs/do_annotation_asco/scripts/plot_runtime_relationships.py]
+parent_analysis: null
+key_findings:
+  - "GENEMARK_RUN runtime scales near-linearly with genome size (log-log OLS R2=0.753, slope=0.90); GENEMARK_RUN_SIB shows a much weaker fit (R2=0.225) over a narrow 25-50 Mb range."
+  - "FUNANNOTATE_TRAIN and FUNANNOTATE_PREDICT runtime is only weakly explained by genome size, gene count, repeat %, or scaffold count individually (R2 0.001-0.10 for both), corroborating funannotate_predict_stage_timing's finding (different method) that RNA-seq-driven Augustus training-path branching, not assembly size, dominates PREDICT/TRAIN wall time."
+  - "A quick-fail cluster of FAILED attempts at ~milliseconds runtime appears across every process and genome-size range -- distinct from genuine slow-then-crash failures; not yet bucketed by exit_code."
+  - "100 flagged per-facet outliers are all FUNANNOTATE_PREDICT, status=COMPLETED, exit=0, genuine large-genome metadata, but ~1.4-2.2s runtime -- orders of magnitude below the fit's prediction. Confirmed (project-owner) cause: funannotate checks for existing output in predict_results/ before running and exits immediately if present -- a skip-exit, not a real execution; these rows should be excluded from PREDICT runtime distributions/fits."
+  - "Genome-stats join via the shared asm_stats_by_name DB (species-keyed, survives work-dir cleanup) covers 75% of FUNANNOTATE_PREDICT attempts vs. 0.8% from the original work-dir-only approach; RNASEQ_PREPARE coverage stays low (4.7%) because its trace tag is usually an SRA accession, not a species name."
+report: analysis/funannotate_runtime_scaling/FUNANNOTATE_RUNTIME_SCALING.md
+tags: [funannotate, runtime, benchmarking, genome-size, gene-count, repeat-content, outliers, nextflow-trace]
+```
+
+Cross-run (not single-pipeline-invocation) benchmarking view: joins every historical
+Nextflow trace file across all three funannotate pipeline roots against the shared
+per-species assembly-stats and gene-count DBs, to plot runtime vs. genome size / gene
+count / repeat % / scaffold count faceted by process (TRAIN, PREDICT, GENEMARK_RUN, and
+their SIB counterparts), with outliers flagged by OLS residual per facet rather than
+eyeballed. Intended as a durable, re-runnable data layer + figure set for the funannotate
+benchmarking paper. See Open Questions in the report for what's unconfirmed (the
+2-second-PREDICT outlier mechanism, near-instant FAILED bucket, RNASEQ_PREPARE tagging).
