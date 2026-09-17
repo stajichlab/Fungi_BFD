@@ -167,10 +167,13 @@ process GENEMARK_RUN {
     read ASM_BP ASM_CTG ASM_N50 ASM_VERDICT < <(
         python "${workflow.projectDir}/bin/asm_preflight_stats.py" genome.fa \\
             --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
-            --max-contigs ${params.predict_frag_max_contigs})
-    if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
-        echo "[WARN] GENEMARK_RUN ${out}: too small/fragmented (\$ASM_BP bp, \$ASM_CTG contigs, N50 \$ASM_N50); skipping GeneMark -- predict's own preflight guard will flag/report this genome" >&2
-        record_genemark_skip "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50"
+            --max-contigs ${params.predict_frag_max_contigs} \\
+            --min-contig-len ${params.predict_min_training_contig_len} \\
+            --min-training-contigs ${params.predict_min_training_contigs} \\
+            --abs-min-bp ${params.predict_abs_min_asm_bp})
+    if [ "\$ASM_VERDICT" != "ok" ]; then
+        echo "[WARN] GENEMARK_RUN ${out}: preflight verdict '\$ASM_VERDICT' (\$ASM_BP bp, \$ASM_CTG contigs, N50 \$ASM_N50); skipping GeneMark -- predict's own preflight guard will flag/report this genome" >&2
+        record_genemark_skip "preflight_\$ASM_VERDICT" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50"
         touch "${out}.genemark.gtf"
         rm -f genome.fa
         exit 0

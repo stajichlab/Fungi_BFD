@@ -117,9 +117,9 @@ process FUNANNOTATE_PREDICT {
 
     # ── Skip vs. refresh decision ─────────────────────────────────────────────
     # The workflow schedules this process when the GBK is missing OR stale (rnaseq/trinity/
-    # genome assembly newer than the GBK, per staleRnaseq()/staleGenome()). Re-derive
-    # staleness here from the same on-disk timestamps so a current GBK short-circuits, but
-    # a stale one forces a clean re-predict.
+    # genome assembly/training output newer than the GBK, per staleRnaseq()/staleGenome()/
+    # staleTraining()). Re-derive staleness here from the same on-disk timestamps so a
+    # current GBK short-circuits, but a stale one forces a clean re-predict.
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     SKIP_GBK="\$PREDICT_GBK"
     [ -s "\$SKIP_GBK" ] || SKIP_GBK="\$PREDICTDIR/predict_results/${out}.gbk.gz"
@@ -139,6 +139,23 @@ process FUNANNOTATE_PREDICT {
         # analogous check for the same underlying gap.
         if [ -s "${genome_fa}" ] && [ "${genome_fa}" -nt "\$SKIP_GBK" ]; then
             STALE=1; STALE_REASON="genome assembly"
+        fi
+        # FUNANNOTATE_TRAIN can produce a newer/better training set (or flip a prior
+        # .pasa_train_failed verdict to trainable) without any rnaseq/trinity/genome file
+        # itself changing -- e.g. a retrain that only succeeded this time because an
+        # earlier attempt hit infra flakiness (SLURM preemption, an NFS exit-status-read
+        # timeout). Mirrors the Groovy-level staleTraining() gate that schedules this task
+        # in the first place; without this check here too, the task would reach this point,
+        # find its own GBK "current" by every OTHER measure, and silently no-op forever
+        # (the GBK mtime never advances past the training GFF3, so staleTraining() keeps
+        # rescheduling it on every future -resume). .pasa_train_failed is deliberately
+        # 0-byte (`: > marker`), so it's checked with `-e`, not `-s` like the files above.
+        TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
+        TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.pasa_train_failed"
+        if [ -s "\$TRAIN_GFF3" ] && [ "\$TRAIN_GFF3" -nt "\$SKIP_GBK" ]; then
+            STALE=1; STALE_REASON="training output"
+        elif [ -e "\$TRAIN_FAILED_MARKER" ] && [ "\$TRAIN_FAILED_MARKER" -nt "\$SKIP_GBK" ]; then
+            STALE=1; STALE_REASON="training output"
         fi
         if [ "\$STALE" -eq 0 ]; then
             echo "[INFO] Prediction already complete and current for ${out}; nothing to do"
@@ -163,6 +180,24 @@ process FUNANNOTATE_PREDICT {
     # funannotate predict expects training data at <outdir>/training; point it at the
     # persistent training dir. The symlink lives in the persistent project tree (no
     # publishDir to recursively copy the target), so it is left in place.
+    #
+    # \$PREDICTDIR/training must end up as EITHER a symlink to the canonical training dir
+    # OR absent -- never a real directory. `ln -sfn` does NOT replace an existing real
+    # (non-symlink) directory: confirmed empirically that it silently exits 0 and nests a
+    # stray symlink *inside* it instead, leaving the stale real directory (and whatever
+    # training data is or isn't in it) untouched with no error and no warning. That is the
+    # exact mechanism behind the "cryptic" 2026-09-10 training-symlink incident (broken/
+    # missing symlinks plus 776 duplicated real training dirs found dataset-wide -- see
+    # .living/learnings.md in ../Fungi_BFD and scripts/one-off/reconcile_training_duplicates.py).
+    # Hard-fail instead of silently proceeding against stale/wrong data.
+    if [ -e "\$PREDICTDIR/training" ] && [ ! -L "\$PREDICTDIR/training" ]; then
+        echo "[ERROR] ${out}: \$PREDICTDIR/training exists as a real (non-symlink) directory, not a symlink to the canonical training dir at ${params.training_target}/${out}/training. This is data corruption, not a normal predict failure -- reconcile it (e.g. scripts/one-off/reconcile_training_duplicates.py) before predict can proceed for this species." >&2
+        exit 1
+    fi
+    if [ -L "\$PREDICTDIR/training" ] && [ ! -e "\$PREDICTDIR/training" ]; then
+        echo "[WARN] ${out}: \$PREDICTDIR/training was a broken symlink; removing before relinking" >&2
+        rm -f "\$PREDICTDIR/training"
+    fi
     if [ -d "${params.training_target}/${out}/training" ]; then
         ln -sfn "${params.training_target}/${out}/training" "\$PREDICTDIR/training"
     fi
@@ -200,13 +235,17 @@ process FUNANNOTATE_PREDICT {
     read ASM_BP ASM_CTG ASM_N50 ASM_VERDICT ASM_REPEAT_PCT < <(
         python "${workflow.projectDir}/bin/asm_preflight_stats.py" "\$GENOME_IN" \\
             --min-bp ${params.predict_min_asm_bp} --max-n50 ${params.predict_frag_max_n50} \\
-            --max-contigs ${params.predict_frag_max_contigs} --report-repeat-pct)
+            --max-contigs ${params.predict_frag_max_contigs} \\
+            --min-contig-len ${params.predict_min_training_contig_len} \\
+            --min-training-contigs ${params.predict_min_training_contigs} \\
+            --abs-min-bp ${params.predict_abs_min_asm_bp} \\
+            --report-repeat-pct)
     echo "[INFO] Pre-flight assembly stats for ${out}: \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}, \${ASM_REPEAT_PCT}% repeat-masked"
-    if [ "\$ASM_VERDICT" = "small_fragmented" ]; then
-        echo "[WARN] ${out} is too small/fragmented for funannotate training (\${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
+    if [ "\$ASM_VERDICT" != "ok" ]; then
+        echo "[WARN] ${out} failed preflight ('\$ASM_VERDICT': \${ASM_BP} bp, \${ASM_CTG} contigs, N50 \${ASM_N50}); skipping predict" >&2
         mkdir -p "${params.target}"
         [ -s "\$SKIP_REPORT" ] || printf 'out\tasmid\tlocustag\treason\ttotal_bp\tcontigs\tN50\n' > "\$SKIP_REPORT"
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "preflight_small_fragmented" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50" >> "\$SKIP_REPORT"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "${locustag}" "preflight_\$ASM_VERDICT" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50" >> "\$SKIP_REPORT"
         touch "\$PREDICTDIR/${out}.predict.skipped_too_small"
         touch ${out}.predict.done
         exit 0
