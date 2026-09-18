@@ -78,32 +78,59 @@ process FUNANNOTATE_PREDICT {
     # Without these binds, funannotate's `-p <parameters.json>` open() call fails
     # with FileNotFoundError even though the file exists and is readable on the
     # host -- confirmed 2026-09-04 against Neurospora_tetrasperma_FGSC_2509.
-    # nextflow/patches/funannotate/{predict.py,library.py} overlay the image's own
-    # vendored copies (bind-mounted at container-launch time -- no image rebuild).
-    # Real root cause (confirmed 2026-09-06 against Austropuccinia_psidii_Au3-C622-
-    # A115012, reproduced on 4 separate SLURM attempts via `sacct -j <id>.batch
+    # Root cause of a prior OOM + Pool.join() deadlock in soft-mask parsing
+    # (confirmed 2026-09-06 against Austropuccinia_psidii_Au3-C622-A115012,
+    # reproduced on 4 separate SLURM attempts via `sacct -j <id>.batch
     # --format=State,MaxRSS`, every one OUT_OF_MEMORY with MaxRSS pinned at the task's
     # memory limit, plus "Detected N oom_kill event(s)" in .command.log): library.py's
-    # checkMasklowMem() spawns a multiprocessing.Pool to compute masking stats per
+    # checkMasklowMem() spawned a multiprocessing.Pool to compute masking stats per
     # scaffold; its worker function (maskingstats2bed) built a Python list with one
     # int per masked base (~34 bytes/base) before grouping into BED runs -- on this
     # genome's largest scaffolds (up to 86 Mbp, >90% soft-masked) that is several GB
-    # PER WORKER, OOM-killing the cgroup. Once SIGKILL takes out a worker mid-task,
-    # Pool.join() blocks forever waiting on that worker's never-arriving result
-    # (CPython bpo-22393) -- explains the observed 12+ hour near-zero-CPU stall on
-    # every attempt: not an I/O hang, just OOM-then-deadlock. Fixed by rewriting
-    # maskingstats2bed to scan runs via regex (re.finditer) instead of a per-base
-    # list -- numerically identical output, and per-worker memory drops to roughly
-    # the sequence string itself plus a small list of (start,end) run tuples.
-    # (The prior comment here blamed an NFS rmtree hang on checkMasklowMem's tmpdir
-    # living under args.out instead of args.tmpdir/\$SCRATCH -- that bind is still
-    # applied below since it's harmless and arguably correct hygiene, but it was
-    # NOT the actual fix: job 28163305 already had this exact predict.py bind
-    # mounted and still OOM-hung identically. Don't trust that theory.)
-    PREDICT_PY_PATCH="${workflow.projectDir}/patches/funannotate/predict.py"
-    LIBRARY_PY_PATCH="${workflow.projectDir}/patches/funannotate/library.py"
-    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR,\$PREDICT_PY_PATCH:/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/predict.py,\$LIBRARY_PY_PATCH:/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/library.py"
+    # PER WORKER, OOM-killing the cgroup. Once SIGKILL took out a worker mid-task,
+    # Pool.join() blocked forever waiting on that worker's never-arriving result
+    # (CPython bpo-22393) -- explaining the observed 12+ hour near-zero-CPU stall on
+    # every attempt: not an I/O hang, just OOM-then-deadlock.
+    #
+    # Fixed upstream in funannotate-live commit 17c58f5 (rewrites maskingstats2bed
+    # to scan runs via regex instead of a per-base list, and checkMasklowMem to use
+    # ProcessPoolExecutor so a killed worker raises instead of hanging). This was
+    # initially deployed as a local bind-mount overlay of predict.py/library.py
+    # (nextflow/patches/funannotate/) while waiting for a container rebuild; that
+    # overlay is now retired (2026-09-17) because funannotate-1.9.0-beta.11.sif
+    # (built 2026-09-09, after 17c58f5) already has the fix baked in at its native
+    # path -- verified byte-identical against the patch files via
+    # `apptainer exec ... cat /pixi/.../funannotate/{predict,library}.py`.
+    # augustus_parallel.py bug-fix overlay: the funannotate-1.9.0-beta.11.sif's own
+    # aux_scripts/augustus_parallel.py unconditionally builds `hints_input =
+    # '--hintsfile='+args.hints` even when --hints was never passed to it (args.hints
+    # is None). A predict run with zero protein AND zero RNA-seq evidence omits
+    # --hints entirely, so this line raises TypeError inside every one of the
+    # multiprocessing Augustus workers -- instantly, before augustus itself ever
+    # runs (confirmed 2026-09-18 against Neopereziidae_sp._gmOTU29_Ox002475: 0/463
+    # chunks completed, 463/463 failed in ~1s; ruled out CPU/node issues first --
+    # `augustus --version` runs fine on the actual failing node). Same overlay
+    # pattern as the now-retired predict.py/library.py patches (see the SING_BINDS
+    # comment above): bind-mount a locally patched copy over the container's own
+    # path rather than waiting on a container rebuild. Guards `if args.hints else
+    # ''` instead of removing the line, so the hints-present path (RNA-seq/protein
+    # evidence available) is completely unchanged.
+    AUGUSTUS_PARALLEL_PATCH="${workflow.projectDir}/patches/funannotate/aux_scripts/augustus_parallel.py"
+    AUGUSTUS_PARALLEL_CONTAINER_PATH="/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/aux_scripts/augustus_parallel.py"
+
+    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.proteins_microsporidia}:${params.proteins_microsporidia},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR,\$AUGUSTUS_PARALLEL_PATCH:\$AUGUSTUS_PARALLEL_CONTAINER_PATH"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+
+    # Microsporidia protein evidence override (see profile_funannotate.config's
+    # proteins_microsporidia comment for the exonerate-alignment rationale).
+    # busco_lineage=="microsporidia" is a verified 1:1 proxy for samples.csv
+    # PHYLUM=Microsporidia (163/163 rows, 2026-09-18) and is already available in
+    # this process's input tuple, so no channel/tuple-arity changes are needed.
+    PROTEIN_EVIDENCE="${params.proteins}"
+    if [ "${busco_lineage}" = "microsporidia" ]; then
+        echo "[INFO] ${out}: busco_lineage=microsporidia; using full swissprot (${params.proteins_microsporidia}) as protein evidence instead of the fungal-only subset"
+        PROTEIN_EVIDENCE="${params.proteins_microsporidia}"
+    fi
 
     PREDICTDIR="${params.target}/${out}"
     PREDICT_GBK="\$PREDICTDIR/predict_results/${out}.gbk"
@@ -213,9 +240,9 @@ process FUNANNOTATE_PREDICT {
     # "NFS-latency-bound genome parse" for Austropuccinia_psidii_Au3-C622-A115012 --
     # that theory was wrong (the actual 20-scaffold, ~1.1 GB genome parses to
     # per-scaffold FASTA files in ~10s from NFS; the real 12+ hour stall was an
-    # OOM-kill + multiprocessing.Pool.join() deadlock inside checkMasklowMem, see
-    # SING_BINDS/LIBRARY_PY_PATCH above). Kept as a legitimate hygiene improvement,
-    # not because it was load-bearing for that failure.
+    # OOM-kill + multiprocessing.Pool.join() deadlock inside checkMasklowMem, now
+    # fixed upstream -- see SING_BINDS comment above). Kept as a legitimate hygiene
+    # improvement, not because it was load-bearing for that failure.
     GENOME_FA="${genome_fa}"
     case "\$GENOME_FA" in
         *.gz) echo "[INFO] Inflating compressed genome \$GENOME_FA to \$TMPDIR"; pigz -dc "\$GENOME_FA" > "\$TMPDIR/genome_input.fa"; GENOME_IN="\$TMPDIR/genome_input.fa" ;;
@@ -322,7 +349,7 @@ process FUNANNOTATE_PREDICT {
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
         --min_training_models 30 --tmpdir \$TMPDIR --SeqCenter ${params.seqcenter} \\
-        --keep_no_stops --header_length ${header_length} --protein_evidence ${params.proteins} \\
+        --keep_no_stops --header_length ${header_length} --protein_evidence "\$PROTEIN_EVIDENCE" \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
         "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${EVM_REPEAT_FLAGS[@]}" || true
