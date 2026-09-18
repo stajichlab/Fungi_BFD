@@ -4,6 +4,43 @@ Append-only log of gotchas, surprises, and insights.
 
 **Entry template:** copy from `skills/core/templates/learning-entry.md` (includes Category, What happened, Why it matters, Resolution, Tags fields). The `**Tags**:` line is consumed by `generate_index.py --summary-heuristic` to build the cluster summary in INDEX.md — use them.
 
+### [2026-09-10] Code fix (ln -sfn silent no-op) + preflight guard for the training-symlink corruption, plus a deeper staleness gap it exposed
+
+**Category**: gotcha
+
+**What happened**: Follow-up to the same-day training-symlink repair (see the entry below). Root-caused the *mechanism* that let this corruption happen invisibly, then fixed it structurally in the pipeline (not just the one-off data repair):
+
+1. **`FUNANNOTATE_PREDICT/main.nf`'s `ln -sfn "$training_target/.../training" "$PREDICTDIR/training"`** silently does nothing useful when `$PREDICTDIR/training` already exists as a real (non-symlink) directory — confirmed empirically: `ln -sfn` exits 0 but nests a stray symlink *inside* the existing real directory instead of replacing it. No error, no warning; predict just keeps reading whatever stale data was already there. Fixed: the block now explicitly detects a pre-existing real directory and hard-fails with a clear message instead of silently no-op'ing.
+2. Added `trainingSymlinkPreflight(out)` (`modules/funannotate/utils.nf`) — classifies `genome_annotation/<out>/training` as `ok` / `broken_symlink` (auto-removed, self-healing) / `real_directory` (left untouched, ambiguous). Wired into `FUNANNOTATE_RNASEQ.nf`'s `train_branched` (same `.branch{}` that gates `isTrainResolved`/`staleRnaseq`, evaluated once per row for the same reason the 2026-09-09 duplicate-log fix required it) as a new `blocked` clause — a species with a real-directory training corruption is now reported to `train_blocked_training_symlink_corrupt.tsv` (same convention as `predict_blocked_awaiting_representative.tsv`) and kept OUT of train/predict scheduling entirely, instead of silently proceeding.
+3. Validated both changes for real (not just `-preview`, which doesn't execute operators): full DSL2 compile via `--help`, a real stub-run smoke test through the actual pipeline, and a standalone fixture-based smoke test (`nextflow/training_preflight_smoke.nf`, top-level like `genemark_run_smoke.nf` so `workflow.projectDir` resolves correctly) exercising all 4 classification cases plus the 3-way `blocked`/`todo`/`done` branch + `collectFile` mechanics end-to-end.
+4. **Deeper gap this exposed, NOT yet fixed**: neither `FUNANNOTATE_PREDICT`'s in-script `SKIP_GBK` staleness check nor `staleRnaseq()` ever look at `training_target`'s `funannotate_train.pasa.gff3` mtime at all — only rnaseq reads / `trinity-GG.fasta` / `shared_params_json` / genome FASTA. Repairing a broken/missing `genome_annotation/<out>/training` symlink today does **not** retroactively trigger a re-predict for a species whose existing GBK was produced before the repair, because `trinity-GG.fasta` isn't even a declared Nextflow process input to `FUNANNOTATE_PREDICT` (just a string interpolated into the bash script) — under `-resume`, Nextflow skips re-invoking the task entirely based on its own declared-input hash, so the in-script mtime check never runs. Worse, `FUNANNOTATE_PREDICT` uses "Option B persistence" (writes directly to the persistent `genome_annotation/<out>/` tree; Nextflow's resume cache is keyed only on a small emitted marker file, not the GBK) — so even manually deleting the stale GBK doesn't invalidate Nextflow's resume decision. The only reliable fix for already-affected species is a genuinely fresh (non-`-resume`) run scoped to just them.
+
+**Why it matters**: (1) is the actual mechanism behind the original incident's "cryptic" failure — now closed for future occurrences. (2)+(3) mean any *future* broken/duplicate training symlink is caught and blocked before wasting a train/predict job, instead of silently degrading. (4) is a real, quantified, ongoing correctness gap: of the 4,131 species relinked/reconciled in this incident, 738 had `predict_results/*.gbk` already present — cross-checked against the ground truth (`--pasa_gff` presence in each species' `logfiles/funannotate-predict.log`, not inferred from mtimes) confirmed exactly 737 of those (one, `Fusarium_graminearum_PH-1`, is excluded pending a separate ambiguous-ASMID-collision fix — two samples.csv rows, `GCF_000240135.3_ASM24013v3` and `GCA_020991245.1_ASM2099124v1`, share identical SPECIES+STRAIN text and therefore the same `out` tag) were genuinely predicted ab-initio-only and need a real re-predict now that their training data is reachable.
+
+**Resolution**: Code fixes 1-3 committed (pending — see decisions.md). For (4): built `scripts/one-off/build_repredict_samples_csv.nf` (filters `samples.csv` to an exact species list by reusing the real `makeSampleTag()` so the match is guaranteed correct, not a hand-reimplemented regex) and `scripts/one-off/clear_stale_predict_results.py` (dry-run-by-default clearing of `predict_results`/`predict_misc` for the affected species). Filtered `samples.csv` (737 rows) and species list staged at `Fungi_BFD_runs/.nf_launch/2026-09-10_train_symlink_repredict/`. **Not yet executed** — clearing stale outputs and launching the scoped repredict is a real, costly, destructive action pending the user's go-ahead; also still resolving which `params_predict_*.yaml` (`do_annotation_asco/` and `do_annotation/` both have `_representatives`/`_all` variants — `_all` uses `predict_scope: "all"`, needed since the 737 species are a mix of representative and non-representative strains, not just representatives) to base the launch on.
+
+**Tags**: symlink, genome_annotation, training-data, funannotate, predict, staleness, nextflow-resume, resume-cache, ln-sfn, preflight-check, structural-fix, ambiguous-asmid, samples-csv
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: Shipped for the acute `ln -sfn` bug and for future broken/duplicate-symlink corruption (preflight guard). Still open: extend `FUNANNOTATE_PREDICT`'s staleness check (or declare `training_target`'s `pasa.gff3` as a real Nextflow process input) so a training symlink transitioning from broken/missing to valid actually invalidates the cached GBK automatically — today's fix only prevents new corruption from silently degrading, it doesn't make already-affected species self-heal.
+
+### [2026-09-10] CLAUDE.md rule: isolate ad-hoc Nextflow test/validation runs under `.nf_launch/<UNIQUE_NAME>/`
+
+**Category**: convention
+
+**What happened**: While building the standalone `training_preflight_smoke.nf` validation script, discovered that (a) `nextflow run <script>` from `Fungi_BFD_runs`/`Fungi_BFD`'s `nextflow/` directory auto-loads the real production `nextflow.config`, silently defaulting `params.target`/`params.training_target` to the real production `genome_annotation`/`genome_annotation_training` paths even for an unrelated standalone test script; and (b) reassigning `params.target = <fixture path>` from *inside* a `workflow { }` body is silently a no-op — confirmed empirically (two isolated probe scripts) that only a genuine CLI `--target <path>` override actually takes effect, not an in-script default or a runtime reassignment.
+
+**Why it matters**: A test/validation run that doesn't explicitly override output-path params risks writing into — or, worse, being silently pointed at without writing anything and giving a false-pass — real production data directories. Combined with a real pipeline potentially having jobs in flight against the same `work/`, an unscoped ad-hoc test run risks colliding with live state, not just wasting compute.
+
+**Resolution**: Added a standing rule to `CLAUDE.md`'s Script Conventions: every ad-hoc/manual Nextflow test run must use an isolated `-w .nf_launch/<UNIQUE_NAME>/work` plus explicit CLI-level output-path param overrides (never in-script defaults/reassignment). Applied immediately: `training_preflight_smoke.nf`'s fixed version requires `--target` on the CLI and errors out if omitted; the 737-species repredict staging also lives under `.nf_launch/2026-09-10_train_symlink_repredict/`.
+
+**Tags**: nextflow, testing, params, launchDir, workDir, isolation, convention
+
+**mitigation_type**: convention
+
+**structural_mitigation_candidate**: N/A — this is a documented human/agent-workflow convention (CLAUDE.md rule), not a code-level invariant a test could enforce.
+
 ### [2026-09-10] Broken `training` symlinks in genome_annotation silently blocked funannotate predict for many genomes
 
 **Category**: gotcha
