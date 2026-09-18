@@ -5,17 +5,32 @@
 # Note: unlike params_functional.yaml this omits run_swissprot (matches the
 # pre-existing difference between run_functional.sh and run_functional_all.sh
 # -- preserved as-is during the params-file migration, 2026-08-26).
+#
+# 2026-09-14: added the tools that were missing here (swissprot_annot,
+# eggnog, phobius, deeptmhmm, tcdb, tf, antismash, trnascan, infernal,
+# cazy_cgc) so this file actually matches its "every tool enabled" intent --
+# see subworkflows/local/BFD_FUNCTIONAL.nf for the full param list it reads.
 
 pipeline: BFD
 run_setup: true
 run_pfam: true
 run_cazy: true
 run_merops: true
+run_swissprot_annot: true
 run_signalp: true
 run_tmhmm: true
 run_targetp: true
 run_idp: true
 run_wolfpsort: true
 run_predgpi: true
+run_eggnog: true
+run_phobius: true
+run_deeptmhmm: true
+run_tcdb: true
+run_tf: true
+run_antismash: true
+run_trnascan: true
+run_infernal: false
+run_cazy_cgc: true
 run_busco_genome: true
 run_busco_pep: true

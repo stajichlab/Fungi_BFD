@@ -6,11 +6,14 @@
 # Non-boolean overrides (--n_test, --taxon, --asmid) are still safe on the CLI.
 
 pipeline: BFD
+n_test: 100
 run_setup: true
 run_pfam: false
 run_cazy: true
 run_merops: true
 run_swissprot: true
+run_infernal: false
+run_deeptmhmm: true
 run_signalp: true
 run_tmhmm: false
 run_targetp: false
