@@ -53,6 +53,8 @@ workflow FUNANNOTATE_PREDICTION {
     forceIndependentGenemarkSet  // out values that always run GeneMark independently, finer-grained
                                   // than forceIndependentSet -- AUGUSTUS/SNAP reuse can stay on for a
                                   // strain while forcing GeneMark specifically to retrain for it
+    microsporidiaSet             // out values gated (with predict_min_asm_bp) to also get a Prodigal
+                                  // track from GENEMARK_RUN (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md)
 
     main:
     def predictScope  = ((params.predict_scope ?: 'all') as String).toLowerCase()
@@ -106,16 +108,17 @@ workflow FUNANNOTATE_PREDICTION {
         if (runGenemark) {
             def rep_genemark_in = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
-                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '')
+                def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '', isMicro)
             }
             GENEMARK_RUN(rep_genemark_in)
-            rep_with_gtf = rep_todo.join(GENEMARK_RUN.out.gtf)
-                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
-                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+            rep_with_gtf = rep_todo.join(GENEMARK_RUN.out.gtf).join(GENEMARK_RUN.out.other_gff)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }
         } else {
             rep_with_gtf = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
-                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '', '')
             }
         }
 
@@ -171,16 +174,17 @@ workflow FUNANNOTATE_PREDICTION {
         if (runGenemark) {
             def genemark_in = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
-                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '')
+                def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '', isMicro)
             }
             GENEMARK_RUN(genemark_in)
-            rep_and_indep_with_gtf = rep_and_indep.join(GENEMARK_RUN.out.gtf)
-                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
-                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+            rep_and_indep_with_gtf = rep_and_indep.join(GENEMARK_RUN.out.gtf).join(GENEMARK_RUN.out.other_gff)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }
         } else {
             rep_and_indep_with_gtf = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
-                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '', '')
             }
         }
 
@@ -315,16 +319,17 @@ workflow FUNANNOTATE_PREDICTION {
             def sib_genemark_in = sibling_predict_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
                 def sharedMod  = sharedGenemarkModFor(sp as String)?.toString() ?: ''
-                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, sharedMod)
+                def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
+                tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, sharedMod, isMicro)
             }
             GENEMARK_RUN_SIB(sib_genemark_in)
-            sibling_predict_with_gtf = sibling_predict_todo.join(GENEMARK_RUN_SIB.out.gtf)
-                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf ->
-                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf)
+            sibling_predict_with_gtf = sibling_predict_todo.join(GENEMARK_RUN_SIB.out.gtf).join(GENEMARK_RUN_SIB.out.other_gff)
+                .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }
         } else {
             sibling_predict_with_gtf = sibling_predict_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json ->
-                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '')
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, '', '')
             }
         }
         // A sibling's own GENEMARK_RUN_SIB.out.mod (only emitted when
