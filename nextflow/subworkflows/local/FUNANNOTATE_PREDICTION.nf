@@ -43,7 +43,7 @@ include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/f
 include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 
-include { gbkResult; staleRnaseq; staleGenome; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_PREDICTION {
     take:
@@ -89,7 +89,8 @@ workflow FUNANNOTATE_PREDICTION {
         .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
             gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
                 staleRnaseq(out as String, sp as String) ||
-                staleGenome(out as String, a as String)
+                staleGenome(out as String, a as String) ||
+                staleTraining(out as String)
         }
 
     def metadataOut
@@ -156,7 +157,8 @@ workflow FUNANNOTATE_PREDICTION {
             .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
                 gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
                     staleRnaseq(out as String, sp as String) ||
-                    staleGenome(out as String, a as String)
+                    staleGenome(out as String, a as String) ||
+                    staleTraining(out as String)
             }
 
         // rep_todo and indep_todo both always pass shared_mod='' to GENEMARK_RUN
@@ -299,6 +301,7 @@ workflow FUNANNOTATE_PREDICTION {
                 gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
                     staleRnaseq(out as String, sp as String) ||
                     staleGenome(out as String, a as String) ||
+                    staleTraining(out as String) ||
                     staleSharedParams(out as String, shared_params_json ? file(shared_params_json as String) : null)
             }
 

@@ -41,7 +41,7 @@ include { FUNANNOTATE_TRAIN } from '../../modules/funannotate/predict/FUNANNOTAT
 include { WRITE_EMPTY_HYBRID_READS } from '../../modules/funannotate/rnaseq/WRITE_EMPTY_HYBRID_READS/main.nf'
 include { BUILD_HYBRID_COMPOSITE_TRINITY } from '../../modules/funannotate/rnaseq/BUILD_HYBRID_COMPOSITE_TRINITY/main.nf'
 
-include { gbkResult; staleRnaseq; pasaTrainMarkerCurrent; trinityTooIncompleteCurrent } from '../../modules/funannotate/utils.nf'
+include { gbkResult; trainingCurrent; pasaTrainMarkerCurrent; trinityTooIncompleteCurrent; trainingSymlinkPreflight } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_RNASEQ {
     take:
@@ -520,38 +520,55 @@ workflow FUNANNOTATE_RNASEQ {
             }
 
         // A species is "resolved" (no FUNANNOTATE_TRAIN job needed) via a real published
-        // PASA GFF3, OR via either of two durable markers recording a legitimate reason
-        // PASA was never going to produce one: .pasa_train_failed (PASA completed
-        // alignment/assignment but assigned too few loci) or .trinity_too_incomplete (the
-        // shared Trinity-GG assembly itself had too few transcripts to even attempt PASA)
-        // -- both in modules/funannotate/utils.nf. Without these, an already-resolved
-        // species gets a fresh 16cpu/96GB job resubmitted on every relaunch just to
-        // re-derive the same verdict and exit 0.
-        def isTrainResolved = { out, gfa, tf ->
-            def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
-            (gff3.exists() && gff3.size() > 0) ||
-                pasaTrainMarkerCurrent(out as String, gfa, tf) ||
+        // PASA GFF3 that is itself current against the genome/trinity/rnaseq evidence it
+        // was built from (trainingCurrent()), OR via either of two durable markers recording
+        // a legitimate reason PASA was never going to produce one: .pasa_train_failed
+        // (PASA completed alignment/assignment but assigned too few loci) or
+        // .trinity_too_incomplete (the shared Trinity-GG assembly itself had too few
+        // transcripts to even attempt PASA) -- all three in modules/funannotate/utils.nf.
+        // Without these, an already-resolved species gets a fresh 16cpu/96GB job
+        // resubmitted on every relaunch just to re-derive the same verdict and exit 0.
+        //
+        // Deliberately NOT staleRnaseq() here (that function is GBK-anchored, for gating
+        // PREDICT) -- using it as an additional `|| stale` term used to re-flag TRAIN as
+        // needing a redo whenever rnaseq/trinity outran a lagging predict GBK, even when
+        // training itself was already current against that same rnaseq/trinity evidence.
+        // trainingCurrent() replaces that GBK-anchored signal with the GFF3-anchored one
+        // TRAIN's own in-script check actually uses, so the two agree. PREDICT still gets
+        // rescheduled independently via its own staleRnaseq()/staleTraining() checks in
+        // FUNANNOTATE_PREDICTION.nf.
+        def isTrainResolved = { out, gfa, tf, r1, se ->
+            trainingCurrent(out as String, gfa, tf, r1, se) ||
+                pasaTrainMarkerCurrent(out as String, gfa, tf, r1, se) ||
                 trinityTooIncompleteCurrent(out as String, gfa, tf)
         }
 
-        // Skip TRAIN at the channel level when already resolved, UNLESS the rnaseq reads
-        // or trinity FASTA is newer than the existing prediction GBK (staleRnaseq), in
-        // which case we re-run training so predict can be refreshed too. One .branch{}
-        // (not two independent .filter{}s) so isTrainResolved/staleRnaseq -- each of
-        // which does real filesystem stat()s and logs on a stale hit -- are evaluated
-        // exactly once per row instead of twice; two filters over the same channel was
-        // measured as the actual source of ~2,200 duplicate "stale prediction for X" log
-        // lines in a single pipeline pass (not the FUNANNOTATE_ANNOTATION CSV rescan, as
-        // originally suspected). branch{} also makes todo/done mutually exclusive by
-        // construction rather than by keeping two hand-written boolean complements in
-        // sync (same "exact logical complement" requirement FUNANNOTATE_ANNOTATION.nf
-        // documents for its own predict/annotate split).
-        def train_branched = branched.has_rnaseq.branch { out, _a, sp, _st, _lt, _bl, _hl, _tt, gfa, _r1, _r2, _se, tf, _tier ->
-            def resolved = isTrainResolved.call(out, gfa, tf)
-            def stale    = staleRnaseq(out as String, sp as String)
-            todo: !resolved || stale
+        // Skip TRAIN at the channel level when already resolved. One .branch{} (not a
+        // .filter{}) so isTrainResolved -- which does real filesystem stat()s and logs on
+        // a stale hit -- is evaluated exactly once per row instead of twice; duplicate
+        // evaluation over the same channel was measured as the actual source of ~2,200
+        // duplicate "stale prediction for X" log lines in a single pipeline pass (not the
+        // FUNANNOTATE_ANNOTATION CSV rescan, as originally suspected). branch{} also makes
+        // todo/done mutually exclusive by construction rather than by keeping two
+        // hand-written boolean complements in sync (same "exact logical complement"
+        // requirement FUNANNOTATE_ANNOTATION.nf documents for its own predict/annotate
+        // split).
+        // `blocked` takes priority over todo/done: trainingSymlinkPreflight() also does
+        // a real filesystem check per row, evaluated here (not a separate .filter{})
+        // for the same "exactly once per row" reason as isTrainResolved -- see
+        // trainingSymlinkPreflight() in utils.nf for what it checks and why. A
+        // species whose params.target/<out>/training is an unexpected real (non-symlink)
+        // directory is corrupt data (duplicated/stale training output, not a normal
+        // train-vs-skip decision) and must not be scheduled into FUNANNOTATE_TRAIN or
+        // predict at all until reconciled -- see train_symlink_corrupt.tsv below.
+        def train_branched = branched.has_rnaseq.branch { out, _a, _sp, _st, _lt, _bl, _hl, _tt, gfa, r1, _r2, se, tf, _tier ->
+            def linkStatus = trainingSymlinkPreflight(out as String)
+            def resolved = isTrainResolved.call(out, gfa, tf, r1, se)
+            blocked: linkStatus == 'real_directory'
+            todo: !resolved
             done: true
         }
+        def train_blocked = train_branched.blocked
         def train_todo = train_branched.todo
         def train_done = train_branched.done
             .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf, _tier ->
@@ -566,6 +583,18 @@ workflow FUNANNOTATE_RNASEQ {
         FUNANNOTATE_TRAIN.out.pasa_failed
             .collectFile(name: 'pasa_train_failed.tsv', storeDir: launchDir,
                          keepHeader: true, skip: 1)
+
+        // Species blocked by the training-symlink preflight -- same convention as
+        // predict_blocked_awaiting_representative.tsv (FUNANNOTATE_PREDICTION.nf).
+        // Not merged into predict_input_ch: these need manual reconciliation (e.g.
+        // scripts/one-off/reconcile_training_duplicates.py), not a train/predict retry.
+        train_blocked
+            .map { out, asmid, sp, _st, _lt, _bl, _hl, _tt, _gfa, _r1, _r2, _se, _tf, _tier ->
+                "${sp}\t${out}\t${asmid}\treal_directory_at_training_symlink_path"
+            }
+            .collectFile(name: 'train_blocked_training_symlink_corrupt.tsv',
+                         storeDir: params.target, newLine: true, sort: true,
+                         seed: "species\tout\tasmid\treason")
         } // end if (!params.stop_after_sra_fetch)
         } // end if (!params.stop_after_sra_query)
     } else {

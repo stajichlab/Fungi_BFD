@@ -21,7 +21,7 @@ include { FUNANNOTATE_ANNOTATE } from '../../modules/funannotate/function/FUNANN
 include { FUNANNOTATE_UPDATE   } from '../../modules/funannotate/predict/FUNANNOTATE_UPDATE/main.nf'
 
 include { makeSampleTag } from '../../modules/common/utils.nf'
-include { gbkResult; staleRnaseq; staleGenome } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; staleTraining } from '../../modules/funannotate/utils.nf'
 
 workflow FUNANNOTATE_ANNOTATION {
     take:
@@ -61,7 +61,8 @@ workflow FUNANNOTATE_ANNOTATION {
         .filter { out, asmid, sp, _st, _lt, _bl, _hl, _tt ->
             gbkResult("${params.target}/${out}/predict_results", out as String) != null &&
                 !staleRnaseq(out as String, sp as String) &&
-                !staleGenome(out as String, asmid as String)
+                !staleGenome(out as String, asmid as String) &&
+                !staleTraining(out as String)
         }
 
     // annotate_ready_ch threads through optional pre-annotate steps. Each optional
