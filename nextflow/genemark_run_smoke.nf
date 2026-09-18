@@ -49,7 +49,7 @@ workflow {
         tuple(params.out, params.asmid, params.species, params.strain,
               file(params.genome_fa), params.transl_table,
               params.mode, params.training_bam,
-              params.force_independent, params.shared_mod)
+              params.force_independent, params.shared_mod, 'false')
     )
     GENEMARK_RUN(genemark_in)
     def outDir = file(params.out_dir)
