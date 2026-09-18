@@ -83,3 +83,4 @@ nextflow run nextflow/main.nf \
     -params-file "$PARAMS_FILE" \
     -resume \
     "$@"
+
