@@ -32,6 +32,8 @@ BLD_*
 function_neurospora/
 nextflow/tests
 lib/augustus/3.5/config/species
+genome_annotation
+genome_annotation_training
 # Test fixtures must be committed. The bare pep/, cds/, gff3/ and genome/ rules above
 # match those directory names anywhere in the tree, which otherwise silently swallows
 # the synthetic inputs that `-profile test -stub-run` depends on — the pipeline would
