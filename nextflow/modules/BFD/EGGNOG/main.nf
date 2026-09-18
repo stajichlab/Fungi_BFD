@@ -22,7 +22,12 @@ process RUN_EGGNOG {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}:\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}},\$TMPDIR:\$TMPDIR"
+    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # shared genome_annotation dir elsewhere under /bigdata); bind its real
+    # parent dir too, or apptainer won't see the symlink target inside the
+    # container.
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    SING_BINDS="--bind \${PWD}:\${PWD},\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}:\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.eggnog_sif}"
     \${SING} emapper.py -i ${proteins} \\
         --itype proteins -m diamond \\

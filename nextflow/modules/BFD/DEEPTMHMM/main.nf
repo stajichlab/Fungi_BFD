@@ -22,7 +22,12 @@ process RUN_DEEPTMHMM {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # shared genome_annotation dir elsewhere under /bigdata); bind its real
+    # parent dir too, or apptainer won't see the symlink target inside the
+    # container.
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    SING_BINDS="--bind \${PWD}:\${PWD},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec ${params.deeptmhmm_gpu ? '--nv' : ''} \${SING_BINDS} ${params.deeptmhmm_sif}"
     OUTD=\$(mktemp -d)
     \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta \${PWD}/${proteins} --output-dir \${OUTD}" || \\

@@ -42,7 +42,12 @@ process RUN_PFAM {
         module load apptainer
         PFAM_SIF=${params.pfam_sif}
         export TMPDIR=\${SCRATCH:-/tmp}
-        SING_BINDS="--bind \${PWD}:\${PWD},\${PFAM_DB}:\${PFAM_DB},\$TMPDIR:\$TMPDIR"
+        # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g.
+        # a shared genome_annotation dir elsewhere under /bigdata); bind its
+        # real parent dir too, or apptainer won't see the symlink target
+        # inside the container.
+        PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+        SING_BINDS="--bind \${PWD}:\${PWD},\${PFAM_DB}:\${PFAM_DB},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
         SING="apptainer exec \${SING_BINDS} \${PFAM_SIF}"
     fi
     ${mpi_launch} \${SING} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\

@@ -33,7 +33,13 @@ process RUN_CAZY_CGC {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\$TMPDIR:\$TMPDIR"
+    # ${gff3}/${proteins} may be symlinks Nextflow staged from outside \$PWD
+    # (e.g. a shared genome_annotation dir elsewhere under /bigdata); bind
+    # their real parent dirs too, or apptainer won't see the symlink targets
+    # inside the container.
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
     apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan easy_CGC \\
         --input_raw_data ${proteins} \\

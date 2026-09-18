@@ -29,7 +29,13 @@ process RUN_TRNASCAN {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},${projectDir}:${projectDir},\$TMPDIR:\$TMPDIR"
+    # ${gff3}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
+    # a shared genome_annotation dir elsewhere under /bigdata); bind their real
+    # parent dirs too, or apptainer won't see the symlink targets inside the
+    # container.
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    SING_BINDS="--bind \${PWD}:\${PWD},${projectDir}:${projectDir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome}
 
     awk -F'\\t' 'NR<=3 {print; next} {len=(\$3>\$4)?\$3-\$4:\$4-\$3; if (len>=50 && len<=150) print}' \\

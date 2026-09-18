@@ -20,7 +20,12 @@ process RUN_TCDB {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    # ${proteins} and the tcdb_fasta/tcdb_blastdb inputs (SETUP_TCDB_DB's
+    # storeDir-cached output, params.tcdb_dbdir) may be symlinks Nextflow
+    # staged from outside \$PWD; bind both real parent dirs too, or apptainer
+    # won't see the symlink targets inside the container.
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    SING_BINDS="--bind \${PWD}:\${PWD},${params.tcdb_dbdir}:${params.tcdb_dbdir},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.blastp_sif} blastp -query ${proteins} \\
         -db tcdb \\
         -out ${meta.locustag}.blasttab \\

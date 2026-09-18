@@ -23,7 +23,13 @@ process RUN_ANTISMASH {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    # ${gff3}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
+    # a shared genome_annotation dir elsewhere under /bigdata); bind their real
+    # parent dirs too, or apptainer won't see the symlink targets inside the
+    # container.
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
     apptainer exec \${SING_BINDS} ${params.antismash_standalone_sif} \\
         antismash --taxon ${params.antismash_taxon} \\

@@ -27,7 +27,12 @@ process RUN_SWISSPROT {
     module load apptainer
     SWISSPROT_DB=${params.swissprot_dbdir}
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind \${PWD}:\${PWD},\${SWISSPROT_DB}:\${SWISSPROT_DB},\$TMPDIR:\$TMPDIR"
+    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # shared genome_annotation dir elsewhere under /bigdata); bind its real
+    # parent dir too, or apptainer won't see the symlink target inside the
+    # container.
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    SING_BINDS="--bind \${PWD}:\${PWD},\${SWISSPROT_DB}:\${SWISSPROT_DB},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     if [ "${params.swissprot_search}" = "blastp" ]; then
         SING="apptainer exec \${SING_BINDS} ${params.blastp_sif}"
         \${SING} blastp -query ${proteins} \\

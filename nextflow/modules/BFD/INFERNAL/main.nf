@@ -25,10 +25,16 @@ process RUN_INFERNAL {
     """
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    SING_BINDS="--bind ${params.rfam_dbdir}:${params.rfam_dbdir},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
+    # ${genome} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # shared genome_annotation dir elsewhere under /bigdata); bind its real
+    # parent dir too, or apptainer won't see the symlink target inside the
+    # container.
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    SING_BINDS="--bind ${params.rfam_dbdir}:${params.rfam_dbdir},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.infernal_sif} cmscan \\
         --cut_ga --rfam --nohmmonly \\
         --clanin ${params.rfam_dbdir}/Rfam.clanin \\
+        --fmt 2 \\
         --tblout ${meta.id}.rfam.tblout \\
         --cpu ${task.cpus} \\
         ${params.rfam_dbdir}/Rfam.cm ${genome} > /dev/null
