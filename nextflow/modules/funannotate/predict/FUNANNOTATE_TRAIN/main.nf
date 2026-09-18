@@ -90,8 +90,6 @@ process FUNANNOTATE_TRAIN {
     # Accept a compressed prediction (.gbk.gz) as "done" so folders can be space-saved.
     TRAIN_GFF3="${params.training_target}/${out}/training/funannotate_train.pasa.gff3"
     TRAIN_FAILED_MARKER="${params.training_target}/${out}/training/.pasa_train_failed"
-    PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk"
-    [ -f "\$PREDICT_GBK" ] || PREDICT_GBK="${params.target}/${out}/predict_results/${out}.gbk.gz"
     RESOLVED_MARKER=""
     if [ -f "\$TRAIN_GFF3" ]; then
         RESOLVED_MARKER="\$TRAIN_GFF3"
@@ -112,23 +110,25 @@ process FUNANNOTATE_TRAIN {
         # Re-train if the trinity/composite evidence itself is newer than the resolved
         # marker -- covers a rebuilt composite (new/changed parent set, retuned PASA
         # composite thresholds) for a strain previously marked not-trainable, which
-        # r1/se newer-than-GBK below can never catch since hybrid r1/se are always
+        # r1/se newer-than-marker below can never catch since hybrid r1/se are always
         # empty placeholders.
         if [ -s "${trinity_fa}" ] && [ "${trinity_fa}" -nt "\$RESOLVED_MARKER" ]; then
             echo "[INFO] Trinity/composite evidence newer than training output for ${out}; retraining"
             RETRAIN=1
         fi
-        if [ -f "\$PREDICT_GBK" ]; then
-            # Re-train if the rnaseq reads are newer than the existing prediction GBK.
-            if [ -s "${r1}" ] && [ "${r1}" -nt "\$PREDICT_GBK" ]; then
-                echo "[INFO] RNAseq R1 reads newer than predict GBK for ${out}; retraining"
-#                rm -rf "${params.training_target}/${out}/training"
-                RETRAIN=1
-            elif [ -s "${se}" ] && [ "${se}" -nt "\$PREDICT_GBK" ]; then
-                echo "[INFO] RNAseq SE reads newer than predict GBK for ${out}; retraining"
-#                rm -rf "${params.training_target}/${out}/training"
-                RETRAIN=1
-            fi
+        # Re-train if the rnaseq reads are newer than the resolved training output.
+        # Anchored on RESOLVED_MARKER (this job's own output), NOT PREDICT_GBK -- the
+        # genome/trinity checks above already use RESOLVED_MARKER; comparing r1/se
+        # against PREDICT_GBK instead was the same GBK-anchoring bug the Groovy-level
+        # channel gate had (see trainingCurrent() in utils.nf): whenever PREDICT lagged
+        # behind training, this would force a full retrain on every relaunch even though
+        # the reads were already older than RESOLVED_MARKER.
+        if [ -s "${r1}" ] && [ "${r1}" -nt "\$RESOLVED_MARKER" ]; then
+            echo "[INFO] RNAseq R1 reads newer than training output for ${out}; retraining"
+            RETRAIN=1
+        elif [ -s "${se}" ] && [ "${se}" -nt "\$RESOLVED_MARKER" ]; then
+            echo "[INFO] RNAseq SE reads newer than training output for ${out}; retraining"
+            RETRAIN=1
         fi
         if [ \$RETRAIN -eq 0 ]; then
             if [ "\$RESOLVED_MARKER" = "\$TRAIN_GFF3" ]; then
@@ -266,7 +266,46 @@ process FUNANNOTATE_TRAIN {
         cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
             { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
-        PORT=\$(shuf -i3000-4999 -n1)
+        # Pick a free port for mariadbd, in two layers -- neither check alone
+        # is airtight:
+        #   1. SLURM_JOB_ID gives a collision-resistant starting guess (a
+        #      random shuf pick from only 2000 values let two concurrent jobs
+        #      on the same node draw the same port -- confirmed 2026-09-10,
+        #      Cryptococcus_neoformans_H0058-I-2808 got EADDRINUSE on
+        #      127.0.0.1:3812), then a pre-flight TCP-connect probe sweeps
+        #      forward to the next actually-free port if that guess is taken.
+        #   2. the pre-flight probe still has a check-then-start race
+        #      (another job can bind the same port between the probe and
+        #      mariadbd's own bind()), so after starting mariadbd below we
+        #      also confirm it is actually accepting connections and the
+        #      process is still alive, retrying once on a new port if not.
+        #      The old code had no such check: mariadbd could silently abort
+        #      on EADDRINUSE and the pipeline kept going for ~10 more minutes
+        #      until PASA's first mysql step failed to connect.
+        port_in_use() {
+            (exec 3<>"/dev/tcp/127.0.0.1/\$1") 2>/dev/null
+            local rc=\$?
+            exec 3>&- 2>/dev/null || true
+            return \$rc
+        }
+        next_free_port() {
+            local p=\$1 tries=0
+            while port_in_use "\$p"; do
+                tries=\$((tries + 1))
+                if [ "\$tries" -ge 2000 ]; then
+                    echo "ERROR: no free port found in 3000-4999 after \$tries attempts" >&2
+                    exit 1
+                fi
+                p=\$(( 3000 + (p - 3000 + 1) % 2000 ))
+            done
+            echo "\$p"
+        }
+        if [ -n "\${SLURM_JOB_ID:-}" ]; then
+            PORT=\$(( 3000 + SLURM_JOB_ID % 2000 ))
+        else
+            PORT=\$(shuf -i3000-4999 -n1)
+        fi
+        PORT=\$(next_free_port "\$PORT")
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
         # 127.0.0.1, not \$MYHOSTNAME: mariadbd binds loopback-only (see
@@ -312,17 +351,48 @@ process FUNANNOTATE_TRAIN {
             echo "ERROR: no mariadbd/mysqld_safe found in ${params.funannotate_sif}" >&2
             exit 1
         fi
-        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container)"
-        \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
-            --datadir=\$MYSQL_SCRATCH/db/mysql \\
-            --socket=\$MYSQL_SCRATCH/mysqld.sock \\
-            --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
-        MYSQLD_PID=\$!
+        start_mariadbd() {
+            \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
+                --datadir=\$MYSQL_SCRATCH/db/mysql \\
+                --socket=\$MYSQL_SCRATCH/mysqld.sock \\
+                --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
+            MYSQLD_PID=\$!
+        }
+        # Poll up to 30s for mariadbd to either come up (pid alive + port
+        # accepting connections) or die (e.g. EADDRINUSE) -- replaces a blind
+        # `sleep 5` that had no idea whether mariadbd actually started.
+        wait_for_mariadbd() {
+            local waited=0
+            while [ "\$waited" -lt 30 ]; do
+                if ! kill -0 "\$MYSQLD_PID" 2>/dev/null; then
+                    return 1
+                fi
+                if port_in_use "\$PORT"; then
+                    return 0
+                fi
+                sleep 1
+                waited=\$((waited + 1))
+            done
+            return 1
+        }
+        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container) on port \$PORT"
+        start_mariadbd
+        if ! wait_for_mariadbd; then
+            echo "[WARN] mariadbd did not come up on port \$PORT within 30s (dead or still refusing connections) -- likely lost a bind race against another job on this node; retrying once on a new port" >&2
+            wait "\$MYSQLD_PID" 2>/dev/null || true
+            PORT=\$(next_free_port \$(( 3000 + (PORT - 3000 + 1) % 2000 )))
+            sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=127.0.0.1:\${PORT}/" \$PASACONF
+            perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
+            start_mariadbd
+            if ! wait_for_mariadbd; then
+                echo "ERROR: mariadbd still failed to start after retrying on port \$PORT" >&2
+                exit 1
+            fi
+        fi
         stop_mysqldb() { kill \$MYSQLD_PID 2>/dev/null || true; wait \$MYSQLD_PID 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
         pasa_db_arg="--pasa_db mysql"
-        sleep 5
         # mariadb-install-db (--auth-root-authentication-method=normal, above)
         # only creates root@localhost/127.0.0.1/::1/<hostname> with no
         # password -- it never creates the account conf.txt tells PASA to

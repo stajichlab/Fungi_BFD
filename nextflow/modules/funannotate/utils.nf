@@ -84,6 +84,36 @@ def staleGenome(String out, String asmid) {
     return false
 }
 
+// A species whose FUNANNOTATE_TRAIN output (real PASA GFF3, or a durable
+// .pasa_train_failed "not trainable" verdict) has been refreshed SINCE the existing
+// predict GBK was written needs a repredict, even when none of staleRnaseq()/
+// staleGenome()'s own inputs (rnaseq reads, trinity, genome assembly) changed --
+// e.g. a retrain triggered by an earlier infra failure (SLURM preemption, an NFS
+// exit-status-read timeout) now succeeding, or a training-symlink repair updating
+// the marker in place. Without this check, FUNANNOTATE_TRAIN can legitimately
+// produce a newer/better training set (or flip from "not trainable" to trainable)
+// and FUNANNOTATE_PREDICTION.nf's gating never notices, since it only ever compares
+// the GBK's mtime against rnaseq/genome/shared-params -- never against the training
+// output itself. Confirmed 2026-09-10: 648/13,239 species had a training GFF3 newer
+// than their predict GBK after a retrain-heavy relaunch, with predict never
+// rescheduled for any of them. Mirrors staleGenome()/staleSharedParams()'s shape.
+// Anchored on the GBK (input: training output) -- the opposite direction from
+// trainingCurrent() below (anchored on the training GFF3, input: genome/trinity),
+// which gates TRAIN instead of PREDICT. Don't conflate the two.
+def staleTraining(String out) {
+    def gbk = gbkResult("${params.target}/${out}/predict_results", out)
+    if (gbk == null) return false  // predict hasn't run yet; normal path handles it
+    def trainGff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
+    def trainFailedMarker = file("${params.training_target}/${out}/training/.pasa_train_failed")
+    def gff3_newer   = trainGff3.exists() && trainGff3.size() > 0 && trainGff3.lastModified() > gbk.lastModified()
+    def marker_newer = trainFailedMarker.exists() && trainFailedMarker.lastModified() > gbk.lastModified()
+    if (gff3_newer || marker_newer) {
+        log.info "stale prediction for ${out}: training output newer than GBK — scheduling repredict"
+        return true
+    }
+    return false
+}
+
 // A species can be "resolved" for FUNANNOTATE_TRAIN purposes without a real PASA GFF3:
 // a durable .pasa_train_failed marker records that a prior attempt (any pasa_tier)
 // completed PASA alignment/assignment but assigned too few loci to build a training set
@@ -98,35 +128,80 @@ def staleGenome(String out, String asmid) {
 // submitted; if this function wrongly says "resolved and current", the job is never
 // submitted and nothing downstream gets a chance to catch the mistake. Compares the
 // marker's mtime against genome_fa (the cleaned/masked genome FUNANNOTATE_TRAIN actually
-// receives, e.g. input_clean_genomes/<asmid>.masked.fasta[.gz]) and trinity_fa (the
-// shared Trinity/composite evidence file from the channel, whatever tier produced it) --
+// receives, e.g. input_clean_genomes/<asmid>.masked.fasta[.gz]), trinity_fa (the
+// shared Trinity/composite evidence file from the channel, whatever tier produced it),
+// and (optionally -- r1/se are only meaningful for the .pasa_train_failed marker, not
+// .trinity_too_incomplete, see trinityTooIncompleteCurrent() below) r1/se rnaseq reads --
 // deliberately NOT genomeSourceFile(asmid) (the raw NCBI download staleGenome() above
 // uses for a different purpose; confirmed the two files have independently different
 // mtimes, e.g. a re-masking updates one but not the other).
 //
-// Only checks the marker -- callers combine this with their own gff3.exists() check,
-// since the existing gff3/success path's staleness semantics (staleRnaseq only, no
-// genome/trinity check) are intentionally left as-is here, not expanded.
+// r1/se were added after an initial version of this function omitted them and only
+// checked genome/trinity: the in-script RESOLVED_MARKER check (FUNANNOTATE_TRAIN/main.nf)
+// also compares r1/se against the marker, so omitting them here violated the
+// "at least as strict as the in-script check" invariant above -- reads re-fetched/
+// renormalized without the cached trinity_fa being rebuilt would never trigger a retrain.
+//
+// Only checks the marker -- callers combine this with their own gff3-staleness check,
+// see trainingCurrent() below for the real-GFF3-success analogue of this function.
 //
 // Parameterized on markerName so multiple durable "resolved, don't resubmit" marker
 // files can share this one staleness algorithm instead of drifting into near-duplicate
 // copies -- see trinityTooIncompleteCurrent() below for the second concrete use.
-def trainMarkerCurrent(String out, String markerName, def genome_fa, def trinity_fa) {
+def trainMarkerCurrent(String out, String markerName, def genome_fa, def trinity_fa, def r1 = null, def se = null) {
     def marker = file("${params.training_target}/${out}/training/${markerName}")
     if (!marker.exists()) return false
     def gfa = file(genome_fa as String)
     def tf  = file(trinity_fa as String)
     def genome_newer  = gfa.exists() && gfa.size() > 0 && gfa.lastModified() > marker.lastModified()
     def trinity_newer = tf.exists()  && tf.size() > 0  && tf.lastModified()  > marker.lastModified()
-    if (genome_newer || trinity_newer) {
-        log.info "stale prediction for ${out}: genome/trinity evidence newer than ${markerName} marker — scheduling retrain"
+    def r1f = (r1 == null) ? null : file(r1 as String)
+    def sef = (se == null) ? null : file(se as String)
+    def r1_newer = r1f != null && r1f.exists() && r1f.size() > 0 && r1f.lastModified() > marker.lastModified()
+    def se_newer = sef != null && sef.exists() && sef.size() > 0 && sef.lastModified() > marker.lastModified()
+    if (genome_newer || trinity_newer || r1_newer || se_newer) {
+        log.info "stale prediction for ${out}: genome/trinity/rnaseq evidence newer than ${markerName} marker — scheduling retrain"
         return false
     }
     return true
 }
 
-def pasaTrainMarkerCurrent(String out, def genome_fa, def trinity_fa) {
-    trainMarkerCurrent(out, '.pasa_train_failed', genome_fa, trinity_fa)
+def pasaTrainMarkerCurrent(String out, def genome_fa, def trinity_fa, def r1, def se) {
+    trainMarkerCurrent(out, '.pasa_train_failed', genome_fa, trinity_fa, r1, se)
+}
+
+// The real-GFF3-success counterpart to trainMarkerCurrent(): a species whose training
+// GFF3 already exists needs a retrain anyway if the genome/trinity evidence it was
+// built from has since changed. Anchored on the training GFF3 itself, NOT the predict
+// GBK -- deliberately the opposite direction from staleTraining() above (which is
+// anchored on the GBK, to decide whether PREDICT needs a rerun). Conflating the two
+// anchors was the actual bug: isTrainResolved() used to accept any existing GFF3 as
+// permanently resolved, while the channel's separate staleRnaseq() check (GBK-anchored)
+// kept re-flagging TRAIN as stale whenever rnaseq/trinity outran a lagging predict GBK
+// -- so TRAIN got requeued forever even though its own in-script check (correctly
+// GFF3-anchored) found nothing to do and exited 0 immediately. Confirmed via mtimes
+// 2026-09-10 on Fusarium_asiaticum_171483: GFF3 (09-03) newer than trinity (09-01),
+// but predict GBK stuck at 07-14 kept tripping staleRnaseq().
+//
+// Also checks r1/se (not just genome/trinity), for the same reason trainMarkerCurrent()
+// does: the in-script RESOLVED_MARKER check compares r1/se against the marker too, so
+// this must match or it would be less strict than the job it's gating.
+def trainingCurrent(String out, def genome_fa, def trinity_fa, def r1, def se) {
+    def gff3 = file("${params.training_target}/${out}/training/funannotate_train.pasa.gff3")
+    if (!gff3.exists() || gff3.size() == 0) return false
+    def gfa = file(genome_fa as String)
+    def tf  = file(trinity_fa as String)
+    def r1f = file(r1 as String)
+    def sef = file(se as String)
+    def genome_newer  = gfa.exists() && gfa.size() > 0 && gfa.lastModified() > gff3.lastModified()
+    def trinity_newer = tf.exists()  && tf.size() > 0  && tf.lastModified()  > gff3.lastModified()
+    def r1_newer = r1f.exists() && r1f.size() > 0 && r1f.lastModified() > gff3.lastModified()
+    def se_newer = sef.exists() && sef.size() > 0 && sef.lastModified() > gff3.lastModified()
+    if (genome_newer || trinity_newer || r1_newer || se_newer) {
+        log.info "stale training for ${out}: genome/trinity/rnaseq evidence newer than training GFF3 — scheduling retrain"
+        return false
+    }
+    return true
 }
 
 // Mirrors FUNANNOTATE_TRAIN's thin-Trinity skip (main.nf, "Skip if the shared Trinity-GG
@@ -196,6 +271,49 @@ def staleSharedParams(String out, def sharedJson) {
         return true
     }
     return false
+}
+
+// ── Preflight: genome_annotation/<out>/training must be a symlink or absent ────────
+// params.target/<out>/training is supposed to be a symlink into the canonical
+// training_target dir; FUNANNOTATE_PREDICT's own in-script guard (see
+// modules/funannotate/predict/FUNANNOTATE_PREDICT/main.nf) hard-fails on a real
+// (non-symlink) directory there instead of silently reading stale data -- `ln -sfn`
+// does NOT replace an existing real directory (confirmed empirically: it nests a stray
+// symlink inside it instead and exits 0). This channel-level check runs the same
+// classification BEFORE a species is scheduled into FUNANNOTATE_TRAIN at all, called
+// once per row alongside isTrainResolved/staleRnaseq in FUNANNOTATE_RNASEQ.nf's
+// train_branched .branch{} (same "evaluate exactly once per row" discipline that fixed
+// the ~2,200 duplicate "stale prediction" log lines -- see .living/learnings.md
+// 2026-09-09, ../Fungi_BFD). See .living/learnings.md 2026-09-10 (../Fungi_BFD) for the
+// incident this guards against: dangling absolute symlinks left pointing at the sibling
+// Fungi_BFD project, and 776 duplicated real training/ directories found dataset-wide,
+// resolved via scripts/one-off/fix_training_symlinks.py and
+// scripts/one-off/reconcile_training_duplicates.py.
+//
+// Returns one of:
+//   'ok'             -- no entry, or a symlink that resolves; nothing to do.
+//   'broken_symlink' -- a symlink whose target doesn't exist; removed here (safe,
+//                       self-healing -- FUNANNOTATE_TRAIN/FUNANNOTATE_PREDICT will
+//                       relink it from training_target once training data exists).
+//   'real_directory' -- an unexpected real (non-symlink) directory; NOT touched here
+//                       (ambiguous -- may hold data not yet reconciled against
+//                       training_target; see reconcile_training_duplicates.py). Caller
+//                       must block this species rather than let train/predict proceed.
+def trainingSymlinkPreflight(String out) {
+    def linkPath = java.nio.file.Paths.get("${params.target}/${out}/training" as String)
+    if (!java.nio.file.Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+        return 'ok'
+    }
+    if (!java.nio.file.Files.isSymbolicLink(linkPath)) {
+        return 'real_directory'
+    }
+    if (java.nio.file.Files.exists(linkPath)) {
+        return 'ok'  // symlink resolves
+    }
+    log.warn "training preflight: ${out} had a broken training symlink (${linkPath} -> " +
+        "${java.nio.file.Files.readSymbolicLink(linkPath)}); removing"
+    java.nio.file.Files.delete(linkPath)
+    return 'broken_symlink'
 }
 
 // Eagerly loads abinitio_reuse_csv into out -> [species, reuse_eligible,

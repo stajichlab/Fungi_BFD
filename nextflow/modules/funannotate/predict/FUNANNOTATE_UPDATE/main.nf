@@ -117,7 +117,36 @@ process FUNANNOTATE_UPDATE {
         cp ${params.pasa_conf_dir}/my.cnf \$MYSQL_SCRATCH/conf/my.cnf || \
             { echo "ERROR: Failed to copy my.cnf" >&2; exit 1; }
         MYHOSTNAME=\$(hostname -s)
-        PORT=\$(shuf -i3000-4999 -n1)
+        # Pick a free port for mariadbd -- see FUNANNOTATE_TRAIN/main.nf
+        # (confirmed 2026-09-10) for the full rationale: SLURM_JOB_ID gives a
+        # collision-resistant starting guess, a pre-flight TCP-connect probe
+        # sweeps to the next free port if that guess is taken, and (below)
+        # mariadbd's own startup is verified rather than assumed after a
+        # blind sleep, retrying once on a new port if it lost a bind race.
+        port_in_use() {
+            (exec 3<>"/dev/tcp/127.0.0.1/\$1") 2>/dev/null
+            local rc=\$?
+            exec 3>&- 2>/dev/null || true
+            return \$rc
+        }
+        next_free_port() {
+            local p=\$1 tries=0
+            while port_in_use "\$p"; do
+                tries=\$((tries + 1))
+                if [ "\$tries" -ge 2000 ]; then
+                    echo "ERROR: no free port found in 3000-4999 after \$tries attempts" >&2
+                    exit 1
+                fi
+                p=\$(( 3000 + (p - 3000 + 1) % 2000 ))
+            done
+            echo "\$p"
+        }
+        if [ -n "\${SLURM_JOB_ID:-}" ]; then
+            PORT=\$(( 3000 + SLURM_JOB_ID % 2000 ))
+        else
+            PORT=\$(shuf -i3000-4999 -n1)
+        fi
+        PORT=\$(next_free_port "\$PORT")
         export PASACONF=\$MYSQL_SCRATCH/conf/pasa-local-\${MYHOSTNAME}.config.txt
         cp ${params.pasa_conf_dir}/conf.txt \$PASACONF
         # 127.0.0.1, not \$MYHOSTNAME -- see FUNANNOTATE_TRAIN/main.nf
@@ -138,17 +167,49 @@ process FUNANNOTATE_UPDATE {
             echo "ERROR: no mariadbd/mysqld_safe found in ${params.funannotate_sif}" >&2
             exit 1
         fi
-        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container)"
-        \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
-            --datadir=\$MYSQL_SCRATCH/db/mysql \\
-            --socket=\$MYSQL_SCRATCH/mysqld.sock \\
-            --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
-        MYSQLD_PID=\$!
+        start_mariadbd() {
+            \$SING "\$MYSQLD_BIN" --defaults-file=\$MYSQL_SCRATCH/conf/my.cnf \\
+                --datadir=\$MYSQL_SCRATCH/db/mysql \\
+                --socket=\$MYSQL_SCRATCH/mysqld.sock \\
+                --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
+            MYSQLD_PID=\$!
+        }
+        # Poll up to 30s for mariadbd to either come up (pid alive + port
+        # accepting connections) or die (e.g. EADDRINUSE) -- see
+        # FUNANNOTATE_TRAIN/main.nf; replaces a blind `sleep 5` that had no
+        # idea whether mariadbd actually started.
+        wait_for_mariadbd() {
+            local waited=0
+            while [ "\$waited" -lt 30 ]; do
+                if ! kill -0 "\$MYSQLD_PID" 2>/dev/null; then
+                    return 1
+                fi
+                if port_in_use "\$PORT"; then
+                    return 0
+                fi
+                sleep 1
+                waited=\$((waited + 1))
+            done
+            return 1
+        }
+        echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container) on port \$PORT"
+        start_mariadbd
+        if ! wait_for_mariadbd; then
+            echo "[WARN] mariadbd did not come up on port \$PORT within 30s (dead or still refusing connections) -- likely lost a bind race against another job on this node; retrying once on a new port" >&2
+            wait "\$MYSQLD_PID" 2>/dev/null || true
+            PORT=\$(next_free_port \$(( 3000 + (PORT - 3000 + 1) % 2000 )))
+            sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=127.0.0.1:\${PORT}/" \$PASACONF
+            perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
+            start_mariadbd
+            if ! wait_for_mariadbd; then
+                echo "ERROR: mariadbd still failed to start after retrying on port \$PORT" >&2
+                exit 1
+            fi
+        fi
         stop_mysqldb() { kill \$MYSQLD_PID 2>/dev/null || true; wait \$MYSQLD_PID 2>/dev/null || true; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
         pasa_db_arg="--pasa_db mysql"
-        sleep 5
         # mariadb-install-db only creates root@localhost/127.0.0.1/::1/<hostname>
         # with no password -- see FUNANNOTATE_TRAIN/main.nf for the full
         # rationale (confirmed 2026-09-09 against the real container: root
