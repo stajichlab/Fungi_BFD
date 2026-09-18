@@ -49,12 +49,20 @@ def dbDir() {
 // - replaces colons with spaces (colons appear as ' colon ' separators)
 // - handles asterisks: a '*' at the start or end of the strain is removed
 // entirely; a '*' between two other words is replaced with '-'
-// 
+// - strips shell metacharacters (& ` $ | < > ( )): confirmed 2026-09-17 that
+// an unescaped '&' in a STRAIN value (collector citation "Kirika 4819 &
+// Lumbsch F", Bulbothrix_sp._DP-2024a) reaches downstream shell commands
+// unquoted -- bash treats it as the background operator, truncating the
+// command there. Symptoms seen: a stray 0-byte file at the truncated path,
+// and an empty busco_augustus.proteins.fasta (BUSCO then fails with the
+// generic "Please provide a protein file as input").
+//
 // Examples:
-// cleanStrain("Af293; CBS 101") → "Af293"
-// cleanStrain("T-34*")          → "T-34"
-// cleanStrain("ABC*DEF")        → "ABC-DEF"
-// cleanStrain("ARSEF * 2860")   → "ARSEF-2860"
+// cleanStrain("Af293; CBS 101")            → "Af293"
+// cleanStrain("T-34*")                     → "T-34"
+// cleanStrain("ABC*DEF")                   → "ABC-DEF"
+// cleanStrain("ARSEF * 2860")              → "ARSEF-2860"
+// cleanStrain("Kirika 4819 & Lumbsch F")   → "Kirika 4819 Lumbsch F"
 def cleanStrain(String rawStrain) {
     return (rawStrain ?: '').trim()
                 .replaceAll(/['"]/, '')
@@ -64,6 +72,7 @@ def cleanStrain(String rawStrain) {
                 .replaceAll(/^\s*\*+/, '')      // '*' at the start of the strain -> removed
                 .replaceAll(/\*+\s*$/, '')      // '*' at the end of the strain   -> removed
                 .replaceAll(/\s*\*+\s*/, '-')   // '*' between two words          -> '-'
+                .replaceAll(/[&`\$|<>()]+/, ' ') // shell metacharacters -> space (collapsed by makeSampleTag)
                 .trim()
 }
 
