@@ -1572,3 +1572,25 @@ linear fits on n=2 (use per-genome rows, not the slope, for tiny traces).
 **mitigation_type**: ambient-awareness
 
 **structural_mitigation_candidate**: A small log-audit script (count occurrences of each `(genome, "stale prediction for")` pair per `.nextflow.log` and flag any count > 1) would catch this class of bug directly and immediately, and would have prevented the initial misattribution by pointing straight at which channel/operator produced the duplicate lines. Not yet implemented.
+
+### [2026-09-19] funannotate 1.9.0-beta.12 ships the augustus_parallel fix; verify the container before retiring a bind-mount overlay, and re-verify every earlier overlay at the same time
+
+**Category**: gotcha
+
+**What happened**: beta.12 was pulled to `singularity_cache/funannotate-1.9.0-beta.12.sif`. Before retiring FUNANNOTATE_PREDICT's `AUGUSTUS_PARALLEL_PATCH` bind mount, the container's own copy was diffed against the patch file: `apptainer exec <sif> cat /pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/aux_scripts/augustus_parallel.py`, compared with comments stripped. Code was identical (`hints_input = '--hintsfile='+args.hints if args.hints else ''`), so the overlay was removed and `nextflow/patches/funannotate/` deleted. The same check re-run on `predict.py`/`library.py` — retired 2026-09-17 but left on disk — found them byte-identical too, so those dead files went with it.
+
+**Why it matters**: A stale bind mount does not fail loudly. It silently masks the container's own copy, so a later release that changes that file would be overridden by a months-old local patch with no error anywhere. Retiring an overlay is therefore not optional cleanup — it is the step that keeps the next upgrade honest. Retired overlay *files* left on disk are the same trap one step removed: they invite someone to re-add the bind.
+
+**Also established**: the two container tags are spelled differently on purpose and neither was wrong — the **ghcr docker tag is unprefixed** (`ghcr.io/nextgenusfs/funannotate:1.9.0-beta.12`, confirmed from the .sif's own `org.opencontainers.image.base.name` via `apptainer inspect`), while the **GitHub release tag is v-prefixed** (`v1.9.0-beta.12`, from `git ls-remote --tags`). Manifests that pip-install from git need the `v`; `apptainer build`/`pull` must not have it. Also: `funannotate-1.9.0-beta.12-norust.sif` in the shared cache is NOT an upstream variant — it is the same image with `evidence_modeler` renamed `evidence_modeler.disabled` so funannotate falls back to the Perl engine. Nothing in the repo documented that; `profile_funannotate.config` now does.
+
+**Tags**: funannotate, beta.12, augustus_parallel, overlay, bind-mount, apptainer, container, tag, norust, EVM, verification, gotcha
+
+### [2026-09-19] `--sbatch` self-submission guarded on SLURM_JOB_ID misfires inside any allocation; concurrent conda builds race on the shared package cache
+
+**Category**: gotcha
+
+**What happened**: Two things went wrong submitting `nf_funannotate1`'s `environments/conda/build_1.9{,_rust}.sh` conda builds. (1) Both gate self-submission on `[[ "$1" == "--sbatch" && -z "${SLURM_JOB_ID:-}" ]]`. `SLURM_JOB_ID` is set inside *any* allocation, including the Claude session's own job, so `--sbatch` silently fell through and built **inline** on that 8-CPU/24 GB allocation instead of submitting. The rust build asks for 32 CPU / 64 GB and would never have fit. Fixed by gating on a `FUNANNOTATE_BUILD_JOB` sentinel that the script's own `sbatch --export` sets — true only for the job the script itself submitted. Workaround when calling an unfixed script from inside a job: `env -u SLURM_JOB_ID ./script --sbatch`. (2) Once actually submitted, both jobs landed on the same node and shared `~/.conda/pkgs`. Two mamba processes downloading the same package raced on the `<pkg>.conda.partial` → `<pkg>.conda` rename; the rust build died after 5:26 with `[Errno 2] No such file or directory: '.../libgfortran5-16.2.0-h6b99dfc_5.conda.partial'`. The non-rust build won every race and was unaffected. Resubmitted with `--dependency=afterany:<first job id>`.
+
+**Why it matters**: Both failures are silent or misleading at the point of error. The guard produces no message at all — the build just runs in the wrong place and may OOM or hit a wall clock hours later. The cache race surfaces as a missing-file error naming a package unrelated to anything the user chose, which reads like a corrupt download rather than contention. Generalizes beyond these scripts: any `--sbatch`-style self-submitting script needs a sentinel specific to *its own* job, and any two conda/mamba builds sharing a package cache must be serialized or given separate `CONDA_PKGS_DIRS`.
+
+**Tags**: slurm, sbatch, self-submission, SLURM_JOB_ID, guard, conda, mamba, package-cache, race, concurrency, dependency, gotcha
