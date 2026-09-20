@@ -100,25 +100,22 @@ process FUNANNOTATE_PREDICT {
     # overlay is now retired (2026-09-17) because funannotate-1.9.0-beta.11.sif
     # (built 2026-09-09, after 17c58f5) already has the fix baked in at its native
     # path -- verified byte-identical against the patch files via
-    # `apptainer exec ... cat /pixi/.../funannotate/{predict,library}.py`.
-    # augustus_parallel.py bug-fix overlay: the funannotate-1.9.0-beta.11.sif's own
-    # aux_scripts/augustus_parallel.py unconditionally builds `hints_input =
-    # '--hintsfile='+args.hints` even when --hints was never passed to it (args.hints
-    # is None). A predict run with zero protein AND zero RNA-seq evidence omits
-    # --hints entirely, so this line raises TypeError inside every one of the
-    # multiprocessing Augustus workers -- instantly, before augustus itself ever
-    # runs (confirmed 2026-09-18 against Neopereziidae_sp._gmOTU29_Ox002475: 0/463
-    # chunks completed, 463/463 failed in ~1s; ruled out CPU/node issues first --
-    # `augustus --version` runs fine on the actual failing node). Same overlay
-    # pattern as the now-retired predict.py/library.py patches (see the SING_BINDS
-    # comment above): bind-mount a locally patched copy over the container's own
-    # path rather than waiting on a container rebuild. Guards `if args.hints else
-    # ''` instead of removing the line, so the hints-present path (RNA-seq/protein
-    # evidence available) is completely unchanged.
-    AUGUSTUS_PARALLEL_PATCH="${workflow.projectDir}/patches/funannotate/aux_scripts/augustus_parallel.py"
-    AUGUSTUS_PARALLEL_CONTAINER_PATH="/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate/aux_scripts/augustus_parallel.py"
-
-    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.proteins_microsporidia}:${params.proteins_microsporidia},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR,\$AUGUSTUS_PARALLEL_PATCH:\$AUGUSTUS_PARALLEL_CONTAINER_PATH"
+    # `apptainer exec ... cat /pixi/.../funannotate/{predict,library}.py`. Still
+    # byte-identical in funannotate-1.9.0-beta.12.sif (re-verified 2026-09-19).
+    # augustus_parallel.py: beta.11's aux_scripts/augustus_parallel.py unconditionally
+    # built `hints_input = '--hintsfile='+args.hints` even when --hints was never
+    # passed to it (args.hints is None). A predict run with zero protein AND zero
+    # RNA-seq evidence omits --hints entirely, so that line raised TypeError inside
+    # every one of the multiprocessing Augustus workers -- instantly, before augustus
+    # itself ever ran (confirmed 2026-09-18 against Neopereziidae_sp._gmOTU29_Ox002475:
+    # 0/463 chunks completed, 463/463 failed in ~1s). Carried here as a bind-mount
+    # overlay (nextflow/patches/funannotate/aux_scripts/augustus_parallel.py), same
+    # pattern as the predict.py/library.py patches above; that overlay is now retired
+    # (2026-09-19) because funannotate-1.9.0-beta.12.sif ships the guarded form
+    # (`'--hintsfile='+args.hints if args.hints else ''`) at its native path --
+    # verified code-identical to the patch file (comments aside) via
+    # `apptainer exec ... cat /pixi/.../funannotate/aux_scripts/augustus_parallel.py`.
+    SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.proteins_microsporidia}:${params.proteins_microsporidia},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # Microsporidia protein evidence override (see profile_funannotate.config's
