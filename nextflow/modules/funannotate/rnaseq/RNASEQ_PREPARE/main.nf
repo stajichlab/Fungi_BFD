@@ -20,6 +20,17 @@ process RNASEQ_PREPARE {
     tuple val(species_tag),
             path("${species_tag}.trinity-GG.fasta"), emit: shared
     path("${species_tag}.funannotate-trinity.log"), optional: true, emit: train_log
+    // StringTie GTF and splice-junction BED both derive from
+    // hisat2.coordSorted.bam, which exists ONLY inside this Trinity step; a later
+    // `funannotate train --trinity <shared>` never rebuilds it. Unrescued they are
+    // lost, and PASA then runs without --trans_gtf and minimap2 without
+    // --junc-bed, with no error. Always emitted (zero-byte when unavailable)
+    // because storeDir re-runs the process when a declared output is missing, and
+    // funannotate's lib.checkannotations() treats a zero-byte file as absent.
+    tuple val(species_tag),
+            path("${species_tag}.stringtie.gtf"), emit: stringtie
+    tuple val(species_tag),
+            path("${species_tag}.junctions.bed"), emit: junctions
 
     script:
     // Real, symlink-resolved location of rnaseq_reads/ (itself a top-level
@@ -53,6 +64,22 @@ process RNASEQ_PREPARE {
             cp "\$TRINITY_FA" ${species_tag}.trinity-GG.fasta
         else
             touch ${species_tag}.trinity-GG.fasta
+        fi
+
+        # ── Rescue shortBAM-derived evidence (see output block) ──────────────
+        if [ -s "\$TRAINDIR/funannotate_train.stringtie.gtf" ]; then
+            cp "\$TRAINDIR/funannotate_train.stringtie.gtf" ${species_tag}.stringtie.gtf
+            echo "[INFO] rescued StringTie GTF for ${species_tag}"
+        else
+            echo "[WARN] ${species_tag}: no StringTie GTF -- PASA will run without --trans_gtf" >&2
+            : > ${species_tag}.stringtie.gtf
+        fi
+        if [ -s "\$TRAINDIR/rnaseq.junctions.bed" ]; then
+            cp "\$TRAINDIR/rnaseq.junctions.bed" ${species_tag}.junctions.bed
+            echo "[INFO] rescued \$(wc -l < "\$TRAINDIR/rnaseq.junctions.bed") junctions for ${species_tag}"
+        else
+            echo "[WARN] ${species_tag}: no junction BED -- minimap2 will run without --junc-bed" >&2
+            : > ${species_tag}.junctions.bed
         fi
         exit 0
     fi
@@ -136,6 +163,22 @@ process RNASEQ_PREPARE {
         touch ${species_tag}.trinity-GG.fasta
     fi
 
+    # ── Rescue shortBAM-derived evidence (see output block) ──────────────
+    if [ -s "\$TRAINDIR/funannotate_train.stringtie.gtf" ]; then
+        cp "\$TRAINDIR/funannotate_train.stringtie.gtf" ${species_tag}.stringtie.gtf
+        echo "[INFO] rescued StringTie GTF for ${species_tag}"
+    else
+        echo "[WARN] ${species_tag}: no StringTie GTF -- PASA will run without --trans_gtf" >&2
+        : > ${species_tag}.stringtie.gtf
+    fi
+    if [ -s "\$TRAINDIR/rnaseq.junctions.bed" ]; then
+        cp "\$TRAINDIR/rnaseq.junctions.bed" ${species_tag}.junctions.bed
+        echo "[INFO] rescued \$(wc -l < "\$TRAINDIR/rnaseq.junctions.bed") junctions for ${species_tag}"
+    else
+        echo "[WARN] ${species_tag}: no junction BED -- minimap2 will run without --junc-bed" >&2
+        : > ${species_tag}.junctions.bed
+    fi
+
     # ── Preserve the funannotate train log before scratch is wiped ────────────
     # funannotate writes logfiles/funannotate-trinity.log under the scratch
     # output dir; that whole dir is removed below. Copy it into this task's
@@ -159,6 +202,8 @@ process RNASEQ_PREPARE {
     stub:
     """
     echo ">stub_trinity_${species_tag}" > ${species_tag}.trinity-GG.fasta
+    : > ${species_tag}.stringtie.gtf
+    : > ${species_tag}.junctions.bed
     mkdir -p ${params.training_target}/${out}/training
     touch ${params.training_target}/${out}/training/funannotate_train.pasa.gff3
     """
