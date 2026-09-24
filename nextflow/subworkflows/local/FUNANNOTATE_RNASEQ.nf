@@ -509,12 +509,23 @@ workflow FUNANNOTATE_RNASEQ {
         // the failure happens before PASA starts, so the graceful-degrade check inside
         // FUNANNOTATE_TRAIN (which greps for PASA's own summary line, any pasa_tier)
         // never catches it either.
+        // manual_skip (rnaseqSkipSet, checked first) is the escape hatch from
+        // pasaTierFor() and must bypass FUNANNOTATE_TRAIN unconditionally -- it
+        // does NOT require a cached trinity_fa the way ani_skip does. Without this
+        // separate branch, a manually-skipped species whose trinity_fa is empty
+        // (e.g. a prior de-novo Trinity attempt that produced 0 transcripts, as
+        // with Phoma_sp._YAFEF320_YAFEF320) falls through ani_skip's
+        // it[12].size() > 0 guard into has_rnaseq/train_todo and gets
+        // FUNANNOTATE_TRAIN resubmitted anyway, silently ignoring the skip list
+        // (confirmed: job 29032280, 2026-09-23, resubmitted training this pilot
+        // rerun had just marked skipped for a Butterfly OOM loop).
         def branched = train_input.branch {
+            manual_skip: rnaseqSkipSet.contains(it[0] as String)
             ani_skip:   it[13] == 'skip' && it[12].size() > 0
             has_rnaseq: it[9].size() > 0 || it[11].size() > 0
             no_rnaseq:  true
         }
-        def predict_no_rnaseq = branched.no_rnaseq.mix(branched.ani_skip)
+        def predict_no_rnaseq = branched.no_rnaseq.mix(branched.ani_skip).mix(branched.manual_skip)
             .map { out, asmid, sp, st, lt, bl, hl, tt, genome_fa, _r1, _r2, _se, _tf, _tier ->
                 tuple(out, asmid, sp, st, lt, bl, hl, tt, genome_fa)
             }
