@@ -1594,3 +1594,15 @@ linear fits on n=2 (use per-genome rows, not the slope, for tiny traces).
 **Why it matters**: Both failures are silent or misleading at the point of error. The guard produces no message at all — the build just runs in the wrong place and may OOM or hit a wall clock hours later. The cache race surfaces as a missing-file error naming a package unrelated to anything the user chose, which reads like a corrupt download rather than contention. Generalizes beyond these scripts: any `--sbatch`-style self-submitting script needs a sentinel specific to *its own* job, and any two conda/mamba builds sharing a package cache must be serialized or given separate `CONDA_PKGS_DIRS`.
 
 **Tags**: slurm, sbatch, self-submission, SLURM_JOB_ID, guard, conda, mamba, package-cache, race, concurrency, dependency, gotcha
+
+### [2026-09-24] SRA "RNA-Seq" runs filed under a fungal TaxID can be whole-community metatranscriptomes (goat rumen); newest-first ranking picks them
+
+**Category**: gotcha
+
+**What happened**: In the Funannotate benchmark, Rhizopus microsporus ATCC 52813 failed Trinity-GG in every rc.1 cell (0 transcripts). Only 26 of 49.2M reads mapped to the genome. The read file was 100% SRR28594504 + SRR34862858: two Sichuan Agricultural University goat-rumen metatranscriptome studies (SRP500439/PRJNA1097788, SRP606484/PRJNA1301529). Each study files one run per microbe taxon ("Microbe sample from <species>", SampleName H.RUEMN.5.1) under 12 taxa, 6 of them fungi: Aspergillus calidoustus, Batrachochytrium dendrobatidis, Rhizophagus irregularis, Rhizopus microsporus, Rozella allomycis, Spizellomyces punctatus. B. dendrobatidis reads were 86% rumen (SRR28594495). SRA_QUERY / SRA_QUERY_BATCH filter LibraryStrategy=RNA-Seq only and rank newest ReleaseDate first, so these 2024-2026 runs outranked the real transcriptomes (e.g. SRR1286007 for R. microsporus).
+
+**Fix**: SRA_QUERY + SRA_QUERY_BATCH (here and in nf_funannotate1) now drop runinfo LibrarySource (col 15) ^META, the two studies by SRAStudy/BioProject (cols 21/22), and rumen/microbiome/fecal keywords (incl. the "ruemn" misspelling) in LibraryName/SampleName and the BioSample second pass; runs from the same CenterName are kept with a [WARN]. The sra_query/*.csv caches are storeDir outputs written before the fix, so they are NOT re-filtered automatically.
+
+**Monitoring**: `misc_scripts/audit_rnaseq_community_runs.py` cross-checks every cache against ENA's list of fungal RNA-Seq runs with library_source METATRANSCRIPTOMIC/METAGENOMIC (787 runs on 2026-09-24) plus the study denylist. First run (job 29055932): 39 flagged runs in 17 species caches; 13 species read files contain flagged reads (15-100% of R1 reads; see results/rnaseq_community_run_audit.tsv). Not every flag is wrong data: lichen (Lasallia), mycorrhiza (Suillus) and host-infection (Pneumocystis) samples are mixed-organism by nature and need review, not automatic removal. Re-run after any SRA_QUERY refresh. Tracked as T-036.
+
+**Tags**: rnaseq, sra, sra_query, metatranscriptomic, rumen, contamination, trinity, mislabeled, library_source, storeDir, monitoring, gotcha
