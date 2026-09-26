@@ -422,6 +422,23 @@ process FUNANNOTATE_TRAIN {
         *)    GENOME_IN="\$GENOME_FA" ;;
     esac
 
+    # ── RNA-seq concordance gate args ──────────────────────────────────────────
+    # Empty unless the param is set: a funannotate_sif built before the gate
+    # existed rejects the unknown flag, so nothing is passed by default and a
+    # gate-aware sif applies its own defaults (10%, 200k reads).
+    GATE_ARGS=""
+    if [ -n "${params.train_min_rnaseq_map_rate != null ? params.train_min_rnaseq_map_rate : ''}" ]; then
+        GATE_ARGS="--min_rnaseq_map_rate ${params.train_min_rnaseq_map_rate}"
+    fi
+    # Opt-in PASA flags (code review R2/F4; PASApipeline >= v2.6.1-rc.2). Only
+    # passed when the param is true: an older funannotate image rejects them.
+    if [ "${params.train_pasa_unspliced_join_spliced ?: false}" = "true" ]; then
+        GATE_ARGS="\$GATE_ARGS --pasa_unspliced_join_spliced"
+    fi
+    if [ "${params.train_pasa_one_alignment_per_cdna ?: false}" = "true" ]; then
+        GATE_ARGS="\$GATE_ARGS --pasa_one_alignment_per_cdna"
+    fi
+
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
     # Shared-Trinity rows only ever reach this process with pasa_tier
     # 'stringent', 'relaxed', 'composite', or 'composite_fallback' --
@@ -500,7 +517,7 @@ process FUNANNOTATE_TRAIN {
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
                 \$PASA_TIER_ARGS \\
-                \$pasa_db_arg
+                \$GATE_ARGS \$pasa_db_arg
         elif [ -s "${se}" ]; then
             echo "[INFO] Running funannotate train (PASA+SE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
             \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
@@ -511,7 +528,7 @@ process FUNANNOTATE_TRAIN {
                 --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
                 \$PASA_TIER_ARGS \\
-                \$pasa_db_arg
+                \$GATE_ARGS \$pasa_db_arg
         else
             # No reads at all -- r1/se are present-but-empty (0-byte) placeholders,
             # not missing paths (Nextflow path inputs can't be null). Passing
@@ -531,7 +548,7 @@ process FUNANNOTATE_TRAIN {
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
                 \$PASA_TIER_ARGS \\
-                \$pasa_db_arg
+                \$GATE_ARGS \$pasa_db_arg
         fi
     elif [ -s "${r1}" ]; then
         echo "[INFO] Running funannotate train (full PE, no shared Trinity) for ${out}"
@@ -542,7 +559,7 @@ process FUNANNOTATE_TRAIN {
             --header_length ${header_length} \\
             --jaccard_clip --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
-            \$pasa_db_arg
+            \$GATE_ARGS \$pasa_db_arg
     else
         echo "[INFO] Running funannotate train (full SE, no shared Trinity) for ${out}"
         \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
@@ -552,10 +569,57 @@ process FUNANNOTATE_TRAIN {
             --header_length ${header_length} \\
             --no-progress --min_coverage 4 \\
             --max_intronlen ${params.max_intronlen} \\
-            \$pasa_db_arg
+            \$GATE_ARGS \$pasa_db_arg
     fi
     } 2>&1 | tee funannotate_train_capture.log
     TRAIN_STATUS=\${PIPESTATUS[0]}
+
+    # ── Preserve funannotate's train logs on EVERY exit path ──────────────────
+    # funannotate writes funannotate-train.log, funannotate-trinity.log,
+    # train_rnaseq_gate.tsv, etc. into \$LOCAL_TRAIN/logfiles/, which is NOT
+    # under training/ -- so the rsync below never published them and the
+    # rm -rf \$LOCAL_TRAIN discarded them, on success and on failure alike.
+    # Confirmed 2026-09-25: no funannotate-train.log existed for any genome in
+    # the do_annotation_triagePASArerun pilot. Copied into the same
+    # <target>/<out>/logfiles/ that funannotate predict writes to, so train and
+    # predict logs sit side by side (file names do not overlap).
+    TRAIN_LOGDIR="${params.target}/${out}/logfiles"
+    mkdir -p "\$TRAIN_LOGDIR"
+    if [ -d "\$LOCAL_TRAIN/logfiles" ]; then
+        for f in "\$LOCAL_TRAIN"/logfiles/*; do
+            [ -e "\$f" ] || continue
+            if [ "\$(basename "\$f")" = "training_decisions.tsv" ] && [ -s "\$TRAIN_LOGDIR/training_decisions.tsv" ]; then
+                # append (no second header): predict also writes to this file
+                tail -n +2 "\$f" >> "\$TRAIN_LOGDIR/training_decisions.tsv"
+            else
+                cp -f "\$f" "\$TRAIN_LOGDIR"/ 2>/dev/null || true
+            fi
+        done
+    fi
+    cp -f funannotate_train_capture.log "\$TRAIN_LOGDIR/funannotate-train.capture.log" || true
+
+    # ── RNA-seq concordance gate (funannotate train exit 3) ───────────────────
+    # funannotate train samples reads, maps them to the genome, and exits 3 when
+    # too few map (host-tissue dual RNA-seq, wrong species, stale read file) --
+    # BEFORE Trinity/PASA run. That is a property of the evidence, not an infra
+    # failure: degrade to ab-initio-only like the PASA case below, and do not
+    # retry. Reuses the .pasa_train_failed marker so the existing Groovy
+    # staleness logic (pasaTrainMarkerCurrent/staleTraining in utils.nf)
+    # schedules a retrain automatically once the reads are replaced (newer
+    # r1/se mtime). .rnaseq_gate_failed records WHY; the gate TSV holds the rate.
+    if [ "\$TRAIN_STATUS" -eq 3 ]; then
+        echo "[WARN] ${out}: RNA-seq concordance gate rejected the reads (see \$TRAIN_LOGDIR/train_rnaseq_gate.tsv). Degrading to ab-initio-only prediction." >&2
+        mkdir -p "${params.training_target}/${out}/training"
+        : > "${params.training_target}/${out}/training/.pasa_train_failed"
+        cp -f "\$LOCAL_TRAIN/logfiles/train_rnaseq_gate.tsv" "${params.training_target}/${out}/training/.rnaseq_gate_failed" 2>/dev/null \\
+            || : > "${params.training_target}/${out}/training/.rnaseq_gate_failed"
+        printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\treason\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n" \\
+            "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" "rnaseq_concordance_gate" \\
+            > "${out}.pasa_train_failed.tsv"
+        rm -rf "\$LOCAL_TRAIN"
+        exit 0
+    fi
+
     if [ "\$TRAIN_STATUS" -ne 0 ]; then
         # Any tier gets one chance to degrade gracefully instead of the usual
         # hard-fail+retry, PROVIDED PASA itself actually completed its
@@ -582,8 +646,8 @@ process FUNANNOTATE_TRAIN {
             echo "[WARN] ${out}: funannotate train failed (exit \$TRAIN_STATUS) but PASA completed alignment/assignment for this run (pasa_tier=${pasa_tier}) -- treating as 'not enough usable transcript evidence' rather than an infra failure. Degrading to ab-initio-only; predict will proceed without PASA evidence for this strain." >&2
             mkdir -p "${params.training_target}/${out}/training"
             : > "${params.training_target}/${out}/training/.pasa_train_failed"
-            printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\n%s\\t%s\\t%s\\t%s\\t%s\\n" \\
-                "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" \\
+            printf "out\\tspecies\\tpasa_tier\\texit_code\\ttimestamp\\treason\\n%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n" \\
+                "${out}" "${species}" "${pasa_tier}" "\$TRAIN_STATUS" "\$(date -Iseconds)" "pasa_too_few_loci" \\
                 > "${out}.pasa_train_failed.tsv"
             exit 0
         fi

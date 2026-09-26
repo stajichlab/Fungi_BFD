@@ -349,6 +349,12 @@ process FUNANNOTATE_PREDICT {
     GENEMARK_GTF_FLAG=()
     OTHER_GFF_FLAG=()
     EXTRA_PREDICT_ARGS=()
+    # PASA training-set gate: empty unless the param is set, because a
+    # funannotate_sif built before the gate existed rejects the unknown flag;
+    # a gate-aware sif applies its own default (500 complete-ORF models).
+    if [ -n "${params.predict_min_pasa_complete_models != null ? params.predict_min_pasa_complete_models : ''}" ]; then
+        EXTRA_PREDICT_ARGS+=(--min_pasa_complete_models ${params.predict_min_pasa_complete_models})
+    fi
     WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
     if [ -s "${other_gff}" ]; then
         echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
@@ -451,11 +457,20 @@ process FUNANNOTATE_PREDICT {
         exit 1
     fi
     if [ -d "\$PREDICTDIR/predict_misc/ab_initio_parameters" ]; then
-        mv "\$PREDICTDIR/predict_misc/ab_initio_parameters" "\$PREDICTDIR"
-        mv "\$PREDICTDIR/predict_misc/trnascan.no-overlaps.gff3" "\$PREDICTDIR"
+        # Besides the ab-initio parameters and tRNAs, keep the small files needed
+        # to diagnose a gene-count drop after the fact (2026-09-25: the pilot's
+        # EVM undercall could not be traced because these were deleted):
+        #   weights.evm.txt           -- EVM weights actually used
+        #   final_training_models.gff3 -- models Augustus/SNAP were trained on
+        # Each is a few hundred KB at most; missing ones are skipped.
+        KEEP_DIR="\$PREDICTDIR/.predict_misc_keep"
+        rm -rf "\$KEEP_DIR"; mkdir -p "\$KEEP_DIR"
+        for f in ab_initio_parameters trnascan.no-overlaps.gff3 weights.evm.txt final_training_models.gff3; do
+            [ -e "\$PREDICTDIR/predict_misc/\$f" ] && mv "\$PREDICTDIR/predict_misc/\$f" "\$KEEP_DIR/"
+        done
+        [ -f "\$KEEP_DIR/final_training_models.gff3" ] && pigz "\$KEEP_DIR/final_training_models.gff3"
         rm -rf "\$PREDICTDIR/predict_misc"
-        mkdir -p "\$PREDICTDIR/predict_misc"
-        mv "\$PREDICTDIR/ab_initio_parameters" "\$PREDICTDIR/trnascan.no-overlaps.gff3" "\$PREDICTDIR/predict_misc"
+        mv "\$KEEP_DIR" "\$PREDICTDIR/predict_misc"
     fi
     find "\$PREDICTDIR/predict_results/" -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
         | xargs -0 --no-run-if-empty pigz
