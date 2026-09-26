@@ -10,7 +10,7 @@
 #   score : predict_scorer.py on holdout chromosomes + proteome BUSCO -> rows/<task>.tsv
 set -uo pipefail
 module load apptainer
-T=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_pasa_rust_vs_perl/predict_arms/titration
+T=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/pasa_train_performance_evaluate/predict_arms/titration
 A=$(dirname $T); X=$(dirname $A); R=$(dirname $X); BM=$X/refseq_benchmark
 SIF=/bigdata/stajichlab/shared/singularity_cache/funannotate-1.9.0-rc.1.sif
 SITE=/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate

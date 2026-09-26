@@ -1269,3 +1269,40 @@ This log is shared by two Claude sessions working for jstajich:
 - **Script:** `titration_analysis.py` now ignores non-numeric reference rows (commit on `rust_optimize`). It bootstraps the repeats together with the PASA draws.
 - **Consequence:** D95's numbers are provisional. The analysis will be rerun when `aggregate.py` includes `busco4` and H99.
   - If funannotate is deterministic, the repeats may be identical (SELECT: there is no seed option). In that case the comparator variance is zero, and the intervals are as reported.
+
+### D98: Assessment moved to funannotate docs and pushed (user-approved 2026-09-26)
+- **Owner / status:** REVIEW / done.
+- **Location:** funannotate `docs/assessment_pasa2.6_fun1.9.rst` (Sphinx page, in the index toctree) and `docs/assessment_pasa2.6_fun1.9/` (README, methods draft, decision-log snapshot, `data/`, PNG+PDF figures with `make_figures.py`, `scripts/`). The folder name was chosen by the user.
+- **Versions pinned:** funannotate v1.9.0-rc.3 (`cd1b5ee`), PASApipeline v2.6.1-rc.2 (`1044957`).
+- **Commit:** `6380f47`, pushed to nextgenusfs/funannotate `target_1.9/rust_EVM_trinity_PASA` (`ad9b397` → `6380f47`). A local Sphinx build shows no warnings from the new page.
+- **PASApipeline:** `docs/assessment_2026-09/` replaced by a pointer README (`3280450`, pushed).
+- **Follow-up (agreed with the user):** after SELECT renames the BFD folder to `pasa_train_performance_evaluate/`, and after the H99 titration and busco4 repeats are aggregated, update the path references and Table E3 in one commit.
+
+### D99 — rc.3 50-genome pilot launched (2026-09-26, PASA-review session; user approved)
+- Folder: `Fungi_BFD_runs/do_annotation_rc3_pilot/`. SLURM launcher job 29114248 (`run_rc3_pilot.sh`).
+- Samples: `samples_rc3_pilot50.csv` from `select_pilot50.py` (seed 20260926); strata in `pilot50_manifest.tsv` (5 controls, 35 RefSeq by F1 x identity, 10 problem cases).
+- Params: `params_rc3_pilot.yaml` = production `params_predict_all.yaml` with `run_ani_reuse: false`, `share_abinitio_params: false`, `allow_independent_fallback: true`. Each genome trains itself.
+- Image: default `funannotate-1.9.0-rc.3.sif` (PASA 2.6.1-rc.2+rust).
+- Isolation: output dirs (`results`, `genome_annotation`, `genome_annotation_training`, `gene_prediction_shared_abinitio`, `tables`) and the two `*_candidates.csv` files are local. Inputs (`input_clean_genomes`, `rnaseq_reads`, `rnaseq_data`, `lib`, `db`, override CSVs) are symlinks to production. Note: Trinity outputs missing from `rnaseq_data` would be written into the shared production cache.
+- Production work dirs are not deleted until the pilot passes.
+
+### D100 — Experiment A complete: H99 rows and BUSCO comparator repeats (SELECT, 2026-09-26)
+- H99 rerun (job 29112383, bind fix D94): 34 of 34 completed. titration_scores.tsv has 149 of 149 rows with status ok (137 titration + 12 N=busco + 4 N=busco_code_new rows).
+- H99 mean locus Sn / Pr: N=50 75.9/78.5, 200 78.8/80.2, 500 79.0/80.5, 1000 80.1/81.0, 2000 80.1/81.0 (equal means by coincidence: per-draw rows differ). BUSCO comparator 78.2/80.7.
+- H99 n_complete_used is 41-44% of N. N is counted the same way as the gate counts complete models, so N* maps directly to --min_pasa_complete_models.
+- BUSCO-forced repeats (D96; 24 jobs, code_new4): every metric varies ≤ 0.1 point across 3 repeats in all 4 genomes. The code_new run differs from the code_new4 mean by ≤ 0.1 point. Comparator noise is negligible against the PASA draw SDs (0.2-1.3), so the interval width comes from the PASA draws.
+- Handed to REVIEW for the final N* analysis.
+
+### D101 — Working directory renamed to pasa_train_performance_evaluate (SELECT, user request, 2026-09-26)
+- Fungi_BFD_runs/do_pasa_rust_vs_perl/ was renamed to Fungi_BFD_runs/pasa_train_performance_evaluate/ with mv (same filesystem; no data copied). This was done after all SELECT jobs finished. REVIEW had no jobs in the folder.
+- do_pasa_rust_vs_perl is now a relative symlink to the new name, so old paths in DECISIONS entries, logs, TSV records, commit messages and the docs keep resolving. Do not remove it while those references exist.
+- The 8 absolute symlinks in refseq_benchmark/ (H99 and S. commune best.*.gff3 → refseq_benchmark_lowkeep/) are now relative (../refseq_benchmark_lowkeep/...).
+- The path was updated in 11 active scripts (run_train_compare.sh, artifact_page/build_page.py, refseq_benchmark/{benchmark.py,rank_benchmark.py,run.sh,run_rank.sh}, predict_arms/{arm.sh,prep.sh}, predict_arms/titration/{run_inputs.sh,run_task.sh,titration_lib.py}). All pass bash -n / py_compile. Logs, result TSVs and past DECISIONS text were not changed.
+
+### D102 — Experiment A final analysis (2026-09-26, PASA-review session)
+- Input: `predict_arms/titration/titration_scores.tsv`, 149/149 rows ok, BUSCO comparator = mean of N=busco draws 1-3 (SELECT: repeats differ ≤ 0.1 point; the old snapshot differs ≤ 0.1 point from their mean, so the D97 caveat is removed).
+- `titration_analysis.py` (bootstrap 2000, seed 1) at locus, exon and intron-chain levels. Outputs: `titration_analysis_{locus,exon,intron_chain}.tsv/.log`.
+- Conservative N* (locus / exon / intron chain): A. nidulans 2000/2000/2000; B. cinerea 1000/1000/1000; C. neoformans H99 300/750/300; N. crassa not reached (largest N possible is 1000; pool 1,999).
+- At N ≤ 100 BUSCO training wins in all 4 genomes (0.9-4.6 points locus F1). At N ≥ 500 the difference is −1.0 to +1.7 points.
+- Most conservative single threshold over 4 genomes: 2000. The funannotate default stays 500 (no change made). A threshold change is a user decision after experiment B.
+- Docs updated (funannotate-live docs/assessment_pasa2.6_fun1.9 README, .rst, fig1, data; evidence_and_alignment_methods.md; artifact_page/sections_8-10_REVIEW.html Table E3). Paths now name pasa_train_performance_evaluate/.

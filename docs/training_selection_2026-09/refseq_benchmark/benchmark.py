@@ -32,7 +32,7 @@ library_old.log = logging.getLogger("old")
 
 R = "/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs"
 # BENCH_RES overrides the PASA results root (e.g. r1_fix/ for the selection x PASA-fix cross)
-RES = os.environ.get("BENCH_RES", f"{R}/do_pasa_rust_vs_perl/results")
+RES = os.environ.get("BENCH_RES", f"{R}/pasa_train_performance_evaluate/results")
 CASES = {
     "Neurospora_crassa_OR74A": ("GCF_000182925.2_NC12", "GCF_000182925.2"),
     "Aspergillus_nidulans_FGSC_A4": ("GCF_000011425.1_ASM1142v1", "GCF_000011425.1"),
@@ -161,7 +161,7 @@ def main(outdir):
         if not os.path.exists(f"{d}/pasa.step1.gff3"):
             print(f"skip {name}: no PASA run yet", flush=True)
             continue
-        ref = load_refseq(f"{R}/do_pasa_rust_vs_perl/refseq/{acc}.gff")
+        ref = load_refseq(f"{R}/pasa_train_performance_evaluate/refseq/{acc}.gff")
         tmp = tempfile.mkdtemp(dir=os.environ.get("SCRATCH", "/tmp"))
         g = f"{tmp}/g.fa"
         with gzip.open(f"{R}/input_clean_genomes/{asm}.masked.fasta.gz", "rb") as i, open(g, "wb") as o:

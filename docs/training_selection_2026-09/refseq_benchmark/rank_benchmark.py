@@ -18,7 +18,7 @@ import benchmark as B
 import diversity
 from funannotate import library as lib
 
-X = f"{B.R}/do_pasa_rust_vs_perl"
+X = f"{B.R}/pasa_train_performance_evaluate"
 SOURCES = {"rc1": f"{X}/results", "R1": f"{X}/r1_fix", "R1R2": f"{X}/r1_r2"}
 
 

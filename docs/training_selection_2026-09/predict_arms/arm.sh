@@ -12,7 +12,7 @@ set -euo pipefail
 module load apptainer
 GENOME=$1; ARM=$2; STEP=$3; EVID=${4:-fixed}
 R=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs
-X=$R/do_pasa_rust_vs_perl; A=$X/predict_arms; BM=$X/refseq_benchmark
+X=$R/pasa_train_performance_evaluate; A=$X/predict_arms; BM=$X/refseq_benchmark
 G=$A/$GENOME
 SIF=/bigdata/stajichlab/shared/singularity_cache/funannotate-1.9.0-rc.1.sif
 SITE=/pixi/.pixi/envs/base/lib/python3.8/site-packages/funannotate

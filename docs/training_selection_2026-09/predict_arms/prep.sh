@@ -9,7 +9,7 @@
 set -euo pipefail
 module load apptainer samtools
 R=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs
-X=$R/do_pasa_rust_vs_perl
+X=$R/pasa_train_performance_evaluate
 A=$X/predict_arms
 PIXI=/rhome/jstajich/projects/funannotate/funannotate-live/.pixi/envs/default/bin
 FSIF=/bigdata/stajichlab/shared/singularity_cache/funannotate-1.9.0-rc.1.sif

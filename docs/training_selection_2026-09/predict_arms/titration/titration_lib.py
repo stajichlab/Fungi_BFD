@@ -6,7 +6,7 @@ getBestModel, R3/R5, review fixes, R6 option (b) on by default).
 """
 import gzip, logging, os, random, shutil, sys
 
-A = "/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_pasa_rust_vs_perl/predict_arms"
+A = "/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/pasa_train_performance_evaluate/predict_arms"
 X = os.path.dirname(A)
 R = os.path.dirname(X)
 CODE = f"{A}/code_new4"
