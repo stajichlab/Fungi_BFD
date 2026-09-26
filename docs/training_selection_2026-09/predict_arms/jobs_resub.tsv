@@ -1,0 +1,6 @@
+genome	arm	step	evid	job
+Aspergillus_nidulans_FGSC_A4	cdsB	B	own	29107708
+Aspergillus_nidulans_FGSC_A4	busco	B	fixed	29107709
+Botrytis_cinerea_B05.10	cdsS	B	fixed	29107710
+Botrytis_cinerea_B05.10	old	B	fixed	29107711
+Botrytis_cinerea_B05.10	oldnew	B	fixed	29107712
