@@ -83,13 +83,29 @@ process SRA_QUERY {
     HOST_KEYWORD_RE='(mouse|murine| mice | rat |rabbit|macrophage|phagocyt|in.?vivo|infect|co.?infec|co.?cultur|amoeba|acanthamoeba|galleria|zebrafish|elegans| host |blood|serum|plasma|csf|cerebrospinal|lung|brain|spleen|kidney| liver |tissue|biopsy|patient|clinical|autopsy|necropsy|bronch|thp-?1|rumen|ruemn|rumin|microbiom|metagenom|metatranscript|faec|fecal|feces|sludge|compost)'
     biosample_is_host_associated() {
         local biosample="\$1" doc
+        BS_DOC=""
         [ -z "\$biosample" ] && return 1
         # < /dev/null: esearch reads stdin, and this function runs inside the candidate
         # while-read loop; without it esearch swallowed the rest of the candidate list,
         # so only the first candidate was ever kept (found 2026-09-26, Lentinula_edodes).
         doc=\$(timeout 15 bash -c "esearch -db biosample -query '\${biosample}[Accession]' | efetch -format docsum" < /dev/null 2>/dev/null)
         [ -z "\$doc" ] && return 1
-        printf '%s' "\$doc" | tr '[:upper:]' '[:lower:]' | grep -qE "\$HOST_KEYWORD_RE"
+        BS_DOC=\$(printf '%s' "\$doc" | tr '[:upper:]' '[:lower:]')
+        printf '%s' "\$BS_DOC" | grep -qE "\$HOST_KEYWORD_RE"
+    }
+    # Mutant/engineered strains (added 2026-09-27): Cryptococcus_deneoformans' pick
+    # included 2 runs of NE579 upf1delta (BioSample strain "NE579 upf1delta"), an
+    # NMD-deficient mutant whose transcripts keep intron-retained and premature-stop
+    # forms -- wrong evidence for PASA training models. Checked on the same BioSample
+    # docsum as the host check, reusing BS_DOC (no second lookup). Also catches genetics
+    # notation: gene::marker disruptions (msd1::NAT) and overexpression (OE-MSD1,
+    # 'overexpression'), seen in PRJNA1328594 (C. deneoformans, 2026-09-27).
+    MUTANT_KEYWORD_RE='(delta|Δ|∆|mutant|knock.?(out|down)|deletion|::|over.?express|(^|[^a-z])oe-|rnai|crispr)'
+    biosample_excluded() {
+        BS_REASON="" BS_DOC=""
+        if biosample_is_host_associated "\$1"; then BS_REASON="host-associated"; return 0; fi
+        if [ -n "\$BS_DOC" ] && printf '%s' "\$BS_DOC" | grep -qE "\$MUTANT_KEYWORD_RE"; then BS_REASON="a mutant strain"; return 0; fi
+        return 1
     }
 
     # col 1=Run, col 2=ReleaseDate, col 4=spots, col 12=LibraryName, col 13=LibraryStrategy,
@@ -102,8 +118,8 @@ process SRA_QUERY {
     KEPT=0
     while IFS=',' read -r rank reldate acc spots platform biosample; do
         [ "\$KEPT" -ge 5 ] && break
-        if biosample_is_host_associated "\$biosample"; then
-            echo "[INFO] ${species_tag}: excluding \$acc (BioSample \$biosample looks host-associated on second-pass check)"
+        if biosample_excluded "\$biosample"; then
+            echo "[INFO] ${species_tag}: excluding \$acc (BioSample \$biosample looks like \$BS_REASON on second-pass check)"
             continue
         fi
         printf '%s,%s,%s,%s,%s,PAIRED\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots" "\$platform" >> ${species_tag}.sra_query.csv
@@ -119,6 +135,7 @@ process SRA_QUERY {
             NR>1 && \$13=="RNA-Seq" && \$16=="PAIRED" && \$1~/^[SDE]RR/ && \$4+0>=250000 {
                 meta = " " tolower(\$12 " " \$30) " "
                 if (meta ~ /(mouse|murine| mice | rat |rabbit|macrophage|phagocyt|in.?vivo|infect|co.?infec|co.?cultur|amoeba|acanthamoeba|galleria|zebrafish|elegans| host |blood|serum|plasma|csf|cerebrospinal|lung|brain|spleen|kidney| liver |tissue|biopsy|patient|clinical|autopsy|necropsy|bronch|rumen|ruemn|rumin|microbiom|metagenom|metatranscript|faec|fecal|feces|sludge|compost)/) next
+                if (meta ~ /(delta|Δ|∆|mutant|knock.?(out|down)|deletion|::|over.?express|(^|[^a-z])oe-|rnai|crispr)/) next
                 # LibrarySource (col 15) METATRANSCRIPTOMIC/METAGENOMIC = community sample, not this species.
                 if (\$15 ~ /^META/) next
                 # Known mislabeled studies (SRAStudy col 21 / BioProject col 22) -- see header comment.
@@ -145,8 +162,8 @@ process SRA_QUERY {
         SE_KEPT=0
         while IFS=',' read -r reldate acc spots platform biosample; do
             [ "\$SE_KEPT" -ge "${params.max_rnaseq_se_runs}" ] && break
-            if biosample_is_host_associated "\$biosample"; then
-                echo "[INFO] ${species_tag}: excluding SE \$acc (BioSample \$biosample looks host-associated on second-pass check)"
+            if biosample_excluded "\$biosample"; then
+                echo "[INFO] ${species_tag}: excluding SE \$acc (BioSample \$biosample looks like \$BS_REASON on second-pass check)"
                 continue
             fi
             printf '%s,%s,%s,%s,%s,SINGLE\\n' "${species_tag}" "${taxonid}" "\$acc" "\$spots" "\$platform" >> ${species_tag}.sra_query.csv
@@ -162,6 +179,7 @@ process SRA_QUERY {
                 NR>1 && \$13=="RNA-Seq" && \$16=="SINGLE" && \$1~/^[SDE]RR/ && \$4+0>=250000 {
                     meta = " " tolower(\$12 " " \$30) " "
                     if (meta ~ /(mouse|murine| mice | rat |rabbit|macrophage|phagocyt|in.?vivo|infect|co.?infec|co.?cultur|amoeba|acanthamoeba|galleria|zebrafish|elegans| host |blood|serum|plasma|csf|cerebrospinal|lung|brain|spleen|kidney| liver |tissue|biopsy|patient|clinical|autopsy|necropsy|bronch|rumen|ruemn|rumin|microbiom|metagenom|metatranscript|faec|fecal|feces|sludge|compost)/) next
+                    if (meta ~ /(delta|Δ|∆|mutant|knock.?(out|down)|deletion|::|over.?express|(^|[^a-z])oe-|rnai|crispr)/) next
                     # LibrarySource (col 15) METATRANSCRIPTOMIC/METAGENOMIC = community sample, not this species.
                     if (\$15 ~ /^META/) next
                     # Known mislabeled studies (SRAStudy col 21 / BioProject col 22) -- see header comment.
