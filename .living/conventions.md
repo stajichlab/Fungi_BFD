@@ -41,3 +41,11 @@ Overrides to mycelium defaults or convention pack conventions.
 4. Do NOT rely on OS defaults or Python's cross-platform `newline=''` parameter alone — explicitly set the terminator.
 
 **Related**: Data curation scripts, rescue scripts in `scripts/`.
+
+### Curation CSVs: append with `misc_scripts/curation_csv.py`
+
+**Rule**: Add rows to `Fungi_BFD_runs/rnaseq_skip.csv`, `rnaseq_force_no_rnaseq.csv` and other curation CSVs with a free-text column only through `misc_scripts/curation_csv.py append`. After any manual edit, run `curation_csv.py check` (for `rnaseq_blacklist.csv`: `check --columns 4 --allow-extra`).
+
+**Why**: Hand-appended rows with unquoted commas in the reason or evidence text broke the column count (2026-09-27: all 7 `rnaseq_skip.csv` rows, 2 of 4 `rnaseq_force_no_rnaseq.csv` rows). The Nextflow loaders split on ',' and read only the leading columns, so they did not fail, but `csv.DictReader` readers got shifted fields. The script quotes text fields and leaves the leading key columns unquoted, so both kinds of reader work.
+
+**How to apply**: `python3 misc_scripts/curation_csv.py append <file> col=value ...` with every header column given. Never `echo`/`printf` a row that has a comma in its text.
