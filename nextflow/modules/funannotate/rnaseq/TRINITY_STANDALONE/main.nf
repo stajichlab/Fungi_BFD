@@ -27,6 +27,14 @@ process TRINITY_STANDALONE {
     path("${species_tag}.trinity-standalone.log"), optional: true, emit: log
 
     script:
+    // Butterfly (Java) defaults to a 4G heap per process, independent of --max_memory,
+    // so the memory escalation on retry never reached it: Candidozyma_vulturna (job
+    // 28009316, 1 of 462 components) and Phoma_sp._YAFEF320 (job 28009435, 26 of 659)
+    // died with java.lang.OutOfMemoryError: Java heap space and Trinity discarded the
+    // whole assembly. Grow the heap per attempt and cap concurrent Butterflies so
+    // bflyCPU x heap stays within ~80% of the task memory.
+    def bflyHeapG = [8, 16, 24][Math.min(task.attempt as int, 3) - 1]
+    def bflyCpu   = Math.max(1, Math.min(task.cpus as int, ((task.memory.toGiga() * 0.8) / bflyHeapG) as int))
     """
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load apptainer
@@ -91,6 +99,7 @@ process TRINITY_STANDALONE {
         \$SING Trinity --seqType fq --no_normalize_reads \\
             --left ${r1} --right ${r2} \\
             --max_memory ${task.memory.toGiga()}G --CPU ${task.cpus} \\
+            --bflyHeapSpaceMax ${bflyHeapG}G --bflyCPU ${bflyCpu} \\
             --output "\$OUTDIR" --full_cleanup \\
             > ${species_tag}.trinity-standalone.log 2>&1
         TRINITY_EXIT=\$?
@@ -99,6 +108,7 @@ process TRINITY_STANDALONE {
         \$SING Trinity --seqType fq --no_normalize_reads \\
             --single ${se} \\
             --max_memory ${task.memory.toGiga()}G --CPU ${task.cpus} \\
+            --bflyHeapSpaceMax ${bflyHeapG}G --bflyCPU ${bflyCpu} \\
             --output "\$OUTDIR" --full_cleanup \\
             > ${species_tag}.trinity-standalone.log 2>&1
         TRINITY_EXIT=\$?
