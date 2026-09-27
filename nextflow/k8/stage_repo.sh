@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # k8/stage_repo.sh — one-time (and re-run-safe) setup for the compare_ANI k8s
-# pilot: PVC, RBAC, S3-credentials Secret, head pod, and a repo checkout on
-# the PVC that the head pod launches Nextflow from.
+# pilot: PVC, RBAC, S3-credentials Secret, and a repo checkout on the PVC that
+# the pipeline Jobs (k8/bin/nf-job.sh) run Nextflow from. There is no head pod:
+# NRP prohibits idle `sleep infinity` pods, so the checkout is updated by a
+# finite git Job, and each pipeline run is its own Job.
 #
 # samples.csv and all pipeline code come from `git clone`/`git pull` — nothing
 # needs staging via `kubectl cp`. Genome inputs and results stay on S3
@@ -43,39 +45,43 @@ kubectl create secret generic nrp-s3-creds -n "$NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f -
 unset AK SK
 
-echo "==> Applying head pod"
-kubectl apply -f "$here/head-pod.yaml"
-kubectl wait --for=condition=Ready pod/bfd-nextflow-head -n "$NAMESPACE" --timeout=120s
-
-echo "==> Cloning/updating $REPO_URL (branch: $REPO_BRANCH) onto the PVC"
-kubectl exec -n "$NAMESPACE" bfd-nextflow-head -- sh -c "
-  set -e
-  if [ -d /workspace/repo/.git ]; then
-    cd /workspace/repo && git fetch origin && git checkout '$REPO_BRANCH' && git pull --ff-only
-  else
-    git clone --branch '$REPO_BRANCH' '$REPO_URL' /workspace/repo
-  fi
-"
-
-echo "==> Done. Launch a run with e.g.:"
-# NOTE: the launch dir must NOT be on the PVC (/workspace/...) — rook-cephfs
-# doesn't support the file locking Nextflow's resume-cache DB needs, and
-# `nextflow run` fails outright if .nextflow/ ends up there. Use a directory
-# local to the head pod's own container filesystem instead (/root/runs/...),
-# same as k8/README_compare_ani.md and the ani-*.sh wrappers do.
-cat <<'EOF'
-kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c '
-  mkdir -p /root/runs/ANI && cd /root/runs/ANI
-  cp /workspace/repo/samples.csv .
-  nextflow run /workspace/repo/nextflow/main.nf \
-    -c /workspace/repo/nextflow/nextflow.config \
-    -profile compare_ani_k8s \
-    --pipeline compare_ani \
-    -params-file /path/to/params_ani.yaml \
-    -resume
-'
+echo "==> Cloning/updating $REPO_URL (branch: $REPO_BRANCH) onto the PVC (finite Job)"
+kubectl delete job repo-sync -n "$NAMESPACE" --ignore-not-found --wait=true >/dev/null
+kubectl apply -f - <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: repo-sync
+  namespace: ${NAMESPACE}
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: git
+          image: alpine/git:2.45.2
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              if [ -d /workspace/repo/.git ]; then
+                cd /workspace/repo && git fetch origin && git checkout '${REPO_BRANCH}' && git pull --ff-only
+              else
+                git clone --branch '${REPO_BRANCH}' '${REPO_URL}' /workspace/repo
+              fi
+              git -C /workspace/repo log --oneline -1
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts: [{name: work, mountPath: /workspace}]
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: bfd-work-pvc}
 EOF
-echo "NOTE: main.nf currently fails to parse on this branch regardless of"
-echo "--pipeline (see k8/README_compare_ani.md's 'What this doesn't solve"
-echo "for you'). Use k8/bin/ani-run.sh + k8/bin/ani-gather.sh instead until"
-echo "that's fixed."
+kubectl wait --for=condition=complete job/repo-sync -n "$NAMESPACE" --timeout=300s >/dev/null
+kubectl logs -n "$NAMESPACE" job/repo-sync | tail -1
+
+echo "==> Done. Launch runs with k8/bin/ani-run.sh (or k8/bin/nf-job.sh directly), e.g.:"
+echo "    k8/bin/ani-run.sh --taxon GENUS:Yarrowia --compare SPECIES"

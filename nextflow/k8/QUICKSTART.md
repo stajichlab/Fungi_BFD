@@ -1,5 +1,28 @@
 # compare_ANI on Nautilus — quick reference
 
+> **Updated 2026-09-27 — runs are Jobs now; there is no head pod.** NRP prohibits
+> idle interactive pods ("Running in interactive mode (`sleep infinity` command and
+> manual start of computation) ... is prohibited, and user can be banned" —
+> https://nrp.ai/documentation/userdocs/running/jobs/), so `head-pod.yaml` is gone.
+> Each pipeline run is a Kubernetes Job whose command is `nextflow run`
+> (`k8/bin/nf-job.sh`, used by `ani-run.sh`, `ani-gather.sh`, `ips6-run.sh`); it
+> exits when the pipeline does. Launch dir, work dir and logs are on the PVC
+> (`/workspace/runs/<name>`), so relaunching the same run resumes. Where the text
+> below mentions the head pod, `kubectl exec` into it, `/root/runs`, or its 6 h
+> cap, it describes the old setup.
+>
+> - Update the checkout: `bash k8/stage_repo.sh` (finite git Job; also PVC/RBAC/Secret).
+> - Start / resume: `k8/bin/ani-run.sh --taxon GENUS:Yarrowia --compare SPECIES`
+> - Follow: `k8/bin/ani-status.sh [ani-<name>]` or `kubectl logs -f -n ucr-stajichlab job/nf-ani-<name>`
+> - Stop: `kubectl delete job -n ucr-stajichlab nf-ani-<name>`
+> - Many taxa: `k8/bin/ani-suite.sh` runs at most `MAX_RUNS` (default 2) at once.
+> - Task pods are `opportunistic` (preemptible) and avoid GPU nodes; at most 25
+>   per run (NRP CPU-only guidance, https://nrp.ai/documentation/userdocs/running/cpu-only/).
+> - The CephFS "launch dir can't be on the PVC" gotcha no longer holds: Nextflow
+>   25.10.7 resumed fine from a launch dir on `bfd-work-pvc` (tested 2026-09-27).
+> - The 6 h cap applies to pods without a controller. The run itself is a Job
+>   now; task pods are still bare pods, so individual tasks keep the 6 h limit.
+
 Terse operational cheat sheet. Full detail/rationale: `k8/README_compare_ani.md`.
 
 ## Before every session
