@@ -672,5 +672,10 @@ def clearNoReadsPlaceholders(species_tag, csv) {
     reads.each { f -> f.delete() }
     def fa = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
     if (fa.exists() && fa.size() == 0) fa.delete()
+    // COUNT_TRINITY_TRANSCRIPTS is storeDir'd too: its "0" from the placeholder era
+    // survived, so the new assembly was judged thin and sent to TRINITY_STANDALONE
+    // (Lentinula_edodes, wave 0, 2026-09-27). Remove the stale count with the placeholders.
+    def cnt = file("${launchDir}/rnaseq_data/counts/${species_tag}.n_transcripts.txt")
+    if (cnt.exists() && cnt.text.trim() == '0') cnt.delete()
     log.info "SRA re-query found ${rows.size()} run(s) for ${species_tag}: removed zero-byte read/Trinity placeholders so SRA_FETCH and RNASEQ_PREPARE run"
 }

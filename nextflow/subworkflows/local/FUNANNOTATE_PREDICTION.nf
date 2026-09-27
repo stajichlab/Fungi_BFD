@@ -269,16 +269,28 @@ workflow FUNANNOTATE_PREDICTION {
 
         def gated = eligibleSiblingKeyed.combine(availableSpeciesSet)
 
+        // A species counts as ready only when its store is actually on disk.
+        // Was: ready = in availableSpeciesSet, then `sharedParamsJsonFor(sp) ?: ''`,
+        // so a backfill that reported done but wrote nothing sent the sibling to
+        // predict with no -p, i.e. silent independent training even with
+        // allow_independent_fallback=false (wave 0, 2026-09-27). Now such a sibling
+        // is blocked (or falls back only when allow_independent_fallback is set).
         def readyRows = gated
-            .filter { sp, _row, availSet -> availSet.contains(sp) }
+            .filter { sp, _row, availSet -> availSet.contains(sp) && sharedParamsJsonFor(sp) != null }
             .map { sp, row, _availSet ->
                 tuple(row[0], row[1], sp, row[3], row[4], row[5], row[6], row[7], row[8],
-                      sharedParamsJsonFor(sp)?.toString() ?: '')
+                      sharedParamsJsonFor(sp).toString())
             }
 
         def blockedRows = gated
-            .filter { sp, _row, availSet -> !availSet.contains(sp) }
-            .map { _sp, row, _availSet -> row }
+            .filter { sp, _row, availSet -> !(availSet.contains(sp) && sharedParamsJsonFor(sp) != null) }
+            .map { sp, row, availSet ->
+                if (availSet.contains(sp)) {
+                    log.warn "predict: ${row[0]} (${sp}) -- backfill reported done but no shared " +
+                        "parameters.json under ${params.gene_prediction_shared_abinitio}; not using an empty store"
+                }
+                row
+            }
 
         def sibling_todo
         if (allowFallback) {
