@@ -1306,3 +1306,30 @@ This log is shared by two Claude sessions working for jstajich:
 - At N ≤ 100 BUSCO training wins in all 4 genomes (0.9-4.6 points locus F1). At N ≥ 500 the difference is −1.0 to +1.7 points.
 - Most conservative single threshold over 4 genomes: 2000. The funannotate default stays 500 (no change made). A threshold change is a user decision after experiment B.
 - Docs updated (funannotate-live docs/assessment_pasa2.6_fun1.9 README, .rst, fig1, data; evidence_and_alignment_methods.md; artifact_page/sections_8-10_REVIEW.html Table E3). Paths now name pasa_train_performance_evaluate/.
+
+### D103 — rc.3 pilot results (2026-09-26, PASA-review session)
+- Run: do_annotation_rc3_pilot, job 29114248, 151 tasks, 0 failed. Results: `do_annotation_rc3_pilot/pilot_eval/PILOT_RESULTS.md`, `pilot_eval.tsv`, `eval_pilot.py`.
+- Whole-genome gffcompare vs RefSeq (before/after, not holdout). Locus F1 rc.3 − production: severe-F1 PASA genomes median +27.1 (9/10 improved); clean +3.4 (10/10); mild-F1 yeasts +0.9 locus but +21.1 intron chain; controls +19.0 (4/5).
+- Single-exon share of severe-F1 genomes: production 61-80%, rc.3 14-28%, RefSeq 17-34%.
+- Gates: map-rate gate failed 7 (all 5 low-mapping tests + Cg363 + D. hansenii); complete-model gate failed 1 (E. xenobiotica, 482; +17.4).
+- Losses: (1) Lentinula edodes −11.0: production RNA-seq inputs now empty (sra_query regenerated 2026-08-30 empty; trinity-GG.fasta 0 bytes). Data state, not rc.3. Also Penicillium sp. (4 genomes). (2) C. siamense Cg363 −10.9: BUSCO path. GeneMark-ES alone scores locus F1 78.1; rc.3 EVM (BUSCO-trained Augustus + SNAP + GeneMark, weight 1 each) 66.6. One genome only.
+- Open for the user: (a) restore RNA-seq inputs for Lentinula edodes before rerun waves; (b) whether the BUSCO path needs a change (e.g. SNAP weight, GeneMark weight) — needs a test on more no-RNA-seq RefSeq genomes first.
+
+### D104 — Fix: species lose RNA-seq through the SRA query cache (2026-09-26, PASA-review session; user: "fix the cause")
+- Symptom: Lentinula_edodes (16 PASA-trained genomes) has an empty sra_query.csv, 0-byte read and Trinity placeholders since 2026-08-30; the pilot trained it from BUSCO (locus F1 −11.0 vs production).
+- Causes found (all in BFD nextflow, uncommitted):
+  1. FUNANNOTATE_RNASEQ.nf took `taxonids[0]` per species (arrival order). The query used `txid<id>[Organism:noexp]`. Lentinula has 17 genomes with 5353, 2 with strain taxids; 5353 returns 250+ runs, the strain taxids 0.
+  2. A header-only CSV counted as cached (size > 0), so an empty or failed query was never retried.
+  3. SRA_QUERY_BATCH/SRA_QUERY: esearch in biosample_is_host_associated read the candidate loop's stdin, so only the first candidate was kept (Lentinula test: 1 run before, 5 after).
+  4. Zero-byte placeholders (WRITE_EMPTY_READS reads, no_reads Trinity FASTA) satisfy storeDir, so SRA_FETCH/RNASEQ_PREPARE would skip even after a good query.
+- Fix: deterministic taxid list (all distinct, most frequent first, max 10) + species-name term, expanded [Organism] search; .sra_query.key sidecar marks a completed query ("v2|taxids"); header-only CSV without matching key is re-queried; publishDir overwrite true; `< /dev/null` on the BioSample esearch; placeholders cleared only for species re-queried this run that now list runs and whose 3 read files are all 0-byte.
+- Tests (do_annotation_rc3_pilot/pilot_eval/sraq_test/): module run (Lentinula 5 runs, key written, stale CSV replaced; second run reuses cache); cache rule 5 cases; placeholder rule 3 cases; nextflow lint no errors.
+- Scope: 150 species with an empty CSV and >1 taxid (2,242 genomes); 38 of them (434 genomes) have SRA runs by species name and no usable Trinity (upper bound; pipeline filters may drop some).
+- Effect on next production run: about 5,745 header-only CSVs lack a key and are queried once more (SLURM short-queue batches, maxForks 4).
+
+### D105 — predict_arms cleanup done: 292.7 GB removed, 15,557 files (3.27 GB) kept and verified (SELECT, user request, 2026-09-26)
+- The rules were agreed with REVIEW: BAMs kept, code_new* dropped only after each diff rebuilt its snapshot from 41a2fd7 (on GitHub), and REVIEW's input dirs (r13_rerun, xs, r1_fix, r1_r2, r2_only, identity_production) not touched. The rules are in predict_arms/cleanup_predict_arms.py and predict_arms/CLEANUP_README.md.
+- Dry run 29114339: keep 38,448 files / 21.19 GB, remove 292.03 GB. One rule change after it: the stock AUGUSTUS config copied into ab_initio_parameters/augustus (identical to lib/augustus/3.5/config; the anidulans seed comes from funannotate_db) was also removed. The trained species dirs, BUSCO_* dirs and snap .hmm were kept.
+- Apply 29114458 (6 h 08 m): removed 26,181 paths / 292.71 GB. Kept 15,557 files, 20.52 GB before and 3.27 GB after zstd -19 of plain-text files over 1 MB (2,462 files).
+- Verification after the cleanup: scorecard.py, single_exon_score.py (arms busco old se tx tx2 txR1R2), methods_tables.py and titration/aggregate.py reproduce their saved outputs exactly. The scorers now read .gff3 or .gff3.zst. 20 random manifest sha256 values matched.
+- Record: predict_arms/cleanup_record/ (plan_keep, plan_remove, manifest_kept with sha256, summary). predict_scorer.py needs plain GFF3: decompress to $SCRATCH first.

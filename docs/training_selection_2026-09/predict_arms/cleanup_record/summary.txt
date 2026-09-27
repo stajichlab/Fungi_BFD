@@ -1,0 +1,5 @@
+root	/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/pasa_train_performance_evaluate/predict_arms
+planned_keep_bytes	20517984973
+removed_bytes	292710009857
+kept_files	15557
+kept_bytes_after_compression	3271053261

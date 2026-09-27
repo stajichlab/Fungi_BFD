@@ -7,6 +7,14 @@ size from step A (final_training_models.gff3 gene count) + wall time.
 """
 import csv, glob, os, re
 
+
+def open_text(path):
+    """Open a plain or zstd-compressed (.zst) text file (cleanup compressed files > 1 MB)."""
+    if path.endswith(".zst"):
+        import io, subprocess
+        return io.StringIO(subprocess.run(["zstd", "-dc", path], check=True, capture_output=True, text=True).stdout)
+    return open(path)
+
 A = os.path.dirname(os.path.abspath(__file__))
 rows = []
 for d in sorted(glob.glob(f"{A}/*/*.B.*")):
@@ -31,8 +39,9 @@ for d in sorted(glob.glob(f"{A}/*/*.B.*")):
         if m:
             r.update(busco_C=m[1], busco_D=m[3], busco_F=m[4], busco_M=m[5])
     t = f"{A}/{genome}/{arm}.A/out/predict_misc/final_training_models.gff3"
+    t = t if os.path.exists(t) else t + ".zst"
     if os.path.exists(t):
-        r["train_models"] = sum(1 for l in open(t) if "\tgene\t" in l)
+        r["train_models"] = sum(1 for l in open_text(t) if "\tgene\t" in l)
     rows.append(r)
 cols = []
 for r in rows:

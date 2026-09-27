@@ -8,6 +8,14 @@ Writes predict_arms/single_exon_scores.tsv.
 """
 import collections, glob, os, sys
 
+
+def open_text(path):
+    """Open a plain or zstd-compressed (.zst) text file (cleanup compressed files > 1 MB)."""
+    if path.endswith(".zst"):
+        import io, subprocess
+        return io.StringIO(subprocess.run(["zstd", "-dc", path], check=True, capture_output=True, text=True).stdout)
+    return open(path)
+
 A = os.path.dirname(os.path.abspath(__file__))
 X = os.path.dirname(A)
 ACC = {"Neurospora_crassa_OR74A": "GCF_000182925.2", "Aspergillus_nidulans_FGSC_A4": "GCF_000011425.1",
@@ -17,7 +25,7 @@ ACC = {"Neurospora_crassa_OR74A": "GCF_000182925.2", "Aspergillus_nidulans_FGSC_
 
 def chains(gff, keep, coding_only):
     parent, cds, coding = {}, collections.defaultdict(list), set()
-    for line in open(gff):
+    for line in open_text(gff):
         if line.startswith("#"):
             continue
         c = line.rstrip("\n").split("\t")
@@ -54,7 +62,7 @@ def main(arms):
         ref_m_genes = {ref[k] for k in ref_m}
         for arm in arms:
             d = f"{gdir}/{arm}.B.fixed"
-            pred_files = [p for p in glob.glob(f"{d}/out/predict_results/*.gff3")]
+            pred_files = sorted(glob.glob(f"{d}/out/predict_results/*.gff3") + glob.glob(f"{d}/out/predict_results/*.gff3.zst"))
             if not pred_files:
                 continue
             pred = chains(pred_files[0], hold, False)
