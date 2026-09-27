@@ -79,14 +79,22 @@ workflow FUNANNOTATE_RNASEQ {
         def normalGenomeCh = genome_branched.normal
         def hybridGenomeCh = genome_branched.hybrid
 
-        // Build per-species input: group assemblies, keep first taxonid per species.
+        // Build per-species input: group assemblies and pass ALL distinct taxids of the
+        // species, most frequent first (ties: ascending), capped at 10, joined with '+'.
+        // Was `taxonids[0]`: groupTuple order is arrival order, so the pick was not
+        // deterministic, and a strain-level taxid under SRA_QUERY_BATCH's old
+        // `txid<id>[Organism:noexp]` query matched no runs filed under the species.
+        // Confirmed 2026-09-26: Lentinula_edodes (17 genomes taxid 5353, 2 with strain
+        // taxids 1323751/1335646) got an empty sra_query.csv on 2026-08-30 although
+        // txid5353 returns 250+ PE RNA-seq runs; both strain taxids return 0.
+        // SRA_QUERY_BATCH now ORs the species name and these taxids (expanded search).
         def sra_input = normalGenomeCh
             .map { out, asmid, species, strain, locustag, busco, hlen, ttable, genome_fa, taxonid ->
                 def species_tag = species.replaceAll(/\s+/, '_')
                 tuple(species_tag, taxonid)
             }
             .groupTuple(by: 0)
-            .map { species_tag, taxonids -> tuple(species_tag, taxonids[0]) }
+            .map { species_tag, taxonids -> tuple(species_tag, sraQueryTaxids(taxonids)) }
 
         // Step 1: query or reuse cached per-species SRA query results.
         // skip_sra_query=true reads existing CSVs from rnaseq_reads/sra_query/ directly,
@@ -111,10 +119,14 @@ workflow FUNANNOTATE_RNASEQ {
             // just does no esearch/efetch work for the cached ones), but this branch is
             // what stops a fully-cached batch from launching a short-queue job in the
             // first place -- mirrors what SRA_FETCH gets for free from storeDir.
+            // A cached CSV is reused when it lists at least one run, or when it is
+            // header-only AND its .sra_query.key sidecar matches the current query
+            // (a completed query that truly found nothing). A header-only CSV with no
+            // matching key -- written by the pre-2026-09-26 query (possibly with the
+            // wrong taxid) or by a failed query -- is queried again. See sraQueryCached().
             def sra_branched = sra_input
-                .branch { species_tag, _taxonid ->
-                    def csv = file("${launchDir}/rnaseq_reads/sra_query/${species_tag}.sra_query.csv")
-                    cached:     csv.exists() && csv.size() > 0
+                .branch { species_tag, taxids ->
+                    cached:     sraQueryCached(species_tag, taxids)
                     needs_query: true
                 }
             def cached_results = sra_branched.cached
@@ -128,6 +140,7 @@ workflow FUNANNOTATE_RNASEQ {
             def queried_results = SRA_QUERY_BATCH.out.query_results
                 .flatten()
                 .map { csv -> tuple(csv.baseName.replaceAll(/\.sra_query$/, ''), csv) }
+                .map { stag, csv -> clearNoReadsPlaceholders(stag, csv); tuple(stag, csv) }
             sra_query_results = cached_results.mix(queried_results)
         }
 
@@ -618,4 +631,46 @@ workflow FUNANNOTATE_RNASEQ {
     emit:
     predict_input = predict_input_ch
     reads = reads_ch
+}
+
+// Distinct taxids of one species for the SRA query: most frequent first, ties ascending,
+// capped at 10, joined with '+'. Deterministic regardless of channel arrival order.
+def sraQueryTaxids(taxonids) {
+    def ids = taxonids.collect { t -> t?.toString()?.trim() }.findAll { t -> t }
+    def counts = ids.countBy { t -> t }
+    def ranked = counts.keySet().sort { a, b ->
+        (counts[b] <=> counts[a]) ?: ((a.isLong() && b.isLong()) ? (a as long) <=> (b as long) : a <=> b)
+    }
+    return ranked.take(10).join('+')
+}
+
+// Cache rule for rnaseq_reads/sra_query/<species_tag>.sra_query.csv (see the branch above).
+// Key format must match the `printf 'v2|%s'` line in SRA_QUERY_BATCH.
+def sraQueryCached(species_tag, taxids) {
+    def dir = "${launchDir}/rnaseq_reads/sra_query"
+    def csv = file("${dir}/${species_tag}.sra_query.csv")
+    if (!csv.exists() || csv.size() == 0) return false
+    if (csv.readLines().count { l -> l.trim() } > 1) return true
+    def key = file("${dir}/${species_tag}.sra_query.key")
+    return key.exists() && key.text.trim() == "v2|${taxids}".toString()
+}
+
+// A species re-queried in this run (its cache was invalid, see sraQueryCached) may still
+// carry the zero-byte placeholders written when its old query was empty:
+// rnaseq_reads/<tag>_norm_{R1,R2,SE}.fastq.gz (WRITE_EMPTY_READS) and
+// rnaseq_data/<tag>.trinity-GG.fasta (the no_reads branch below). SRA_FETCH and
+// RNASEQ_PREPARE use storeDir, so those placeholders would skip them forever even
+// after the new query finds runs (Lentinula_edodes, 2026-09-26). When the new CSV
+// lists a run and ALL three read files are zero-byte, delete the placeholders.
+// Species whose cached CSV already lists runs are never re-queried, so a real
+// download or Trinity failure (reads or assembly left zero-byte) is not touched.
+def clearNoReadsPlaceholders(species_tag, csv) {
+    def rows = csv.readLines().drop(1).findAll { l -> l.trim() }
+    if (!rows) return
+    def reads = ['R1', 'R2', 'SE'].collect { r -> file("${launchDir}/rnaseq_reads/${species_tag}_norm_${r}.fastq.gz") }
+    if (!reads.every { f -> f.exists() && f.size() == 0 }) return
+    reads.each { f -> f.delete() }
+    def fa = file("${launchDir}/rnaseq_data/${species_tag}.trinity-GG.fasta")
+    if (fa.exists() && fa.size() == 0) fa.delete()
+    log.info "SRA re-query found ${rows.size()} run(s) for ${species_tag}: removed zero-byte read/Trinity placeholders so SRA_FETCH and RNASEQ_PREPARE run"
 }

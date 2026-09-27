@@ -84,7 +84,10 @@ process SRA_QUERY {
     biosample_is_host_associated() {
         local biosample="\$1" doc
         [ -z "\$biosample" ] && return 1
-        doc=\$(timeout 15 bash -c "esearch -db biosample -query '\${biosample}[Accession]' | efetch -format docsum" 2>/dev/null)
+        # < /dev/null: esearch reads stdin, and this function runs inside the candidate
+        # while-read loop; without it esearch swallowed the rest of the candidate list,
+        # so only the first candidate was ever kept (found 2026-09-26, Lentinula_edodes).
+        doc=\$(timeout 15 bash -c "esearch -db biosample -query '\${biosample}[Accession]' | efetch -format docsum" < /dev/null 2>/dev/null)
         [ -z "\$doc" ] && return 1
         printf '%s' "\$doc" | tr '[:upper:]' '[:lower:]' | grep -qE "\$HOST_KEYWORD_RE"
     }

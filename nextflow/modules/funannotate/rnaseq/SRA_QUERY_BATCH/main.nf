@@ -57,10 +57,21 @@
 // punctatus). Their recent ReleaseDate ranked them first: R. microsporus got
 // 100% rumen reads (26 of 49.2M hisat2-mapped, Trinity-GG 0 transcripts) and
 // B. dendrobatidis 86%. Runs from the same CenterName are kept but warned.
+// Query term (changed 2026-09-26): the input taxid field is a '+'-joined list of all
+// distinct taxids of the species (FUNANNOTATE_RNASEQ.nf sraQueryTaxids). The organism
+// part ORs the species name (when the tag is a plain "Genus epithet") with every taxid,
+// all as expanded [Organism] terms, so runs filed under the species, a strain or a
+// child taxon are all found. The old term, txid<first taxid>[Organism:noexp], missed
+// every run when the first taxid was a strain-level one (Lentinula_edodes, 2026-08-30).
+// The CSV taxonid column keeps the first (most frequent) taxid.
+// Cache marker: a completed query writes <species_tag>.sra_query.key = "v2|<taxids>".
+// A failed query writes no key, so its empty CSV is queried again on the next run
+// (FUNANNOTATE_RNASEQ.nf sraQueryCached). publishDir overwrite is true so a re-query
+// replaces a stale header-only CSV; only species that need a query reach this process.
 process SRA_QUERY_BATCH {
     tag "${species_tags[0]}_+${species_tags.size() - 1}_more"
 
-    publishDir "${launchDir}/rnaseq_reads/sra_query", mode: 'copy', overwrite: false
+    publishDir "${launchDir}/rnaseq_reads/sra_query", mode: 'copy', overwrite: true
 
     maxForks 4
     cpus   1
@@ -72,6 +83,7 @@ process SRA_QUERY_BATCH {
 
     output:
     path("*.sra_query.csv"), emit: query_results
+    path("*.sra_query.key"), emit: query_keys, optional: true
 
     script:
     def cache_dir  = "${launchDir}/rnaseq_reads/sra_query"
@@ -84,13 +96,28 @@ process SRA_QUERY_BATCH {
 
     printf '${batch_args}\\n' > batch_input.tsv
 
+    # Organism clause: "Genus epithet"[Organism] (only for a plain binomial tag, not
+    # sp./cf./aff./x) OR txid<id>[Organism] for each '+'-separated taxid. Expanded terms.
+    organism_clause() {
+        local stag="\$1" tids="\$2" genus epithet t out=""
+        genus="\${stag%%_*}"; epithet="\${stag#*_}"; epithet="\${epithet%%_*}"
+        if [[ "\$genus" =~ ^[A-Z][a-z]+\$ && "\$epithet" =~ ^[a-z][a-z-]+\$ && ! "\$epithet" =~ ^(sp|cf|aff|x)\$ ]]; then
+            out="\\"\${genus} \${epithet}\\"[Organism]"
+        fi
+        IFS='+' read -ra _tids <<< "\$tids"
+        for t in "\${_tids[@]}"; do
+            [ -n "\$t" ] && out="\${out:+\$out OR }txid\${t}[Organism]"
+        done
+        printf '(%s)' "\$out"
+    }
+
     query_species() {
-        local stag="\$1" tid="\$2" attempt
+        local stag="\$1" tid="\$2" attempt q
+        q="\$(organism_clause "\$stag" "\$tid") AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])"
 
         for attempt in 1 2 3; do
             rm -f "_runinfo_\${stag}.tmp"
-            if timeout 300 bash -c \\
-                    "esearch -db sra -query 'txid\${tid}[Organism:noexp] AND RNA-Seq[Strategy] AND PAIRED[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND (BGISEQ[Platform] OR Illumina[Platform])' | efetch -format runinfo -start 1 -stop 250" \\
+            if timeout 300 bash -c 'esearch -db sra -query "\$1" | efetch -format runinfo -start 1 -stop 250' _ "\$q" \\
                     < /dev/null > "_runinfo_\${stag}.tmp"; then
                 return 0
             fi
@@ -122,20 +149,28 @@ process SRA_QUERY_BATCH {
     biosample_is_host_associated() {
         local biosample="\$1" doc
         [ -z "\$biosample" ] && return 1
-        doc=\$(timeout 15 bash -c "esearch -db biosample -query '\${biosample}[Accession]' | efetch -format docsum" 2>/dev/null)
+        # < /dev/null: esearch reads stdin, and this function runs inside the candidate
+        # while-read loop; without it esearch swallowed the rest of the candidate list,
+        # so only the first candidate was ever kept (found 2026-09-26, Lentinula_edodes).
+        doc=\$(timeout 15 bash -c "esearch -db biosample -query '\${biosample}[Accession]' | efetch -format docsum" < /dev/null 2>/dev/null)
         [ -z "\$doc" ] && return 1
         printf '%s' "\$doc" | tr '[:upper:]' '[:lower:]' | grep -qE "\$HOST_KEYWORD_RE"
     }
 
-    while IFS=\$(printf '\\t') read -r species_tag taxonid; do
+    while IFS=\$(printf '\\t') read -r species_tag taxonids; do
+        taxonid="\${taxonids%%+*}"
         cached="${cache_dir}/\${species_tag}.sra_query.csv"
-        if [ -s "\$cached" ]; then
+        cached_key="${cache_dir}/\${species_tag}.sra_query.key"
+        # Same rule as sraQueryCached() in FUNANNOTATE_RNASEQ.nf: reuse when the CSV
+        # lists a run, or when it is header-only with a matching key.
+        if [ -s "\$cached" ] && { [ "\$(grep -c . "\$cached")" -gt 1 ] || \\
+               { [ -f "\$cached_key" ] && [ "\$(cat "\$cached_key")" = "v2|\${taxonids}" ]; }; }; then
             cp "\$cached" "\${species_tag}.sra_query.csv"
             echo "[INFO] Reusing cached result for \${species_tag}"
             continue
         fi
 
-        if query_species "\${species_tag}" "\${taxonid}"; then
+        if query_species "\${species_tag}" "\${taxonids}"; then
             printf 'species_tag,taxonid,sra_accession,spots,platform,layout\\n' > "\${species_tag}.sra_query.csv"
             # col 1=Run, col 2=ReleaseDate, col 4=spots, col 12=LibraryName, col 13=LibraryStrategy,
             # col 16=LibraryLayout, col 19=Platform, col 26=BioSample, col 30=SampleName.
@@ -180,12 +215,12 @@ process SRA_QUERY_BATCH {
             )
             rm -f "_runinfo_\${species_tag}.tmp"
             NHITS=\$(awk 'END{print NR-1}' "\${species_tag}.sra_query.csv")
-            echo "[INFO] Found \$NHITS paired-end accessions for \${species_tag} (taxonid=\${taxonid})"
+            echo "[INFO] Found \$NHITS paired-end accessions for \${species_tag} (taxonids=\${taxonids})"
             # SE fallback: if no PE hits and enable_single_end, query SINGLE layout
             if [ "${params.enable_single_end}" = "true" ] && [ "\$NHITS" -eq 0 ]; then
                 rm -f "_runinfo_se_\${species_tag}.tmp"
-                if timeout 300 bash -c \\
-                        "esearch -db sra -query 'txid\${taxonid}[Organism:noexp] AND RNA-Seq[Strategy] AND SINGLE[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND Illumina[Platform]' | efetch -format runinfo -start 1 -stop 250" \\
+                qse="\$(organism_clause "\$species_tag" "\$taxonids") AND RNA-Seq[Strategy] AND SINGLE[Layout] AND 00000000075[ReadLength] : 00000000300[ReadLength] AND Illumina[Platform]"
+                if timeout 300 bash -c 'esearch -db sra -query "\$1" | efetch -format runinfo -start 1 -stop 250' _ "\$qse" \\
                         < /dev/null > "_runinfo_se_\${species_tag}.tmp"; then
                     SE_KEPT=0
                     while IFS=',' read -r reldate acc spots platform biosample; do
@@ -224,9 +259,11 @@ process SRA_QUERY_BATCH {
                 NHITS=\$(awk 'END{print NR-1}' "\${species_tag}.sra_query.csv")
                 echo "[INFO] SE fallback: \$NHITS single-end accessions for \${species_tag}"
             fi
+            # Completed query (PE, plus SE fallback when enabled): mark the result valid.
+            printf 'v2|%s\\n' "\${taxonids}" > "\${species_tag}.sra_query.key"
         else
             printf 'species_tag,taxonid,sra_accession,spots,platform,layout\\n' > "\${species_tag}.sra_query.csv"
-            echo "[WARN] All 3 attempts failed for \${species_tag}; writing empty CSV"
+            echo "[WARN] All 3 attempts failed for \${species_tag}; writing empty CSV (no .key, so it is queried again next run)"
         fi
     done < batch_input.tsv
     """
@@ -237,9 +274,11 @@ process SRA_QUERY_BATCH {
                         .join('\\n')
     """
     printf '${stub_args}\\n' > batch_input.tsv
-    while IFS=\$(printf '\\t') read -r species_tag taxonid; do
+    while IFS=\$(printf '\\t') read -r species_tag taxonids; do
+        taxonid="\${taxonids%%+*}"
         printf 'species_tag,taxonid,sra_accession,spots,platform,layout\\n' > "\${species_tag}.sra_query.csv"
         printf '%s,%s,SRR000001,1000000,ILLUMINA,PAIRED\\n' "\${species_tag}" "\${taxonid}" >> "\${species_tag}.sra_query.csv"
+        printf 'v2|%s\\n' "\${taxonids}" > "\${species_tag}.sra_query.key"
     done < batch_input.tsv
     echo "[STUB] SRA_QUERY_BATCH (${species_tags.size()} species)"
     """
