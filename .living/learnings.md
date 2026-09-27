@@ -1606,3 +1606,36 @@ linear fits on n=2 (use per-genome rows, not the slope, for tiny traces).
 **Monitoring**: `misc_scripts/audit_rnaseq_community_runs.py` cross-checks every cache against ENA's list of fungal RNA-Seq runs with library_source METATRANSCRIPTOMIC/METAGENOMIC (787 runs on 2026-09-24) plus the study denylist. First run (job 29055932): 39 flagged runs in 17 species caches; 13 species read files contain flagged reads (15-100% of R1 reads; see results/rnaseq_community_run_audit.tsv). Not every flag is wrong data: lichen (Lasallia), mycorrhiza (Suillus) and host-infection (Pneumocystis) samples are mixed-organism by nature and need review, not automatic removal. Re-run after any SRA_QUERY refresh. Tracked as T-036.
 
 **Tags**: rnaseq, sra, sra_query, metatranscriptomic, rumen, contamination, trinity, mislabeled, library_source, storeDir, monitoring, gotcha
+
+### [2026-09-26] `mash sketch -l <list>` hard-aborts the whole multi-genome build on the first zero-FASTA-record input; no per-file skip
+
+**Category**: gotcha
+
+**What happened**: Building a BFD-wide MASH reference (`analysis/desert_microbes_mash_id`) from `Fungi_BFD_runs/input_clean_genomes/*.fa.gz` (23,877 files) via `mash sketch -p 16 -k 21 -s 10000 -o ref -l reference_genome_list.txt` looked healthy for ~20 minutes (job 29114777, `.err` log showing "Sketching ..." lines for ~49% of the list), then died with `exit 1` and `ERROR: Did not find fasta records in "input files".` — no `.msh` output at all, despite most genomes having sketched fine. One `.fa.gz` in the list (never identified by name from the error message itself) had zero FASTA records, and `mash sketch -l` treats any such file as fatal for the entire invocation rather than skipping it.
+
+**Fix**: added a validation pass before sketching — `zcat -q "$f" | grep -c '^>'` per file (parallelized with `xargs -P`), keep only files with count > 0, sketch from the filtered list. Found 10 empty/corrupt genomes out of 23,877 (all but one were `GCA_986281*FM` accessions). The validation pass itself cost ~9 min on 16 cpus for the full 23,877-file set — budget for it, don't assume the sketch step alone bounds runtime.
+
+**Why it matters**: any future one-off script that sketches a large, uncurated `genome_dir` (not funannotate/nextflow-managed, so no upstream QC guarantee) via `mash sketch -l` needs this same pre-validation, or a single bad file silently wastes the entire job's wall-clock with zero output. The error message names no file, so without a validation pass the only way to find the culprit is bisecting the input list.
+
+**Tags**: mash, minhash, sketch, gzip, validation, silent-failure, input-qc, gotcha
+
+### [2026-09-26] SRA query cache fix (fc7dfcb): strain-level first taxid lost all RNA-seq for Lentinula_edodes; the fix re-queries every header-only cache
+
+**Category**: gotcha
+
+**What happened**: Lentinula_edodes (16 genomes) had a header-only `rnaseq_reads/sra_query/Lentinula_edodes.sra_query.csv` and zero-byte read/Trinity placeholders since 2026-08-30, so every genome trained without RNA-seq. Three causes, all fixed in commit fc7dfcb (PASA-review session; DECISIONS D104):
+1. `FUNANNOTATE_RNASEQ.nf` passed `taxonids[0]` per species. groupTuple order is arrival order, so the pick was not deterministic. SRA_QUERY_BATCH searched `txid<id>[Organism:noexp]`, which finds nothing when the picked taxid is a strain taxid (1323751/1335646); txid5353 has 250+ PE RNA-seq runs. Now `sraQueryTaxids()` passes all distinct taxids (most frequent first, max 10, '+'-joined), and `organism_clause()` ORs `"Genus epithet"[Organism]` (plain binomial tags only) with each `txid<id>[Organism]` as expanded terms.
+2. `biosample_is_host_associated()` called esearch inside the candidate `while read` loop without `< /dev/null`. esearch read the rest of the candidate list from stdin, so only the first candidate was ever kept. Fixed in SRA_QUERY_BATCH and SRA_QUERY. SRA_QUERY (single-species module) is not included by any workflow, so its old taxid query is dead code.
+3. storeDir placeholders never refresh: SRA_FETCH / RNASEQ_PREPARE skip forever once zero-byte files exist. `clearNoReadsPlaceholders()` deletes the three zero-byte `rnaseq_reads/<tag>_norm_{R1,R2,SE}.fastq.gz` and a zero-byte `rnaseq_data/<tag>.trinity-GG.fasta`, but only for a species re-queried in this run whose new CSV lists runs and whose three read files are all zero-byte.
+
+New cache rule (`sraQueryCached()` and the matching shell test in SRA_QUERY_BATCH): reuse a cached CSV when it lists at least one run, or when it is header-only and `<tag>.sra_query.key` equals `v2|<taxids>`. A failed query writes no key. publishDir overwrite is now true.
+
+**Why it matters**: no cache written before this fix has a `.key` file. On 2026-09-26, 5,744 of the 7,486 cached CSVs in `Fungi_BFD_runs/rnaseq_reads/sra_query/` were header-only. The next production run with this code re-queries all of them against NCBI. Some of those species can gain RNA-seq through the broader query, which changes their training source and triggers read download, Trinity, PASA and retraining. That is intended, but it is a large scheduling and runtime change, and the new runs are not yet filtered by a human. The count of species that will gain runs is not known until the queries run. Cached CSVs that already list runs are not re-queried, so they keep the old query result, including any runs from a strain-only or wrong taxid.
+
+**Resolution**: the fix was pushed to origin/main with c2dbfbe on 2026-09-26, before the user had approved it. The user reviewed the code the same day; no revert was requested at the time of this entry. Wave 0 (`Fungi_BFD_runs/do_annotation_wave0/`, job 29117056, D106) tests it on L. edodes. Check that L. edodes gets reads and a non-empty Trinity-GG before a full production run. Before that run, decide whether to let all 5,744 header-only caches re-query, or to pre-write `.key` files for species that should stay without RNA-seq. Re-run `misc_scripts/audit_rnaseq_community_runs.py` (T-036) after the re-query, because the new runs are not in its last audit.
+
+**Tags**: rnaseq, sra, sra_query, taxid, strain-taxid, esearch, stdin, storeDir, placeholder, cache-invalidation, lentinula, gotcha
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: the SRA filter and query code is duplicated between SRA_QUERY and SRA_QUERY_BATCH, and fc7dfcb already edited the two copies differently. Remove the unused SRA_QUERY module, or move the shared shell functions (organism_clause, biosample_is_host_associated, the community-run filter) into one included script.
