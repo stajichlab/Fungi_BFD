@@ -80,16 +80,15 @@ launch via `main.nf`, not by invoking `workflows/compare_ANI.nf` directly — do
 latter anchors `${projectDir}` to `nextflow/workflows/` instead of `nextflow/`, and
 `bin/` isn't there.
 
-**2. Nextflow's launch directory can't be on the PVC.** `rook-cephfs` doesn't support
-the file locking Nextflow's resume-cache database (LevelDB) needs — `nextflow run`
-fails outright with "Can't open cache DB ... needs a shared file system that supports
-file locks" if `.nextflow/` (created wherever you `cd` before running `nextflow run`)
-is on the PVC. Fix: launch from a local directory inside the head pod's own container
-filesystem (e.g. `/root/runs/<name>`, as below) — only `workDir` (set to
-`/workspace/work/ANI` in the profile) needs to be on the PVC. Trade-off: `-resume`
-state is lost if the head pod is deleted/recreated, even though `workDir` contents on
-the PVC survive — a fresh pod would recompute from scratch rather than pick up where a
-prior pod left off.
+**2. Nextflow's resume cache stays off the PVC.** The launch directory is on the PVC
+(`--run-dir`, e.g. `/workspace/runs/<name>`), but Nextflow's resume cache (`.nextflow/`,
+a LevelDB database) is not: a node lost mid-write leaves it corrupt on `rook-cephfs`, and
+every retry then fails with "Can't open cache DB". `k8/bin/nf-run.sh` (run inside each
+`nf-job.sh` Job) keeps it on pod-local disk with LevelDB memory-mapping off, and snapshots
+it atomically to `<run dir>/.nextflow-snapshots/snap-<time>` every 5 min
+(`CACHE_SYNC_SECONDS`) and when Nextflow exits. A relaunch restores the newest snapshot,
+so `-resume` survives the Job's pod being replaced; at most the last few minutes of
+finished tasks rerun. If the newest snapshot won't open, delete it and relaunch.
 
 **3. The head pod dies on its own after 6 hours, no matter what.** Verified live
 (2026-07-30): `bfd-nextflow-head` was found `Status: Failed`, `Reason:

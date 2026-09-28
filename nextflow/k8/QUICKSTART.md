@@ -122,6 +122,11 @@ kubectl exec -it -n ucr-stajichlab bfd-nextflow-head -- sh -c \
   'cd /root/runs/neurospora && nextflow log last -f hash,process,exit,workdir'
 ```
 
+With `nf-job.sh` Jobs the resume cache is not in the run dir. Inside the running Job
+pod `NXF_CACHE_DIR` is already set, so `nextflow log` works there. From another pod,
+point it at a snapshot:
+`NXF_CACHE_DIR=<run dir>/.nextflow-snapshots/<newest snap-*>/.nextflow nextflow log`.
+
 **`.nextflow.log` (Nextflow's own engine log) lives only in the head pod's
 container filesystem** — `/root/runs/<name>/.nextflow.log` — and is lost for
 good if the pod dies (6h cap below) before you grab it:

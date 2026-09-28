@@ -5,12 +5,14 @@
 # https://nrp.ai/documentation/userdocs/running/jobs/), so there is no head pod:
 # each run is a Job whose command IS `nextflow run`, and it exits when the
 # pipeline does. Everything that must survive lives on the PVC (bfd-work-pvc,
-# /workspace): the repo checkout (/workspace/repo), the run's launch dir
-# (.nextflow resume cache — verified to work on rook-cephfs with Nextflow
-# 25.10.7), workDir, logs. Relaunching the same --name resumes (-resume).
+# /workspace): the repo checkout (/workspace/repo), the run's launch dir,
+# workDir, logs. Nextflow's resume cache runs on pod-local disk and is
+# snapshotted atomically to <run dir>/.nextflow-snapshots by k8/bin/nf-run.sh
+# (a lost node corrupted a cache kept directly on CephFS). Relaunching the
+# same --name restores the newest snapshot and resumes (-resume).
 #
-# The params file is passed from your laptop as a ConfigMap (nf-<name>-params),
-# mounted at /config/params.yaml.
+# The params file and nf-run.sh are passed from your laptop as a ConfigMap
+# (nf-<name>-params), mounted at /config.
 #
 # Usage:
 #   nf-job.sh --name NAME --run-dir /workspace/runs/NAME --params local.yaml \
@@ -31,6 +33,7 @@ set -euo pipefail
 NAMESPACE="${NAMESPACE:-ucr-stajichlab}"
 NXF_IMAGE="${NXF_IMAGE:-nextflow/nextflow:25.10.7}"
 NRP_PROJECT="${NRP_PROJECT:-stajichlab-fungi-bfd}"
+CACHE_SYNC_SECONDS="${CACHE_SYNC_SECONDS:-300}"   # resume-cache snapshot interval (nf-run.sh)
 
 NAME="" RUN_DIR="" PARAMS="" CVMFS=0 FOREGROUND=0
 while [[ $# -gt 0 ]]; do
@@ -64,6 +67,7 @@ if kubectl get job "$JOB" -n "$NAMESPACE" >/dev/null 2>&1; then
 fi
 
 kubectl create configmap "${JOB}-params" -n "$NAMESPACE" --from-file=params.yaml="$PARAMS" \
+  --from-file=nf-run.sh="$(dirname "$0")/nf-run.sh" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 # Quote the nextflow args for embedding in the container's bash -c script.
@@ -102,6 +106,8 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: nextflow-runner
+      # Time for Nextflow to delete its task pods and write a final cache snapshot.
+      terminationGracePeriodSeconds: 180
       containers:
         - name: nextflow
           image: ${NXF_IMAGE}
@@ -112,12 +118,16 @@ spec:
               mkdir -p '${RUN_DIR}' /workspace/logs/cli-runs
               cd '${RUN_DIR}'
               [ -f samples.csv ] || cp /workspace/repo/samples.csv .
-              LOG=/workspace/logs/cli-runs/${NAME}.log
-              [ -f "\$LOG" ] && mv "\$LOG" "\$LOG.\$(date -u +%Y%m%dT%H%M%S)"
-              echo "[\$(date -u)] ${JOB}: nextflow run${NF_ARGS} -params-file /config/params.yaml -resume" | tee "\$LOG"
-              nextflow run${NF_ARGS} -params-file /config/params.yaml -resume 2>&1 | tee -a "\$LOG"
+              export NF_LOG=/workspace/logs/cli-runs/${NAME}.log
+              [ -f "\$NF_LOG" ] && mv "\$NF_LOG" "\$NF_LOG.\$(date -u +%Y%m%dT%H%M%S)"
+              echo "[\$(date -u)] ${JOB}: nextflow run${NF_ARGS} -params-file /config/params.yaml -resume" | tee "\$NF_LOG"
+              exec bash /config/nf-run.sh run${NF_ARGS} -params-file /config/params.yaml -resume
           env:
             - {name: NXF_HOME, value: /workspace/.nextflow}
+            - {name: RUN_DIR, value: '${RUN_DIR}'}
+            # Cache snapshot cadence and how many snapshots to keep (nf-run.sh).
+            - {name: CACHE_SYNC_SECONDS, value: "${CACHE_SYNC_SECONDS}"}
+            - {name: CACHE_SNAPSHOTS_KEEP, value: "3"}
             - name: AWS_ACCESS_KEY_ID
               valueFrom: {secretKeyRef: {name: nrp-s3-creds, key: AWS_ACCESS_KEY_ID}}
             - name: AWS_SECRET_ACCESS_KEY
@@ -128,12 +138,15 @@ spec:
             limits: {cpu: "2", memory: 4Gi}
           volumeMounts:
             - {name: work, mountPath: /workspace}
-            - {name: params, mountPath: /config}${CVMFS_MOUNT}
+            - {name: params, mountPath: /config}
+            - {name: nxf-local, mountPath: /nxf-local}${CVMFS_MOUNT}
       volumes:
         - name: work
           persistentVolumeClaim: {claimName: bfd-work-pvc}
         - name: params
-          configMap: {name: ${JOB}-params}${CVMFS_VOL}
+          configMap: {name: ${JOB}-params}
+        - name: nxf-local
+          emptyDir: {sizeLimit: 2Gi}${CVMFS_VOL}
 EOF
 
 echo "==> ${JOB} started (run dir ${RUN_DIR})"
