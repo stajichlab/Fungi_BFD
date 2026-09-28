@@ -686,6 +686,24 @@ process FUNANNOTATE_TRAIN {
     echo "mysql is ${params.pasa_mysql}"
     if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi
     echo "[INFO] stopped mysql"
+
+    # ── Keep only what predict and the resolved-checks use (train_prune_intermediates) ──
+    # rc.3 training leaves ~1.7 GB of intermediates per genome (getBestModel/,
+    # pasa/ incl. pblat_outdir and transdecoder dirs, trinity.fasta.clean*, genome.fasta*,
+    # mysql_db/) against ~116 MB for the pruned production set (wave 0, 2026-09-27).
+    # predict reads only the files below; the four funannotate_train.* /
+    # transcript.alignments.bam symlinks point at kept top-level files. Dotfile
+    # markers (.pasa_train_failed, .trinity_too_incomplete, ...) are kept.
+    if [ "${params.train_prune_intermediates}" = "true" ]; then
+        BEFORE=\$(du -sk "\$TRAINDIR" | cut -f1)
+        find "\$TRAINDIR" -mindepth 1 -maxdepth 1 ! -name '.*' \
+            ! -name funannotate_train.pasa.gff3 ! -name funannotate_train.coordSorted.bam \
+            ! -name funannotate_train.transcripts.gff3 ! -name funannotate_train.trinity-GG.fasta \
+            ! -name kallisto.tsv ! -name transcript.alignments.bam ! -name transcript.alignments.gff3 \
+            ! -name trinity.alignments.bam ! -name trinity.alignments.gff3 ! -name trinity.fasta \
+            -exec rm -rf {} +
+        echo "[INFO] ${out}: pruned training intermediates \$((BEFORE/1024)) MB -> \$(( \$(du -sk "\$TRAINDIR" | cut -f1) / 1024 )) MB"
+    fi
     """
 
     stub:
