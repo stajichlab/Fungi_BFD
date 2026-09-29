@@ -682,6 +682,22 @@ process FUNANNOTATE_TRAIN {
     # publish leaves these needing a repoint, not just a moved/retired project.
     ${workflow.projectDir}/bin/relink_training_symlinks.py --apply --quiet "\$TRAINDIR" || true
 
+    # ── Short-transcript Trinity guard (train_min_trinity_median_len) ──────────
+    # Written after the rsync --delete above (which would drop a marker written
+    # earlier) and re-derived on every run, so it never goes stale. A dotfile, so
+    # the prune step below keeps it. FUNANNOTATE_PREDICT reads it and trains from
+    # BUSCO; train itself still runs so the RNA-seq evidence is kept.
+    SHORT_MARKER="\$TRAINDIR/.trinity_short_transcripts"
+    TRIN_USED="\$TRAINDIR/trinity.fasta"; [ -s "\$TRIN_USED" ] || TRIN_USED="${trinity_fa}"
+    rm -f "\$SHORT_MARKER"
+    if [ "${params.train_min_trinity_median_len}" -gt 0 ] && [ -s "\$TRIN_USED" ]; then
+        TRIN_MEDIAN=\$(awk '/^>/{if(l)print l; l=0; next}{l+=length(\$0)} END{if(l)print l}' "\$TRIN_USED" | sort -n | awk '{a[NR]=\$1} END{if(NR) print a[int((NR+1)/2)]; else print 0}')
+        if [ "\$TRIN_MEDIAN" -lt "${params.train_min_trinity_median_len}" ]; then
+            printf 'trinity\t%s\nmedian_len\t%s\nmin_median_len\t%s\n' "\$TRIN_USED" "\$TRIN_MEDIAN" "${params.train_min_trinity_median_len}" > "\$SHORT_MARKER"
+            echo "[WARN] ${out}: Trinity assembly median transcript length \$TRIN_MEDIAN bp < ${params.train_min_trinity_median_len}; predict will train Augustus/SNAP from BUSCO (RNA-seq kept as evidence)" >&2
+        fi
+    fi
+
     echo "[INFO] Training cleanup complete for ${out}"
     echo "mysql is ${params.pasa_mysql}"
     if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi

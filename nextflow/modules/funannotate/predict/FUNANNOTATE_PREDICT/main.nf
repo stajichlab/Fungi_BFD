@@ -355,6 +355,12 @@ process FUNANNOTATE_PREDICT {
     if [ -n "${params.predict_min_pasa_complete_models != null ? params.predict_min_pasa_complete_models : ''}" ]; then
         EXTRA_PREDICT_ARGS+=(--min_pasa_complete_models ${params.predict_min_pasa_complete_models})
     fi
+    # Short-transcript Trinity guard (FUNANNOTATE_TRAIN, train_min_trinity_median_len):
+    # force BUSCO training; a later --min_pasa_complete_models overrides the one above.
+    if [ -s "${params.training_target}/${out}/training/.trinity_short_transcripts" ]; then
+        echo "[INFO] ${out}: Trinity assembly has short transcripts (\$(awk -F'\t' '\$1=="median_len"{print \$2}' "${params.training_target}/${out}/training/.trinity_short_transcripts") bp median); training Augustus/SNAP from BUSCO"
+        EXTRA_PREDICT_ARGS+=(--min_pasa_complete_models 1000000000)
+    fi
     WEIGHT_ARGS=(codingquarry:0 glimmerhmm:0)
     if [ -s "${other_gff}" ]; then
         echo "[INFO] ${out}: using Prodigal evidence from ${other_gff} (--other_gff weight 5)"
