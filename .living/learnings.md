@@ -1639,3 +1639,49 @@ New cache rule (`sraQueryCached()` and the matching shell test in SRA_QUERY_BATC
 **mitigation_type**: structural
 
 **structural_mitigation_candidate**: the SRA filter and query code is duplicated between SRA_QUERY and SRA_QUERY_BATCH, and fc7dfcb already edited the two copies differently. Remove the unused SRA_QUERY module, or move the shared shell functions (organism_clause, biosample_is_host_associated, the community-run filter) into one included script.
+
+### [2026-09-27] Old-CPU nodes (c01-c30 abu_dhabi, h01-h06 Ivy Bridge) make Trinity die silently; --exclude lists get lost
+
+**Category**: gotcha
+
+**What happened**: Trinity's `bamsifter` (`_sift_bam_max_cov`) uses BMI2 instructions (sarx, shrx). On abu_dhabi and Ivy Bridge nodes it dies with ret 132 (SIGILL). `funannotate train --stop_after_trinity` still exits 0, so RNASEQ_PREPARE wrote a 0-byte `trinity-GG.fasta` into storeDir and Nextflow never retried it: 14 benchmark species on 2026-09-24. Pending jobs were also moved between partitions after submission (epyc -> preempt/stajichlab), and one `scontrol update ExcNodeList=` replaced a TRAIN job's `--exclude=h[01-06]`. Morchella_sextelata train then ran on c01, c02 and h04 and used up its retries.
+
+**Why it matters**: The failure looks like a data or Trinity problem, and nothing reports an error.
+
+**Resolution**: `--constraint=milan|genoa|rome|sapphire|cascade|broadwell` (BMI2-capable types only) on RNASEQ_PREPARE, TRINITY_STANDALONE, TRAIN and PREDICT (463aa95 here; nf_funannotate1 390e3c8). A constraint survives partition moves and ExcNodeList edits. In highmem it allows only h07. GeneMark runs fine on the old nodes.
+
+**Tags**: slurm, sigill, bmi2, cpu-feature, trinity, bamsifter, storeDir, silent-failure, hpcc, gotcha
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: RNASEQ_PREPARE should fail (non-zero) when funannotate train leaves no trinity.fasta but reads are non-empty, instead of writing an empty storeDir output.
+
+### [2026-09-27] De novo Trinity fallback hides off-target RNA-seq
+
+**Category**: gotcha
+
+**What happened**: The pipeline runs de novo Trinity (TRINITY_STANDALONE) when genome-guided Trinity gives fewer than 2,000 transcripts. For Grifola_frondosa (reads from an Irpex lacteus study, PRJNA436071), Fusarium_floridanum (Neocosmospora study) and Talaromyces_verruculosus, the reads do not map to the genome (0.0-4.4% of 100k reads), so genome-guided Trinity failed and de novo assembled the off-target reads; PASA then failed (rc.1 exit 1). rc.3's RNA-seq concordance gate now stops these at train time (exit 3). A check of all 51 de novo species found 33 below the gate's 10% threshold (T-037).
+
+**Why it matters**: A low genome-guided transcript count is usually a sign the reads are wrong, not that de novo is needed. De novo "succeeding" (49 of 51 produced assemblies) does not mean the evidence is usable.
+
+**Resolution**: 22 runs blacklisted, reads archived in `Fungi_BFD_runs/mislabeled_rnaseq_archive_20260927/`, Grifola reads rebuilt from PRJNA1217839 (94.5% mapping). The other 33 are parked in T-037.
+
+**Tags**: rnaseq, trinity, de-novo, off-target, mislabeled-sra, concordance-gate, pasa, gotcha
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: run the read-to-genome mapping check before TRINITY_STANDALONE, and route species below 10% to ab-initio instead of de novo.
+
+### [2026-09-27] Butterfly heap is 4G regardless of --max_memory; retries cannot fix it
+
+**Category**: gotcha
+
+**What happened**: De novo Trinity failed for Candidozyma_vulturna and Phoma_sp._YAFEF320 with `java.lang.OutOfMemoryError: Java heap space` in 1 of 462 and 26 of 659 Butterfly components. Trinity then discards the whole assembly. The task's memory rose on retry (84/128/192 GB), but Butterfly's per-process heap stayed at the 4G default.
+
+**Resolution**: TRINITY_STANDALONE passes `--bflyHeapSpaceMax` 8G/16G/24G by attempt and `--bflyCPU` so the total fits 80% of task memory (9b92652). Genome-guided Trinity inside `funannotate train` is not covered.
+
+**Tags**: trinity, butterfly, java-heap, oom, retry, gotcha
+
+**mitigation_type**: structural
+
+**structural_mitigation_candidate**: same heap control for genome-guided Trinity, if funannotate train can pass Trinity options.
