@@ -392,6 +392,24 @@ process FUNANNOTATE_PREDICT {
         GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
         WEIGHT_ARGS+=(genemark:1)
     fi
+    # EVM weight refit (pasa_train_performance_evaluate/DECISIONS.md D126/D127):
+    # predict_evm_weights (genomes with a PASA training set) or
+    # predict_evm_weights_norna (without one) is appended AFTER genemark:1 so its
+    # genemark value wins (funannotate applies -w entries in order, last wins),
+    # and BEFORE the repeat-aware snap:0 below so that override still wins. Not
+    # applied on the Prodigal (other_gff) branch, whose validated recipe stays
+    # unchanged. Empty string = keep funannotate's own weights.
+    if [ ! -s "${other_gff}" ]; then
+        if [ -s "${params.training_target}/${out}/training/funannotate_train.pasa.gff3" ]; then
+            EVM_TUNED_WEIGHTS="${params.predict_evm_weights ?: ''}"
+        else
+            EVM_TUNED_WEIGHTS="${params.predict_evm_weights_norna ?: ''}"
+        fi
+        if [ -n "\$EVM_TUNED_WEIGHTS" ]; then
+            echo "[INFO] ${out}: EVM weights \$EVM_TUNED_WEIGHTS"
+            WEIGHT_ARGS+=(\$EVM_TUNED_WEIGHTS)
+        fi
+    fi
 
     # other_gff/genemark_gtf are `val`, not `path`, in this process's input
     # tuple -- Nextflow never stages/symlinks them into THIS task's own
