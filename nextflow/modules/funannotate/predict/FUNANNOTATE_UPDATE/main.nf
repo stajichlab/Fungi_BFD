@@ -89,7 +89,13 @@ process FUNANNOTATE_UPDATE {
         # empty" / "database exists"). Each SLURM job gets its own fresh
         # node-local scratch dir, so that bug class is now impossible. The
         # \$TMPDIR:\$TMPDIR bind above already covers this path.
-        MYSQL_SCRATCH=\$TMPDIR/mysql_db_${out}
+        # Short name: mysqld's socket path (\$MYSQL_SCRATCH/mysqld.sock) must be
+        # <= 107 characters, and a long genome name exceeded it ("The socket file path
+        # is too long", Saccharomyces_paradoxus_YPS644_MATalpha_ho_kanMX4_ade2_hphNT1,
+        # wave 1, 2026-10-01). \$TMPDIR is per job, so the name only has to be short.
+        MYSQL_TAG="${locustag}"
+        [ -n "\$MYSQL_TAG" ] || MYSQL_TAG=\$(printf '%s' "${out}" | md5sum | cut -c1-12)
+        MYSQL_SCRATCH=\$TMPDIR/mysql_db_\$MYSQL_TAG
         rm -rf \$MYSQL_SCRATCH
         mkdir -p \$MYSQL_SCRATCH/db \$MYSQL_SCRATCH/conf
         # ── mariadb_sif retired: mariadbd now runs through \$SING ─────────────
