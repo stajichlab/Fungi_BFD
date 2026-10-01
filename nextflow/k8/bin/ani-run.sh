@@ -4,8 +4,10 @@
 #
 # Only does the SKANI/mash/sourmash/fastani sketch+compare — no REPORT_ANI or
 # COMBINE_ANI_TABLE (run k8/bin/ani-gather.sh for those, once you're ready to
-# aggregate). Launches with `nohup ... &` inside the head pod so it survives
-# your kubectl exec session ending; logs land durably on the PVC.
+# aggregate). Runs as a Kubernetes Job (k8/bin/nf-job.sh) whose command is
+# `nextflow run`, so nothing stays running after the pipeline ends (NRP
+# prohibits idle head pods). Logs: `kubectl logs job/nf-ani-<name>` and
+# /workspace/logs/cli-runs/ani-<name>.log on the PVC.
 #
 # Usage:
 #   ani-run.sh --taxon GENUS:Yarrowia --compare SPECIES [--name yarrowia] \
@@ -16,8 +18,7 @@
 # editing this script.
 set -euo pipefail
 
-NAMESPACE=ucr-stajichlab
-POD=bfd-nextflow-head
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TAXON=""
 COMPARE="GENUS"
@@ -45,15 +46,13 @@ if [[ -z "$NAME" ]]; then
   NAME=$(echo "$TAXON" | sed -E 's/.*://' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+$//')
 fi
 
-RUN_DIR="/root/runs/${NAME}"
-LOG_DIR="/workspace/logs/cli-runs"
-LOG_FILE="${LOG_DIR}/${NAME}.log"
-PARAMS_FILE="/workspace/runs/${NAME}/params.yaml"
+RUN_DIR="/workspace/runs/ani-${NAME}"
+PARAMS_FILE="$(mktemp -t "ani-${NAME}.XXXX").yaml"
+trap 'rm -f "$PARAMS_FILE"' EXIT
 
 echo "==> [${NAME}] taxon=${TAXON} compare=${COMPARE} method=${METHOD}"
-echo "==> [${NAME}] writing params to ${PARAMS_FILE}"
 
-kubectl exec -i -n "$NAMESPACE" "$POD" -- sh -c "mkdir -p \$(dirname '${PARAMS_FILE}') && cat > '${PARAMS_FILE}'" <<EOF
+cat > "$PARAMS_FILE" <<EOF
 samples:               "samples.csv"
 genome_name_style:     "asmid"
 genome_dir:            "s3://stajichlab/BFD/input_clean_genomes"
@@ -73,18 +72,9 @@ skani_sketch_chunk:    50
 n_test:                0
 EOF
 
-echo "==> [${NAME}] launching detached; log: ${LOG_FILE}"
-kubectl exec -n "$NAMESPACE" "$POD" -- sh -c "
-  mkdir -p '${RUN_DIR}' '${LOG_DIR}'
-  cp /workspace/repo/samples.csv '${RUN_DIR}/samples.csv'
-  cd '${RUN_DIR}'
-  nohup nextflow run /workspace/repo/nextflow/run_ani_compute.nf \
-    -c /workspace/repo/nextflow/nextflow.config \
-    -profile compare_ani_k8s \
-    -params-file '${PARAMS_FILE}' \
-    -resume ${EXTRA_ARGS} \
-    > '${LOG_FILE}' 2>&1 < /dev/null &
-  disown
-  sleep 1
-"
-echo "==> [${NAME}] started. Check with: ani-status.sh ${NAME}"
+# shellcheck disable=SC2086  # EXTRA_ARGS is deliberately word-split into nextflow args
+"${HERE}/nf-job.sh" --name "ani-${NAME}" --run-dir "$RUN_DIR" --params "$PARAMS_FILE" -- \
+  /workspace/repo/nextflow/run_ani_compute.nf \
+  -c /workspace/repo/nextflow/nextflow.config \
+  -profile compare_ani_k8s ${EXTRA_ARGS}
+echo "==> [${NAME}] Check with: ani-status.sh ani-${NAME}"

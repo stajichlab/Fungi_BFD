@@ -1,5 +1,28 @@
 # compare_ANI on Nautilus (Kubernetes)
 
+> **Updated 2026-09-27 — runs are Jobs now; there is no head pod.** NRP prohibits
+> idle interactive pods ("Running in interactive mode (`sleep infinity` command and
+> manual start of computation) ... is prohibited, and user can be banned" —
+> https://nrp.ai/documentation/userdocs/running/jobs/), so `head-pod.yaml` is gone.
+> Each pipeline run is a Kubernetes Job whose command is `nextflow run`
+> (`k8/bin/nf-job.sh`, used by `ani-run.sh`, `ani-gather.sh`, `ips6-run.sh`); it
+> exits when the pipeline does. Launch dir, work dir and logs are on the PVC
+> (`/workspace/runs/<name>`), so relaunching the same run resumes. Where the text
+> below mentions the head pod, `kubectl exec` into it, `/root/runs`, or its 6 h
+> cap, it describes the old setup.
+>
+> - Update the checkout: `bash k8/stage_repo.sh` (finite git Job; also PVC/RBAC/Secret).
+> - Start / resume: `k8/bin/ani-run.sh --taxon GENUS:Yarrowia --compare SPECIES`
+> - Follow: `k8/bin/ani-status.sh [ani-<name>]` or `kubectl logs -f -n ucr-stajichlab job/nf-ani-<name>`
+> - Stop: `kubectl delete job -n ucr-stajichlab nf-ani-<name>`
+> - Many taxa: `k8/bin/ani-suite.sh` runs at most `MAX_RUNS` (default 2) at once.
+> - Task pods are `opportunistic` (preemptible) and avoid GPU nodes; at most 25
+>   per run (NRP CPU-only guidance, https://nrp.ai/documentation/userdocs/running/cpu-only/).
+> - The CephFS "launch dir can't be on the PVC" gotcha no longer holds: Nextflow
+>   25.10.7 resumed fine from a launch dir on `bfd-work-pvc` (tested 2026-09-27).
+> - The 6 h cap applies to pods without a controller. The run itself is a Job
+>   now; task pods are still bare pods, so individual tasks keep the 6 h limit.
+
 Files here adapt `workflows/compare_ANI.nf` (run via `main.nf --pipeline compare_ani`)
 to run on the [NRP Nautilus](https://nrp.ai/) Kubernetes cluster, in the
 `ucr-stajichlab` namespace. **Live-tested**: real skani comparisons of real
@@ -57,16 +80,15 @@ launch via `main.nf`, not by invoking `workflows/compare_ANI.nf` directly — do
 latter anchors `${projectDir}` to `nextflow/workflows/` instead of `nextflow/`, and
 `bin/` isn't there.
 
-**2. Nextflow's launch directory can't be on the PVC.** `rook-cephfs` doesn't support
-the file locking Nextflow's resume-cache database (LevelDB) needs — `nextflow run`
-fails outright with "Can't open cache DB ... needs a shared file system that supports
-file locks" if `.nextflow/` (created wherever you `cd` before running `nextflow run`)
-is on the PVC. Fix: launch from a local directory inside the head pod's own container
-filesystem (e.g. `/root/runs/<name>`, as below) — only `workDir` (set to
-`/workspace/work/ANI` in the profile) needs to be on the PVC. Trade-off: `-resume`
-state is lost if the head pod is deleted/recreated, even though `workDir` contents on
-the PVC survive — a fresh pod would recompute from scratch rather than pick up where a
-prior pod left off.
+**2. Nextflow's resume cache stays off the PVC.** The launch directory is on the PVC
+(`--run-dir`, e.g. `/workspace/runs/<name>`), but Nextflow's resume cache (`.nextflow/`,
+a LevelDB database) is not: a node lost mid-write leaves it corrupt on `rook-cephfs`, and
+every retry then fails with "Can't open cache DB". `k8/bin/nf-run.sh` (run inside each
+`nf-job.sh` Job) keeps it on pod-local disk with LevelDB memory-mapping off, and snapshots
+it atomically to `<run dir>/.nextflow-snapshots/snap-<time>` every 5 min
+(`CACHE_SYNC_SECONDS`) and when Nextflow exits. A relaunch restores the newest snapshot,
+so `-resume` survives the Job's pod being replaced; at most the last few minutes of
+finished tasks rerun. If the newest snapshot won't open, delete it and relaunch.
 
 **3. The head pod dies on its own after 6 hours, no matter what.** Verified live
 (2026-07-30): `bfd-nextflow-head` was found `Status: Failed`, `Reason:

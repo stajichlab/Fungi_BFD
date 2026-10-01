@@ -12,8 +12,8 @@
 # Usage: ani-gather.sh --taxon GENUS:Yarrowia --compare SPECIES [--name yarrowia] [--method skani]
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE=ucr-stajichlab
-POD=bfd-nextflow-head
 
 TAXON=""
 COMPARE="GENUS"
@@ -39,19 +39,20 @@ if [[ -z "$NAME" ]]; then
   NAME=$(echo "$TAXON" | sed -E 's/.*://' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+$//')
 fi
 
-RUN_DIR="/root/runs/${NAME}-gather"
-LOG_FILE="/workspace/logs/cli-runs/${NAME}-gather.log"
-PARAMS_FILE="/workspace/runs/${NAME}/params.yaml"
+RUN_DIR="/workspace/runs/ani-${NAME}-gather"
+# Same params as the compute run (ani-run.sh), fetched from its ConfigMap so
+# the two phases can't drift apart.
+PARAMS_FILE="$(mktemp -t "ani-${NAME}-gather.XXXX").yaml"
+trap 'rm -f "$PARAMS_FILE"' EXIT
+JOB_COMPUTE="nf-$(echo "ani-${NAME}" | tr '[:upper:]_' '[:lower:]-' | tr -cd 'a-z0-9-' | cut -c1-55 | sed -E 's/-+$//')"
+if ! kubectl get configmap "${JOB_COMPUTE}-params" -n "$NAMESPACE" -o jsonpath='{.data.params\.yaml}' > "$PARAMS_FILE" || [ ! -s "$PARAMS_FILE" ]; then
+  echo "ERROR: no params for the compute run (${JOB_COMPUTE}-params); run ani-run.sh --taxon ${TAXON} first" >&2
+  exit 1
+fi
 
 echo "==> [${NAME}] gathering (foreground — this is cheap, seconds to low minutes)"
-kubectl exec -n "$NAMESPACE" "$POD" -- sh -c "
-  mkdir -p '${RUN_DIR}' \$(dirname '${LOG_FILE}')
-  cp /workspace/repo/samples.csv '${RUN_DIR}/samples.csv'
-  cd '${RUN_DIR}'
-  nextflow run /workspace/repo/nextflow/run_ani_gather.nf \
-    -c /workspace/repo/nextflow/nextflow.config \
-    -profile compare_ani_k8s \
-    -params-file '${PARAMS_FILE}' \
-    -resume 2>&1 | tee '${LOG_FILE}'
-"
+"${HERE}/nf-job.sh" --name "ani-${NAME}-gather" --run-dir "$RUN_DIR" --params "$PARAMS_FILE" --foreground -- \
+  /workspace/repo/nextflow/run_ani_gather.nf \
+  -c /workspace/repo/nextflow/nextflow.config \
+  -profile compare_ani_k8s
 echo "==> [${NAME}] done. Results: s3://stajichlab/BFD/results/ANI/${METHOD}/${COMPARE}/"
