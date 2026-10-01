@@ -438,6 +438,30 @@ process FUNANNOTATE_TRAIN {
     if [ "${params.train_pasa_one_alignment_per_cdna ?: false}" = "true" ]; then
         GATE_ARGS="\$GATE_ARGS --pasa_one_alignment_per_cdna"
     fi
+    # PASA speed/input options and the per-assembly full-length cache (funannotate
+    # >= 1.9.0-rc.4; DECISIONS D128). Passed only if the image's funannotate knows
+    # them -- an older train.py rejects the unknown flags. --pasa_alt_splice is off
+    # in rc.4 (it was always on before); the filters default to off / 0.
+    SHARED_FL_ARGS=""
+    if \$SING python3 -c "import inspect, sys, funannotate.train as t; sys.exit(0 if 'pasa_fl_accs' in inspect.getsource(t) else 1)" 2>/dev/null; then
+        if [ "${params.train_pasa_alt_splice ?: false}" = "true" ]; then
+            GATE_ARGS="\$GATE_ARGS --pasa_alt_splice"
+        fi
+        if [ "${params.train_pasa_remove_contained ?: 'off'}" != "off" ]; then
+            GATE_ARGS="\$GATE_ARGS --pasa_remove_contained ${params.train_pasa_remove_contained}"
+        fi
+        if [ "${params.train_pasa_max_isoforms ?: 0}" -gt 0 ]; then
+            GATE_ARGS="\$GATE_ARGS --pasa_max_isoforms ${params.train_pasa_max_isoforms}"
+        fi
+        # One full-length (complete ORF) list per shared Trinity assembly, next to it in
+        # rnaseq_data: every strain that uses the assembly reuses it (md5-checked).
+        if [ "${params.train_pasa_fl_cache ?: false}" = "true" ] && [ -s "${trinity_fa}" ]; then
+            TRIN_REAL=\$(readlink -f "${trinity_fa}")
+            SHARED_FL_ARGS="--pasa_fl_accs \${TRIN_REAL%.fasta}.pasa_fl_accs"
+        fi
+    else
+        echo "[INFO] ${out}: this funannotate has no PASA speed options (< 1.9.0-rc.4); not passed"
+    fi
 
     # ── Use shared Trinity transcripts (PASA only) or run full train ──────────
     # Shared-Trinity rows only ever reach this process with pasa_tier
@@ -516,7 +540,7 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
-                \$PASA_TIER_ARGS \\
+                \$PASA_TIER_ARGS \$SHARED_FL_ARGS \\
                 \$GATE_ARGS \$pasa_db_arg
         elif [ -s "${se}" ]; then
             echo "[INFO] Running funannotate train (PASA+SE) for ${out} using shared Trinity (pasa_tier=${pasa_tier})"
@@ -527,7 +551,7 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
-                \$PASA_TIER_ARGS \\
+                \$PASA_TIER_ARGS \$SHARED_FL_ARGS \\
                 \$GATE_ARGS \$pasa_db_arg
         else
             # No reads at all -- r1/se are present-but-empty (0-byte) placeholders,
@@ -547,13 +571,13 @@ process FUNANNOTATE_TRAIN {
                 --header_length ${header_length} \\
                 --jaccard_clip --no-progress \\
                 --max_intronlen ${params.max_intronlen} \\
-                \$PASA_TIER_ARGS \\
+                \$PASA_TIER_ARGS \$SHARED_FL_ARGS \\
                 \$GATE_ARGS \$pasa_db_arg
         fi
     elif [ -s "${r1}" ]; then
         echo "[INFO] Running funannotate train (full PE, no shared Trinity) for ${out}"
         \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
-            --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" --aligners minimap2 \\
+            --left_norm "\$R1_REAL" --right_norm "\$R2_REAL" --aligners minimap2 blat \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
@@ -563,7 +587,7 @@ process FUNANNOTATE_TRAIN {
     else
         echo "[INFO] Running funannotate train (full SE, no shared Trinity) for ${out}"
         \$SING funannotate train -i "\$GENOME_IN" -o "\$LOCAL_TRAIN" \\
-            --single_norm "\$SE_REAL" --aligners minimap2 \\
+            --single_norm "\$SE_REAL" --aligners minimap2 blat \\
             --species "${species}" --strain "${strain}" \\
             --cpus ${task.cpus} --memory ${task.memory.toGiga()}G \\
             --header_length ${header_length} \\
