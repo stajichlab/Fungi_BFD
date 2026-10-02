@@ -246,6 +246,54 @@ def sharedGenemarkModFor(String species) {
     return (mod.exists() && mod.size() > 0) ? mod : null
 }
 
+// ── GeneMark reuse (Fungi_BFD_runs DECISIONS D135) ──────────────────────────
+// GeneMark runs in genemark_mode ES from its own container, so its result depends
+// only on the masked genome (not on funannotate's version). Two reuse paths, both
+// accepted only when the reused file is newer than the masked genome (`genomeFa`,
+// the GENEMARK_RUN genome_fa input):
+//   1. storedGenemarkFor(): a GENEMARK_RUN result kept in params.genemark_store/<out>/
+//      (published by GENEMARK_RUN, or salvaged from earlier work dirs). Used as-is;
+//      GENEMARK_RUN is not run.
+//   2. ownGenemarkModFor(): the genome's own trained .mod from an earlier predict
+//      (<target>/<out>/predict_misc/ab_initio_parameters/<out lowercase>.genemark.mod).
+//      GENEMARK_RUN then runs `--predict_with` that model, no training. Tested on 6
+//      wave 1 genomes: 100% identical CDS chains to fresh --ES with the ES options.
+// genemark_store is outside predict_misc/ because FUNANNOTATE_PREDICT deletes
+// predict_misc/ when it re-predicts a stale GBK.
+def genemarkReuseOn() {
+    (params.genemark_reuse == null ? true : params.genemark_reuse).toString().toBoolean()
+}
+
+def _newerThanGenome(def f, String genomeFa) {
+    def g = file(genomeFa)
+    return f.exists() && (!g.exists() || f.lastModified() > g.lastModified())
+}
+
+// Map [gtf: file, other: file, mod: file-or-null], or null. An empty GTF is a valid
+// stored result (GENEMARK_RUN's "too small" skip writes one).
+def storedGenemarkFor(String out, String genomeFa) {
+    if (!genemarkReuseOn() || !params.genemark_store) return null
+    def dir   = "${params.genemark_store}/${out}"
+    def gtf   = file("${dir}/${out}.genemark.gtf")
+    def other = file("${dir}/${out}.other.gff3")
+    if (!(other.exists() && _newerThanGenome(gtf, genomeFa))) return null
+    def mod = file("${dir}/${out}.genemark.mod")
+    return [gtf: gtf, other: other, mod: (mod.exists() && mod.size() > 0) ? mod : null]
+}
+
+// The genome's own trained .mod: genemark_store first, then params.target, then each
+// comma-separated dir in params.genemark_reuse_mod_targets (other annotation trees).
+def ownGenemarkModFor(String out, String genomeFa) {
+    if (!genemarkReuseOn()) return null
+    def lower = out.toLowerCase()
+    def cands = []
+    if (params.genemark_store) cands << file("${params.genemark_store}/${out}/${out}.genemark.mod")
+    def targets = [params.target as String] +
+        ((params.genemark_reuse_mod_targets ?: '') as String).split(',').collect { d -> d.trim() }.findAll { d -> d }
+    targets.each { t -> cands << file("${t}/${out}/predict_misc/ab_initio_parameters/${lower}.genemark.mod") }
+    return cands.find { m -> m.exists() && m.size() > 0 && _newerThanGenome(m, genomeFa) }
+}
+
 // A strain's FUNANNOTATE_TRAIN-produced transcript-to-genome alignment BAM --
 // GENEMARK_RUN's ET mode derives its RNA-seq-informed intron hints from this
 // (bam2hints -> filterIntronsFindStrand.pl -> join_mult_hints.pl -> gmes_petap.pl

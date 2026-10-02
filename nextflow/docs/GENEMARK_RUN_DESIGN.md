@@ -551,3 +551,32 @@ ES, fast reuse, predict consumption) pass.
    design's container-side testing) — not yet re-checked whether it resolves
    any of the packaging bugs found against beta.2/beta.3
    (`.living/learnings.md`, 2026-08-12 container smoke-test entries).
+
+## GeneMark reuse across runs (2026-10-02, Fungi_BFD_runs DECISIONS D135)
+
+GeneMark runs in `genemark_mode` ES from the braker3 image, so its result depends
+only on the masked genome. `FUNANNOTATE_PREDICTION.nf` (`genemarkRoute()`) now picks,
+per genome, the first that applies (forced-independent strains always train):
+
+| Route | Source | GENEMARK_RUN |
+|---|---|---|
+| `stored` | `genemark_store/<out>/<out>.genemark.gtf` + `.other.gff3`, newer than the masked genome | not run |
+| `own_mod` | the genome's own `.mod` (`genemark_store`, then `target`, then `genemark_reuse_mod_targets`), newer than the masked genome | `--predict_with` that model |
+| `shared_mod` | species store `.mod` (eligible siblings, unchanged) | `--predict_with` that model |
+| `fresh` | none | `--ES` / `--ET` |
+
+- GENEMARK_RUN publishes its GTF, `other.gff3` and (fresh) `.mod` to
+  `genemark_store/<out>/`. It is outside `predict_misc/`, which FUNANNOTATE_PREDICT
+  deletes on a stale re-predict.
+- `--predict_with` now passes `--max_intron` and `--soft_mask 2000`, as `--ES` does.
+  On 6 wave 1 genomes, `--predict_with` the genome's own ES model then gave 100%
+  identical CDS chains to the fresh ES GTF (99.0-100% without the two options).
+- BACKFILL_ABINITIO_PARAMS still gets one `.mod` per representative: fresh, stored,
+  or the own model used with `--predict_with`.
+- Each genome's route is written to `${target}/genemark_reuse_decisions.tsv`; the
+  counts are logged ("GeneMark routes: ...").
+- Params: `genemark_reuse` (default true), `genemark_store`
+  (`${launchDir}/genemark_store`), `genemark_reuse_mod_targets` (comma-separated).
+- Existing work-dir results can be copied into the store with
+  `scripts/one-off/salvage_genemark_store.py --run-dir <run> [--apply]`.
+- Staleness is by file mtime only (reused file newer than the masked genome).

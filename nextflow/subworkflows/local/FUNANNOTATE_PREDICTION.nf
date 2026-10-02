@@ -43,7 +43,67 @@ include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/f
 include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 
-include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor; storedGenemarkFor; ownGenemarkModFor } from '../../modules/funannotate/utils.nf'
+
+// ── GeneMark reuse routing (Fungi_BFD_runs DECISIONS D135) ──────────────────
+// In: GENEMARK_RUN input rows
+//   tuple(out, asmid, sp, st, gfa, tt, mode, training_bam, force_independent, shared_mod, is_micro).
+// Per row, first match wins (forced-independent rows always train):
+//   stored     a GENEMARK_RUN result in genemark_store/<out>/, newer than the genome -> used as-is
+//   own_mod    the genome's own saved .mod, newer than the genome -> GENEMARK_RUN --predict_with it
+//   shared_mod the species' shared .mod (siblings only, unchanged) -> GENEMARK_RUN --predict_with it
+//   fresh      GENEMARK_RUN trains (--ES/--ET)
+// Returns [stored: tuple(out, sp, gtf, other_gff, mod-or-''), run: rows for GENEMARK_RUN,
+//          own: tuple(out, sp, own_mod) for own_mod rows, decisions: "out<TAB>route<TAB>file"].
+def genemarkRoute(ch) {
+    def tagged = ch.map { row ->
+        def out    = row[0] as String
+        def gfa    = row[4] as String
+        def forced = (row[8] as String) == 'true'
+        def stored = forced ? null : storedGenemarkFor(out, gfa)
+        if (stored) {
+            // An own_mod run stores no .mod; backfill then takes the genome's saved model.
+            if (!stored.mod) {
+                stored.mod = ownGenemarkModFor(out, gfa)
+            }
+            return ['stored', row, stored]
+        }
+        def own = forced ? null : ownGenemarkModFor(out, gfa)
+        if (own) {
+            def r = new ArrayList(row)
+            r[9] = own.toString()
+            return ['own_mod', r, own]
+        }
+        return [row[9] ? 'shared_mod' : 'fresh', row, row[9] ?: '']
+    }
+    return [
+        stored:    tagged.filter { t -> t[0] == 'stored' }
+                         .map { _k, row, st -> tuple(row[0], row[2], st.gtf, st.other, st.mod ?: '') },
+        run:       tagged.filter { t -> t[0] != 'stored' }.map { _k, row, _f -> row },
+        own:       tagged.filter { t -> t[0] == 'own_mod' }.map { _k, row, own -> tuple(row[0], row[2], own) },
+        decisions: tagged.map { k, row, f -> "${row[0]}\t${k}\t${k == 'stored' ? f.gtf : f}".toString() },
+    ]
+}
+
+// GTF / other.gff3 per out: GENEMARK_RUN's outputs plus the stored results.
+def genemarkGtf(route, procGtf)   { procGtf.mix(route.stored.map { out, _sp, gtf, _o, _m -> tuple(out, gtf) }) }
+def genemarkOther(route, procOth) { procOth.mix(route.stored.map { out, _sp, _g, other, _m -> tuple(out, other) }) }
+// .mod per out for BACKFILL_ABINITIO_PARAMS: fresh GENEMARK_RUN models, stored models,
+// and own models used with --predict_with (those emit no new .mod).
+def genemarkMod(route, procMod) {
+    procMod.mix(route.stored.filter { _o, _sp, _g, _x, mod -> mod }.map { out, sp, _g, _x, mod -> tuple(out, sp, mod) })
+           .mix(route.own)
+}
+
+def writeGenemarkDecisions(decisions) {
+    decisions
+        .collectFile(name: 'genemark_reuse_decisions.tsv', storeDir: params.target, newLine: true,
+                     sort: true, seed: "out\troute\tfile")
+    decisions
+        .map { d -> d.split('\t')[1] }
+        .collect()
+        .subscribe { l -> log.info "GeneMark routes: ${l.countBy { r -> r }}" }
+}
 
 workflow FUNANNOTATE_PREDICTION {
     take:
@@ -106,14 +166,19 @@ workflow FUNANNOTATE_PREDICTION {
         // run_genemark=false, skip the process entirely and fall back to
         // predict's own --auto-skip-genemark degradation (empty genemark_gtf).
         def rep_with_gtf
+        def repModCh = null
         if (runGenemark) {
             def rep_genemark_in = rep_todo.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
                 def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
                 tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '', isMicro)
             }
-            GENEMARK_RUN(rep_genemark_in)
-            rep_with_gtf = rep_todo.join(GENEMARK_RUN.out.gtf).join(GENEMARK_RUN.out.other_gff)
+            def rep_route = genemarkRoute(rep_genemark_in)
+            GENEMARK_RUN(rep_route.run)
+            writeGenemarkDecisions(rep_route.decisions)
+            repModCh = genemarkMod(rep_route, GENEMARK_RUN.out.mod)
+            rep_with_gtf = rep_todo.join(genemarkGtf(rep_route, GENEMARK_RUN.out.gtf))
+                .join(genemarkOther(rep_route, GENEMARK_RUN.out.other_gff))
                 .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }
@@ -136,7 +201,7 @@ workflow FUNANNOTATE_PREDICTION {
         if (runGenemark) {
             freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
                 .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
-                .join(GENEMARK_RUN.out.mod.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
+                .join(repModCh.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
                 .map { out, sp, mod -> tuple(sp, out, mod) }
                 .collate(100)
                 .map { batch -> tuple(batch.hashCode(), batch) }
@@ -173,14 +238,19 @@ workflow FUNANNOTATE_PREDICTION {
         // original branch a row came from.
         def rep_and_indep = rep_todo.mix(indep_todo)
         def rep_and_indep_with_gtf
+        def gmRoute    = null
+        def indepModCh = null
         if (runGenemark) {
             def genemark_in = rep_and_indep.map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _shared_json ->
                 def forceIndep = forceIndependentGenemarkSet.contains(out as String) ? 'true' : 'false'
                 def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
                 tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, '', isMicro)
             }
-            GENEMARK_RUN(genemark_in)
-            rep_and_indep_with_gtf = rep_and_indep.join(GENEMARK_RUN.out.gtf).join(GENEMARK_RUN.out.other_gff)
+            gmRoute = genemarkRoute(genemark_in)
+            GENEMARK_RUN(gmRoute.run)
+            indepModCh = genemarkMod(gmRoute, GENEMARK_RUN.out.mod)
+            rep_and_indep_with_gtf = rep_and_indep.join(genemarkGtf(gmRoute, GENEMARK_RUN.out.gtf))
+                .join(genemarkOther(gmRoute, GENEMARK_RUN.out.other_gff))
                 .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }
@@ -203,7 +273,7 @@ workflow FUNANNOTATE_PREDICTION {
             freshBackfillInput = FUNANNOTATE_PREDICT.out.metadata
                 .map { out, _a, sp, _st, _lt, _bl, _hl, _tt -> tuple(out.toString(), sp.toString()) }
                 .filter { out, _sp -> abinitioReuseMap[out]?.is_representative ?: false }
-                .join(GENEMARK_RUN.out.mod.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
+                .join(indepModCh.map { out, _sp, mod -> tuple(out.toString(), mod.toString()) })
                 .map { out, sp, mod -> tuple(sp, out, mod) }
                 .collate(100)
                 .map { batch -> tuple(batch.hashCode(), batch) }
@@ -337,8 +407,11 @@ workflow FUNANNOTATE_PREDICTION {
                 def isMicro    = microsporidiaSet.contains(out as String) ? 'true' : 'false'
                 tuple(out, asmid, sp, st, gfa, tt, genemarkMode, trainingTranscriptBamFor(out as String), forceIndep, sharedMod, isMicro)
             }
-            GENEMARK_RUN_SIB(sib_genemark_in)
-            sibling_predict_with_gtf = sibling_predict_todo.join(GENEMARK_RUN_SIB.out.gtf).join(GENEMARK_RUN_SIB.out.other_gff)
+            def sib_route = genemarkRoute(sib_genemark_in)
+            GENEMARK_RUN_SIB(sib_route.run)
+            writeGenemarkDecisions(gmRoute ? gmRoute.decisions.mix(sib_route.decisions) : sib_route.decisions)
+            sibling_predict_with_gtf = sibling_predict_todo.join(genemarkGtf(sib_route, GENEMARK_RUN_SIB.out.gtf))
+                .join(genemarkOther(sib_route, GENEMARK_RUN_SIB.out.other_gff))
                 .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff ->
                     tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, shared_json, gtf, other_gff)
                 }

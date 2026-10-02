@@ -60,6 +60,12 @@
 // genemark_gtf2gff3.pl on it internally) -- no conversion needed here.
 process GENEMARK_RUN {
     tag "$out"
+    // Keep every result in genemark_store/<out>/ so later runs reuse it instead of
+    // re-running GeneMark (utils.nf storedGenemarkFor; DECISIONS D135). Not under
+    // predict_misc/, which FUNANNOTATE_PREDICT deletes on a stale re-predict.
+    // Publishes the declared outputs only: GTF, other.gff3 and (fresh training) .mod.
+    publishDir path: { "${params.genemark_store}/${out}" }, mode: 'copy', overwrite: true,
+        enabled: params.genemark_store ? true : false
 
     cpus   16
     memory '32 GB'
@@ -244,10 +250,14 @@ process GENEMARK_RUN {
     }
 
     if [ -n "${shared_mod}" ] && [ "${force_independent}" != "true" ]; then
-        echo "[INFO] GENEMARK_RUN ${out}: fast-reuse (--predict_with) against shared model ${shared_mod}"
+        echo "[INFO] GENEMARK_RUN ${out}: fast-reuse (--predict_with) against model ${shared_mod}"
         cp "${shared_mod}" genemark-shared.mod
+        # Same --max_intron/--soft_mask as fresh --ES: with them, --predict_with the
+        # genome's own ES model gave 100% identical CDS chains to the ES run on 6 wave 1
+        # genomes; without them, 99.0-100% (DECISIONS D135).
         \$SING gmes_petap.pl --predict_with genemark-shared.mod \\
-            --sequence genome.fa --cores ${task.cpus} --fungus "\${GCODE_ARGS[@]}" 2>&1 | tee "\$GMES_LOG"
+            --sequence genome.fa --max_intron ${params.max_intronlen} --soft_mask 2000 \\
+            --cores ${task.cpus} --fungus "\${GCODE_ARGS[@]}" 2>&1 | tee "\$GMES_LOG"
     elif [ "${mode}" = "ET" ] && [ -n "${training_bam}" ] && [ -s "${training_bam}" ]; then
         echo "[INFO] GENEMARK_RUN ${out}: fresh ET self-training seeded by RNA-seq intron hints from ${training_bam}"
         \$SING bam2hints --intronsonly --in="${training_bam}" --out=raw_hints.gff
