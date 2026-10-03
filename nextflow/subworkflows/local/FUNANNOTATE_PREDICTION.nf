@@ -53,13 +53,18 @@ include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFo
 //   own_mod    the genome's own saved .mod, newer than the genome -> GENEMARK_RUN --predict_with it
 //   shared_mod the species' shared .mod (siblings only, unchanged) -> GENEMARK_RUN --predict_with it
 //   fresh      GENEMARK_RUN trains (--ES/--ET)
+// In ET mode, a genome with a training BAM skips stored/own_mod (ES-derived) and trains.
 // Returns [stored: tuple(out, sp, gtf, other_gff, mod-or-''), run: rows for GENEMARK_RUN,
 //          own: tuple(out, sp, own_mod) for own_mod rows, decisions: "out<TAB>route<TAB>file"].
 def genemarkRoute(ch) {
     def tagged = ch.map { row ->
         def out    = row[0] as String
         def gfa    = row[4] as String
-        def forced = (row[8] as String) == 'true'
+        // Stored results and own models come from ES runs (genemark_mode = 'ES').
+        // In ET mode a genome with a training BAM would be trained with its RNA-seq
+        // intron hints, so ES results must not stand in for it (DECISIONS D140).
+        def etWithHints = (row[6] as String) == 'ET' && row[7]
+        def forced = (row[8] as String) == 'true' || etWithHints
         def stored = forced ? null : storedGenemarkFor(out, gfa)
         if (stored) {
             // An own_mod run stores no .mod; backfill then takes the genome's saved model.
