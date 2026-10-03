@@ -288,11 +288,12 @@ process FUNANNOTATE_TRAIN {
         #      The old code had no such check: mariadbd could silently abort
         #      on EADDRINUSE and the pipeline kept going for ~10 more minutes
         #      until PASA's first mysql step failed to connect.
+        # The probe runs in its own bash, so its fd 3 closes when it exits. It was
+        # followed by `exec 3>&- 2>/dev/null`, which sent the CALLING shell's stderr
+        # to /dev/null for the rest of the task and hid every later WARN/ERROR
+        # (Fungi_BFD_runs DECISIONS D138). timeout bounds the connect.
         port_in_use() {
-            (exec 3<>"/dev/tcp/127.0.0.1/\$1") 2>/dev/null
-            local rc=\$?
-            exec 3>&- 2>/dev/null || true
-            return \$rc
+            timeout 3 bash -c 'exec 3<>"/dev/tcp/127.0.0.1/\$1"' _ "\$1" 2>/dev/null
         }
         next_free_port() {
             local p=\$1 tries=0
@@ -364,12 +365,34 @@ process FUNANNOTATE_TRAIN {
                 --pid-file=\$MYSQL_SCRATCH/mysqld.pid &
             MYSQLD_PID=\$!
         }
-        # Poll up to 30s for mariadbd to either come up (pid alive + port
-        # accepting connections) or die (e.g. EADDRINUSE) -- replaces a blind
-        # `sleep 5` that had no idea whether mariadbd actually started.
+        # Stop mariadbd with a bounded wait. A bare `wait \$MYSQLD_PID` blocks for as
+        # long as mariadbd runs: after a slow container start the retry path waited
+        # on a live mariadbd and a TRAIN task hung for 20 h (D138). SIGTERM to the
+        # apptainer wrapper and to mariadbd (pid file; same pid namespace), up to
+        # 60s, then SIGKILL.
+        kill_mariadbd() {
+            local pid=\$MYSQLD_PID inner="" waited=0
+            [ -s "\$MYSQL_SCRATCH/mysqld.pid" ] && inner=\$(cat "\$MYSQL_SCRATCH/mysqld.pid" 2>/dev/null)
+            kill "\$pid" 2>/dev/null || true
+            if [ -n "\$inner" ]; then kill "\$inner" 2>/dev/null || true; fi
+            while kill -0 "\$pid" 2>/dev/null && [ "\$waited" -lt 60 ]; do
+                sleep 1
+                waited=\$((waited + 1))
+            done
+            if kill -0 "\$pid" 2>/dev/null; then
+                echo "[WARN] mariadbd (pid \$pid) still running 60s after SIGTERM; sending SIGKILL" >&2
+                kill -9 "\$pid" 2>/dev/null || true
+                if [ -n "\$inner" ]; then kill -9 "\$inner" 2>/dev/null || true; fi
+            fi
+            wait "\$pid" 2>/dev/null || true
+        }
+        # Poll for mariadbd to either come up (pid alive + port accepting
+        # connections) or die (e.g. EADDRINUSE). The limit was 30s; on a loaded node
+        # the container took ~78s to start mariadbd (D138), so the default is 180s.
+        MARIADB_START_TIMEOUT=\${MARIADB_START_TIMEOUT:-180}
         wait_for_mariadbd() {
             local waited=0
-            while [ "\$waited" -lt 30 ]; do
+            while [ "\$waited" -lt "\$MARIADB_START_TIMEOUT" ]; do
                 if ! kill -0 "\$MYSQLD_PID" 2>/dev/null; then
                     return 1
                 fi
@@ -384,8 +407,8 @@ process FUNANNOTATE_TRAIN {
         echo "[INFO] Starting \$MYSQLD_BIN via \$SING (no separate mariadb sidecar container) on port \$PORT"
         start_mariadbd
         if ! wait_for_mariadbd; then
-            echo "[WARN] mariadbd did not come up on port \$PORT within 30s (dead or still refusing connections) -- likely lost a bind race against another job on this node; retrying once on a new port" >&2
-            wait "\$MYSQLD_PID" 2>/dev/null || true
+            echo "[WARN] mariadbd did not come up on port \$PORT within \${MARIADB_START_TIMEOUT}s (dead or still refusing connections) -- likely lost a bind race against another job on this node; retrying once on a new port" >&2
+            kill_mariadbd
             PORT=\$(next_free_port \$(( 3000 + (PORT - 3000 + 1) % 2000 )))
             sed -i "s/^MYSQLSERVER.*\$/MYSQLSERVER=127.0.0.1:\${PORT}/" \$PASACONF
             perl -i -p -e "s/port = \\d+/port = \${PORT}/" \$MYSQL_SCRATCH/conf/my.cnf
@@ -395,7 +418,7 @@ process FUNANNOTATE_TRAIN {
                 exit 1
             fi
         fi
-        stop_mysqldb() { kill \$MYSQLD_PID 2>/dev/null || true; wait \$MYSQLD_PID 2>/dev/null || true; }
+        stop_mysqldb() { kill_mariadbd; }
         trap "stop_mysqldb; exit 130" SIGHUP SIGINT SIGTERM
         trap "stop_mysqldb" EXIT
         pasa_db_arg="--pasa_db mysql"
