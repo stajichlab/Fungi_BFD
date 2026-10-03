@@ -281,6 +281,24 @@ def storedGenemarkFor(String out, String genomeFa) {
     return [gtf: gtf, other: other, mod: (mod.exists() && mod.size() > 0) ? mod : null]
 }
 
+// Own ab-initio parameters (Fungi_BFD_runs DECISIONS D136): a per-genome store built by
+// scripts/one-off/build_own_abinitio_store.py from an earlier BUSCO-trained prediction of
+// a genome WITHOUT RNA-seq (<abinitio_own_store>/<out>/parameters.json; Augustus + SNAP,
+// GlimmerHMM stub). Passed to predict as -p, so BUSCO and Augustus/SNAP training are
+// skipped. Returns '' (train as usual) unless the store is newer than the masked genome
+// and this run has no RNA-seq training for the genome (no transcript BAM, no PASA GFF3,
+// no .pasa_train_failed marker) -- genomes with RNA-seq always retrain.
+def ownAbinitioParamsFor(String out, String genomeFa) {
+    if (!params.abinitio_own_store) return ''
+    def pj = file("${params.abinitio_own_store}/${out}/parameters.json")
+    if (!(pj.exists() && pj.size() > 0 && _newerThanGenome(pj, genomeFa))) return ''
+    def tdir = "${params.training_target}/${out}/training"
+    if (file("${tdir}/transcript.alignments.bam").exists() ||
+        file("${tdir}/funannotate_train.pasa.gff3").exists() ||
+        file("${tdir}/.pasa_train_failed").exists()) return ''
+    return pj.toString()
+}
+
 // The genome's own trained .mod: genemark_store first, then params.target, then each
 // comma-separated dir in params.genemark_reuse_mod_targets (other annotation trees).
 def ownGenemarkModFor(String out, String genomeFa) {

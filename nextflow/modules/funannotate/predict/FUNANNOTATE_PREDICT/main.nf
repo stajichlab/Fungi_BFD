@@ -433,6 +433,15 @@ process FUNANNOTATE_PREDICT {
     if [ -s "${genemark_gtf}" ]; then
         SING_BINDS="\$SING_BINDS,\$(dirname "${genemark_gtf}"):\$(dirname "${genemark_gtf}")"
     fi
+    # The -p parameters.json directory: the per-genome abinitio_own store (DECISIONS
+    # D136) is outside every bind above; a species store under
+    # gene_prediction_shared_abinitio is already bound and gets no second bind.
+    if [ -s "${shared_params_json}" ]; then
+        case "${shared_params_json}" in
+            "${params.gene_prediction_shared_abinitio}"/*) ;;
+            *) SING_BINDS="\$SING_BINDS,\$(dirname "${shared_params_json}"):\$(dirname "${shared_params_json}")" ;;
+        esac
+    fi
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # ── Repeat-aware EVM mode ─────────────────────────────────────────────────

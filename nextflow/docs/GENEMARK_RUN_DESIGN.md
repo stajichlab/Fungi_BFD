@@ -580,3 +580,19 @@ per genome, the first that applies (forced-independent strains always train):
 - Existing work-dir results can be copied into the store with
   `scripts/one-off/salvage_genemark_store.py --run-dir <run> [--apply]`.
 - Staleness is by file mtime only (reused file newer than the masked genome).
+
+## Own Augustus/SNAP parameters for genomes without RNA-seq (2026-10-02, DECISIONS D136)
+
+Genomes with RNA-seq always retrain Augustus/SNAP. For a genome WITHOUT RNA-seq that an
+earlier run trained from BUSCO, `scripts/one-off/build_own_abinitio_store.py` copies its
+Augustus species folder and SNAP HMM into `<abinitio_own_store>/<out>/` (default
+`${launchDir}/abinitio_own`), with a GlimmerHMM stub and a `parameters.json` using
+relative paths (same layout as `gene_prediction_shared_abinitio`). It requires
+`parameters.json` to show BUSCO training for both, the source files to exist, and the
+predict log to report >= 200 valid BUSCO training models.
+
+`ownAbinitioParamsFor()` (utils.nf) passes that file as predict's `-p` for representative,
+independent and fallback rows, only when it is newer than the masked genome and the run has
+no RNA-seq training for the genome (no transcript BAM, PASA GFF3 or `.pasa_train_failed`).
+predict then skips BUSCO and Augustus/SNAP training. FUNANNOTATE_PREDICT binds the folder.
+Used rows are listed in `${target}/abinitio_own_reuse.tsv`.

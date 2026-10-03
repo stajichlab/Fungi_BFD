@@ -43,7 +43,7 @@ include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/f
 include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
 
-include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor; storedGenemarkFor; ownGenemarkModFor } from '../../modules/funannotate/utils.nf'
+include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor; storedGenemarkFor; ownGenemarkModFor; ownAbinitioParamsFor } from '../../modules/funannotate/utils.nf'
 
 // ── GeneMark reuse routing (Fungi_BFD_runs DECISIONS D135) ──────────────────
 // In: GENEMARK_RUN input rows
@@ -93,6 +93,14 @@ def genemarkOther(route, procOth) { procOth.mix(route.stored.map { out, _sp, _g,
 def genemarkMod(route, procMod) {
     procMod.mix(route.stored.filter { _o, _sp, _g, _x, mod -> mod }.map { out, sp, _g, _x, mod -> tuple(out, sp, mod) })
            .mix(route.own)
+}
+
+// Rows whose predict gets the genome's own ab-initio parameters (-p; DECISIONS D136).
+def writeOwnAbinitioReuse(rows) {
+    rows.filter { r -> r[9] }
+        .map { r -> "${r[0]}\t${r[9]}".toString() }
+        .collectFile(name: 'abinitio_own_reuse.tsv', storeDir: params.target, newLine: true,
+                     sort: true, seed: "out\tparameters_json")
 }
 
 def writeGenemarkDecisions(decisions) {
@@ -146,7 +154,7 @@ workflow FUNANNOTATE_PREDICTION {
     // Representatives never use -p on themselves -- they're what gets shared.
     def rep_todo = branched.representative
         .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _is_rep, _elig ->
-            tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, '')
+            tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, ownAbinitioParamsFor(out as String, gfa as String))
         }
         .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
             gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
@@ -165,6 +173,7 @@ workflow FUNANNOTATE_PREDICTION {
         // guaranteeing every row here gets both a gtf AND a mod. If
         // run_genemark=false, skip the process entirely and fall back to
         // predict's own --auto-skip-genemark degradation (empty genemark_gtf).
+        writeOwnAbinitioReuse(rep_todo)
         def rep_with_gtf
         def repModCh = null
         if (runGenemark) {
@@ -220,7 +229,7 @@ workflow FUNANNOTATE_PREDICTION {
         // completely ungated -- they were never going to touch the shared store.
         def indep_todo = branched.independent
             .map { out, asmid, sp, st, lt, bl, hl, tt, gfa, _is_rep, _elig ->
-                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, '')
+                tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, ownAbinitioParamsFor(out as String, gfa as String))
             }
             .filter { out, a, sp, _st, _lt, _bl, _hl, _tt, _gfa, _shared_json ->
                 gbkResult("${params.target}/${out}/predict_results", out as String) == null ||
@@ -237,6 +246,7 @@ workflow FUNANNOTATE_PREDICTION {
         // SAME mixed channel before predict; join-by-`out` doesn't care which
         // original branch a row came from.
         def rep_and_indep = rep_todo.mix(indep_todo)
+        writeOwnAbinitioReuse(rep_and_indep)
         def rep_and_indep_with_gtf
         def gmRoute    = null
         def indepModCh = null
@@ -368,7 +378,7 @@ workflow FUNANNOTATE_PREDICTION {
                 .map { out, asmid, sp, st, lt, bl, hl, tt, gfa ->
                     log.warn "predict: ${out} (${sp}) — shared ab-initio parameters not " +
                         "available; training independently (--allow_independent_fallback)"
-                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, '')
+                    tuple(out, asmid, sp, st, lt, bl, hl, tt, gfa, ownAbinitioParamsFor(out as String, gfa as String))
                 }
             sibling_todo = readyRows.mix(fallbackRows)
         } else {
