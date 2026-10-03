@@ -68,9 +68,21 @@ def main():
         out_columns = REQUIRED_COLUMNS + [c for c in OPTIONAL_COLUMNS if c in fields]
         writer = csv.DictWriter(ofh, fieldnames=out_columns, extrasaction="ignore")
         writer.writeheader()
+        seen_keys = set()
+        seen_asmids = set()
         for row in reader:
             if keep is not None and (row.get(args.key) or "").strip() not in keep:
                 continue
+            row_key = (row.get(args.key) or "").strip()
+            row_asmid = (row.get("ASMID") or "").strip()
+            if row_key in seen_keys:
+                sys.exit(f"ERROR: duplicate {args.key} value '{row_key}' in {args.samples} -- "
+                          f"refusing to write species table")
+            if row_asmid in seen_asmids:
+                sys.exit(f"ERROR: duplicate ASMID value '{row_asmid}' in {args.samples} -- "
+                          f"refusing to write species table")
+            seen_keys.add(row_key)
+            seen_asmids.add(row_asmid)
             writer.writerow({c: (row.get(c) or "") for c in out_columns})
             n += 1
 

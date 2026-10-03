@@ -18,7 +18,10 @@ process BUILD_DUCKDB {
 
     script:
     """
-    TABLES=${params.tables} DBDIR=. bash ${projectDir}/bin/build_BFD_duckDB.sh
+    TABLES=${params.tables} DBDIR=. \\
+    BIN_DIR=${projectDir}/bin \\
+    SCHEMA=${projectDir}/../sql/table_schema.json \\
+    bash ${projectDir}/bin/build_BFD_duckDB.sh
     """
 
     stub:

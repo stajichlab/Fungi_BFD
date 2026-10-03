@@ -13,6 +13,10 @@ import glob
 import gzip
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from bfd_common import assert_unique_key  # noqa: E402
 
 FIELD_MAP = {
     "CONTIG COUNT": "contig_count",
@@ -146,6 +150,8 @@ def main():
             print(f"  {m}", file=sys.stderr)
         if len(missing_meta) > 10:
             print(f"  ... and {len(missing_meta) - 10} more", file=sys.stderr)
+
+    assert_unique_key(rows, "ASMID", "asm_stats")
 
     with open_out(args.output) as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS, delimiter="\t", extrasaction="ignore")
