@@ -320,6 +320,26 @@ process GENEMARK_RUN {
         echo "ERROR: GeneMark did not produce genemark.gtf" >&2
         exit 1
     fi
+    # GeneMark can stop part way (e.g. gmhmme3 children OOM-killed: 32 kills in an 8 GB,
+    # 13-core task) and leave a partial genemark.gtf that still uses its internal
+    # sequence names ("1_dna"); the pipe to tee hides its exit status, and predict
+    # then fails in EVM on every retry (Fungi_BFD_runs DECISIONS D141). Require every
+    # sequence name in the GTF to be a genome contig; failing here retries the task
+    # with more memory instead of publishing a broken GTF.
+    # gmhmme3 child failures also hit training and can leave a degraded model with a
+    # well-formed GTF. In 280 sampled wave 1 runs they appeared only together with OOM
+    # kills (D141). Fail so the retry gets more memory.
+    GMHMM_FAILS=\$(grep -c "warning on: .*gmhmme3" gmes.log 2>/dev/null || true)
+    if [ "\${GMHMM_FAILS:-0}" -gt 0 ]; then
+        echo "ERROR: GENEMARK_RUN ${out}: gmhmme3 failed \$GMHMM_FAILS time(s) (gmes.log 'warning on:'); likely out of memory at ${task.memory}" >&2
+        exit 1
+    fi
+    if ! awk 'NR == FNR { if (/^>/) { id = substr(\$1, 2); ids[id] = 1 } next }
+              !/^#/ && NF >= 9 && !(\$1 in ids) { print "unknown sequence " \$1 > "/dev/stderr"; bad = 1; exit 1 }
+              END { exit bad }' genome.fa genemark.gtf; then
+        echo "ERROR: GENEMARK_RUN ${out}: genemark.gtf names sequences that are not in the genome (GeneMark stopped part way; see gmes.log)" >&2
+        exit 1
+    fi
     cp genemark.gtf "\$OUT_GTF"
     rm -f genome.fa
 
