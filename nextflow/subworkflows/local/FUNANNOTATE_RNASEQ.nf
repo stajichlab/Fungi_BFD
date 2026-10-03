@@ -259,10 +259,30 @@ workflow FUNANNOTATE_RNASEQ {
         // genome-guided-Trinity's down to 7 transcripts against it; GCF_004011695.2/Me14
         // works). See loadRnaseqRepresentativeOverride() and
         // scripts/pick_rnaseq_representative_override.py.
+        //
+        // groupTuple needs each species' group size, or it waits for the whole input
+        // channel to close -- i.e. for the slowest SRA fetch in the run -- before any
+        // species reaches RNASEQ_PREPARE/TRAIN/PREDICT (wave 1 restart 2026-10-02: four
+        // SE fetches held every species; Fungi_BFD_runs DECISIONS D139). The size per
+        // species comes from normalGenomeCh, which closes once genome prep is done and
+        // does not wait for reads; groupKey then emits each species as soon as its own
+        // genomes have their reads. remainder: true keeps a group that ends up smaller
+        // than counted (it is emitted when the channel closes, as before).
+        def genomesPerSpecies = normalGenomeCh
+            .map { _out, _asmid, species, _st, _lt, _busco, _hlen, _tt, _gfa, _taxid -> species.replaceAll(/\s+/, '_') }
+            .collect()
+            .map { tags -> tags.countBy { t -> t } }
         def repr_ch = assembly_with_reads
-            .groupTuple(by: 0)
-            .map { species_tag, outs, asmids, species_list, strains, locustags,
+            .combine(genomesPerSpecies)
+            .map { row ->
+                def counts = row[-1]
+                def species_tag = row[0]
+                [groupKey(species_tag, counts[species_tag] ?: 1)] + row[1..-2]
+            }
+            .groupTuple(by: 0, remainder: true)
+            .map { key, outs, asmids, species_list, strains, locustags,
                    buscos, hlens, ttables, genomes, r1s, r2s, ses ->
+                def species_tag = key.getGroupTarget()
                 def overrideOut = rnaseqRepOverride[species_tag]
                 def repIdx = overrideOut
                     ? outs.findIndexOf { out -> out == overrideOut }
