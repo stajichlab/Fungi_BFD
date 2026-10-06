@@ -20659,8 +20659,8 @@ GCA_050707015.1_ASM5070701v1,Schizothecium sp. GE-2024h,PSN935,PRJNA1190690,3385
 GCA_050706595.1_ASM5070659v1,Schizothecium sp. GE-2024i,PSN1067,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,F619EA96
 GCA_050708635.1_ASM5070863v1,Schizothecium sp. GE-2024i,PSN572_mat,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,FDD49E30
 GCA_050707775.1_ASM5070777v1,Schizothecium sp. GE-2024i,PSN708,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,F7E2ED7C
-GCA_050707135.1_ASM5070713v1,Schizothecium sp. GE-2024i,PSN831_mat,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,FFB8D6AB
-GCA_050707155.1_ASM5070715v1,Schizothecium sp. GE-2024i,PSN831_mat,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,F09A7663
+GCA_050707135.1_ASM5070713v1,Schizothecium sp. GE-2024i,PSN831_Minus,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,FFB8D6AB
+GCA_050707155.1_ASM5070715v1,Schizothecium sp. GE-2024i,PSN831_Plus,PRJNA1190690,3385836,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024i,1,F09A7663
 GCA_050708655.1_ASM5070865v1,Schizothecium sp. GE-2024j,PSN580,PRJNA1190690,3385838,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024j,1,FAC3733B
 GCA_050707455.1_ASM5070745v1,Schizothecium sp. GE-2024j,PSN776,PRJNA1190690,3385838,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024j,1,F0724021
 GCA_050708475.1_ASM5070847v1,Schizothecium sp. GE-2024k,PSN584,PRJNA1190690,3385839,dikarya,Ascomycota,,Sordariomycetes,,Sordariales,Schizotheciaceae,Schizothecium,Schizothecium sp. GE-2024k,1,F4C4DDF5
@@ -23522,7 +23522,7 @@ GCA_979766975.1_PYCC9369,Zygosaccharomyces pseudobailii,PYCC9369,PRJEB107124,136
 GCA_979767535.1_PYCC9374,Zygosaccharomyces pseudobailii,PYCC9374,PRJEB107124,1365887,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces pseudobailii,1,F7331CFF
 GCA_979768165.1_PYCC9555,Zygosaccharomyces pseudobailii,PYCC9555,PRJEB107124,1365887,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces pseudobailii,1,F2C24D28
 GCA_030572675.1_ASM3057267v1,Zygosaccharomyces pseudorouxii,NRRL Y-63794T,PRJNA736342,227369,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces pseudorouxii,1,F1A0AEB1
-GCA_965643365.1_PYCC10392,Zygosaccharomyces rouxii,,PRJEB92122,4956,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces rouxii,1,FB031104
+GCA_965643365.1_PYCC10392,Zygosaccharomyces rouxii,PYCC10392,PRJEB92122,4956,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces rouxii,1,FB031104
 GCA_900411385.1_ATCC42981,Zygosaccharomyces rouxii,ATCC42981,PRJEB26771,4956,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces rouxii,1,F5082921
 GCA_052814785.1_ASM5281478v1,Zygosaccharomyces rouxii,C8,PRJNA1248716,4956,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces rouxii,1,FA32403D
 GCF_000026365.1_ASM2636v1,Zygosaccharomyces rouxii,CBS 732,PRJNA12502,4956,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycetales,Saccharomycetaceae,Zygosaccharomyces,Zygosaccharomyces rouxii,1,F3E033B1
