@@ -258,3 +258,14 @@ GCA_027595885.1_ASM2759588v1,funannotate_too_few_models:19
 GCA_023347045.1_ASM2334704v1,preflight_small_fragmented
 GCA_027596065.1_ASM2759606v1,preflight_small_fragmented
 GCA_054125455.1_ASM5412545v1,preflight_small_fragmented
+GCA_986280975.1_DAH1005FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986280995.1_DAH1001FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986281615.1_DAH1003FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986280865.1_DAH1008FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986280875.1_DAH1010FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986281355.1_DAH1029FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986281505.1_DAH1036FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986281625.1_DAH1041FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_986281645.1_DAH1049FM,broken NCBI upload PRJEB104476: single Sanger amplicon (<700 bp) deposited as Complete Genome
+GCA_046252445.1_ASM4625244v1,Too small (12 kb repeat sequence only; not a genome)
+GCA_975972555.1_XD_vamb_bin3231_ASM_v1,Too Small MAG (86 kb, 4 contigs)
