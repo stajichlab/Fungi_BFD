@@ -6,3 +6,6 @@
 # the filesystem-safe '{ACCESSION}_{ASM_NAME}' (no '#', spaces, commas, parens).
 #
 GCA_000976515.2_Sc_YJM981_v1	prefer older v1 over newer GCA_025434895.2 for S. cerevisiae YJM981
+GCA_030573575.1_ASM3057357v1	prefer over GCA_004919795.1_ASM491979v1 for Hanseniaspora sp. CRUB 1602 (2021 resubmission, 334 contigs vs 683)
+GCA_055862385.1_ASM5586238v1	prefer over GCA_982258805.1_Tp_3378_genome for T. proteolyticus NRRL 3378
+GCA_030573475.1_ASM3057347v1	prefer over GCA_004919915.1_ASM491991v1 for Hanseniaspora thailandica ZIM 2325 (2021 resubmission vs 2019, 1946 contigs)

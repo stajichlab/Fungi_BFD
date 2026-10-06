@@ -147,3 +147,6 @@ GCF_000223465.1_Candida_tenuis_v1.0	curation	# Yamadazyma tenuis ATCC 10573 | st
 GCF_000293215.1_Trichosporon_asahii_1	curation	# Trichosporon asahii var. asahii CBS 2479 | strain=CBS 2479
 GCF_001417885.1_Kmar_1.0	curation	# Kluyveromyces marxianus DMKU3-1042 | strain=DMKU3-1042
 GCF_947241705.1_Smik-IFO1815	curation	# Saccharomyces mikatae IFO 1815 | strain=IFO1815
+GCA_982258805.1_Tp_3378_genome	curation	# Talaromyces proteolyticus NRRL 3378: GCA_055862385.1_ASM5586238v1 preferred
+GCA_004919795.1_ASM491979v1	curation	# Hanseniaspora sp. CRUB 1602: GCA_030573575.1_ASM3057357v1 preferred
+GCA_004919915.1_ASM491991v1	curation	# Hanseniaspora thailandica ZIM 2325: GCA_030573475.1_ASM3057347v1 preferred
