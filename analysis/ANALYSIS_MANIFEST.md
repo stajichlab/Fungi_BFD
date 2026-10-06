@@ -402,6 +402,24 @@ report: analysis/funannotate_runtime_scaling/FUNANNOTATE_RUNTIME_SCALING.md
 tags: [funannotate, runtime, benchmarking, genome-size, gene-count, repeat-content, outliers, nextflow-trace]
 ```
 
+```yaml
+name: desert-microbes-mash-id
+type: species-identification
+status: complete
+created: 2026-09-26
+last_updated: 2026-09-26
+datasets: [Fungi_BFD_runs/input_clean_genomes/*.fa.gz (23,867 of 23,877 sketched; 10 empty/corrupt excluded), Fungi_BFD_runs/samples.csv (ASMID->species/taxonomy join), Desert_microbes/Culture_genomes/results/asm/*.spades.fasta (14 query genomes, external project)]
+algorithms: [mash sketch/dist (k=21 s=10000, matches nextflow/conf/profile_ANI.config defaults)]
+parent_analysis: null
+key_findings:
+  - "1 of 14 desert isolates (M40) has a confident species-level MASH match: Aureobasidium melanogenum (98.2% mash-ANI, 5265/10000 shared hashes)."
+  - "4 isolates (M45, V111, V103, V109) have moderate-confidence genus-level matches (88-95.5% ANI, hundreds of shared hashes): Aureobasidium pullulans x2, Coniosporium apollinis x2."
+  - "9 isolates have only low-confidence family-level clustering (<80% ANI, <100/10000 shared hashes) -- top-5 hits agree on family (e.g. M48/Didymellaceae, V119+V37+V51/Teratosphaeriaceae) but not genus/species; likely represent taxa poorly represented or absent in the BFD collection, not a BFD-internal identification limit."
+  - "mash sketch -l <list> hard-aborts the entire multi-genome sketch build on the first zero-FASTA-record input file, with no per-file skip -- a pre-sketch validation pass (zcat | grep -c '^>') is required before sketching any large, uncurated genome_dir."
+report: analysis/desert_microbes_mash_id/DESERT_MICROBES_MASH_ID.md
+tags: [mash, ani, species-id, desert-microbes, minhash, fungi, taxonomy]
+```
+
 Cross-run (not single-pipeline-invocation) benchmarking view: joins every historical
 Nextflow trace file across all three funannotate pipeline roots against the shared
 per-species assembly-stats and gene-count DBs, to plot runtime vs. genome size / gene
