@@ -10849,12 +10849,10 @@ GCA_037041795.1_ASM3704179v1,Hanseniaspora pseudoguilliermondii,R5919,PRJNA83322
 GCA_003708335.1_ASM370833v1,Hanseniaspora pseudoguilliermondii,ZIM213 Neza Cadez,PRJNA429441,332229,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora pseudoguilliermondii,1,FE5B9200
 GCA_030565715.1_ASM3056571v1,Hanseniaspora singularis,NRRL Y-63757,PRJNA736342,572238,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora singularis,1,F145DDD6
 GCA_003708365.1_ASM370836v1,Hanseniaspora singularis,ZIM2326 Neza Cadez,PRJNA429441,572238,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora singularis,1,F8A806A2
-GCA_004919795.1_ASM491979v1,Hanseniaspora sp. CRUB 1602,CRUB 1602,PRJNA529215,1888986,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora sp. CRUB 1602,1,F40A142C
 GCA_030573575.1_ASM3057357v1,Hanseniaspora sp. CRUB 1602,CRUB 1602,PRJNA736342,1888986,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora sp. CRUB 1602,1,FCC4DCF0
 GCA_054658755.1_Hdr_assembly01,Hanseniaspora sp. JCM 36741,JCM 36741,PRJDB19875,3389738,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora sp. JCM 36741,1,F325ED54
 GCA_030580555.1_ASM3058055v1,Hanseniaspora taiwanica,CBS 11434,PRJNA736342,1443073,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora taiwanica,1,FEC71FA8
 GCA_037041975.1_ASM3704197v1,Hanseniaspora thailandica,R80-11,PRJNA833221,689838,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora thailandica,1,F0A7F7F1
-GCA_004919915.1_ASM491991v1,Hanseniaspora thailandica,ZIM 2325,PRJNA529215,689838,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora thailandica,1,FA1813DF
 GCA_030573475.1_ASM3057347v1,Hanseniaspora thailandica,ZIM 2325,PRJNA736342,689838,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora thailandica,1,FF49ECD3
 GCA_937857875.1_SRR3017095_bin.66_CONCOCT_v1.1_MAG,Hanseniaspora uvarum,,PRJEB51073;PRJEB51083,29833,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora uvarum,1,F66739F5
 GCA_000775265.3_ASM77526v3,Hanseniaspora uvarum,34-9,PRJNA254213,29833,dikarya,Ascomycota,,Saccharomycetes,,Saccharomycodales,Saccharomycodaceae,Hanseniaspora,Hanseniaspora uvarum,1,FB366A8B
@@ -21366,7 +21364,6 @@ GCA_003316675.1_ASM331667v1,Talaromyces pinophilus,PSF-12 1,PRJNA478142,128442,d
 GCA_000829775.1_TcelY94_1.0,Talaromyces pinophilus,Y-94,PRJDB3250,128442,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces pinophilus,1,F2180CC7
 GCA_048181935.1_ASM4818193v1,Talaromyces pinophilus,Y117,PRJNA1203055,128442,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces pinophilus,1,FB55F8C5
 GCA_055862385.1_ASM5586238v1,Talaromyces proteolyticus,NRRL 3378,PRJNA1429585,1131652,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces proteolyticus,1,FDC96E42
-GCA_982258805.1_Tp_3378_genome,Talaromyces proteolyticus,NRRL 3378,PRJEB109306,1131652,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces proteolyticus,1,F4B1F845
 GCF_021365285.1_Talpro1,Talaromyces proteolyticus,PMI_201,PRJNA340474,1131652,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces proteolyticus,1,F41CC00D
 GCA_037041375.1_ASM3704137v1,Talaromyces purpureogenus,F6103,PRJNA833221,1266744,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces purpureogenus,1,F2629E31
 GCA_037041395.1_ASM3704139v1,Talaromyces purpureogenus,F6201Q,PRJNA833221,1266744,dikarya,Ascomycota,,Eurotiomycetes,,Eurotiales,Trichocomaceae,Talaromyces,Talaromyces purpureogenus,1,FAE4389C
