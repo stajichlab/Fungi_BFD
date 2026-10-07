@@ -1,3 +1,5 @@
+include { gzShellHelpers } from '../../utils.nf'
+
 process FUNANNOTATE_UPDATE {
     tag "$out"
 
@@ -267,17 +269,24 @@ process FUNANNOTATE_UPDATE {
     # no content check -- so a stale empty dir permanently poisons annotate even
     # though predict_results/ is intact. Clear it before retrying so a failed
     # attempt doesn't leave annotate stuck. Found via real run, 2026-08-15.
-    if [ -d "${params.target}/${out}/update_results" ] && [ ! -f "${params.target}/${out}/update_results/${out}.gbk" ]; then
+    if [ -d "${params.target}/${out}/update_results" ] && [ ! -s "${params.target}/${out}/update_results/${out}.gbk" ] && [ ! -s "${params.target}/${out}/update_results/${out}.gbk.gz" ]; then
         rm -rf "${params.target}/${out}/update_results"
     fi
 
     # r1/r2 are pre-normalized reads from SRA_FETCH (fastp-trimmed + bbnorm-normalized).
     # funannotate update will still run its internal alignment step against these.
+    ${gzShellHelpers()}
+    # predict_results may be gzip-compressed; update looks for plain .gbk/.gff3/.scaffolds.fa.
+    # Inflate copies next to the .gz (mtime kept), remove them afterwards. The .gz stays.
+    gz_inflate "${params.target}/${out}/predict_results" .gbk .gff3 .scaffolds.fa
     echo "[INFO] Running funannotate update for ${out}"
+    UPDATE_RC=0
     \$SING funannotate update -i ${params.target}/${out} \\
         --left ${r1} --right ${r2} \\
         --cpus ${task.cpus} \\
-        \$pasa_db_arg
+        \$pasa_db_arg || UPDATE_RC=\$?
+    gz_cleanup
+    if [ "\$UPDATE_RC" -ne 0 ]; then echo "ERROR: funannotate update exited \$UPDATE_RC for ${out}" >&2; exit \$UPDATE_RC; fi
     if [ "${params.pasa_mysql}" = "true" ]; then stop_mysqldb; fi
     echo "[INFO] stopped mysql"
     EXPECTED="${params.target}/${out}/update_results/${out}.gbk"
@@ -285,6 +294,7 @@ process FUNANNOTATE_UPDATE {
         echo "ERROR: funannotate update did not produce expected GBK: \$EXPECTED" >&2
         exit 1
     fi
+    gz_compress "${params.target}/${out}/update_results"
     """
 
     stub:

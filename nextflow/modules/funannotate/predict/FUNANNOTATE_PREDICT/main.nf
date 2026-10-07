@@ -505,8 +505,14 @@ process FUNANNOTATE_PREDICT {
         rm -rf "\$PREDICTDIR/predict_misc"
         mv "\$KEEP_DIR" "\$PREDICTDIR/predict_misc"
     fi
-    find "\$PREDICTDIR/predict_results/" -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\) -print0 \
-        | xargs -0 --no-run-if-empty pigz
+    # Compress large text results to save shared storage. The GBK is compressed only here,
+    # after the "produced expected GBK" test above (funannotate writes it plain). -f replaces
+    # a stale .gz left by an earlier prediction of the same genome. Downstream readers accept
+    # .gbk.gz via gbkResult(); SETUP_SYMLINKS links the .gz forms of proteins, cds and gff3.
+    find "\$PREDICTDIR/predict_results/" -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\
+            -o -name "*.gbk" -o -name "*.gff3" -o -name "*.cds-transcripts.fa" \\
+            -o -name "*.proteins.fa" -o -name "*.tbl" \\) -print0 \
+        | xargs -0 --no-run-if-empty pigz -f
     # Provenance marker for ab-initio parameter reuse (decision 7,
     # todo/species_level_abinitio_reuse.md S6) -- lets a later BUSCO/QC regression be
     # traced back to "shared params" vs "independent training" without re-parsing logs.

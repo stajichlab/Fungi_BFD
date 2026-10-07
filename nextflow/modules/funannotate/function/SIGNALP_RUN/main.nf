@@ -17,15 +17,21 @@ process SIGNALP_RUN {
     script:
     def proteins = "${params.target}/${out}/predict_results/${out}.proteins.fa"
     """
-    if [ ! -f "${proteins}" ]; then
-        echo "ERROR: protein FASTA not found: ${proteins}" >&2
+    PROTEINS="${proteins}"
+    if [ ! -f "\$PROTEINS" ] && [ -f "${proteins}.gz" ]; then
+        # predict compresses proteins.fa; inflate into node-local scratch for the tool
+        PROTEINS="\${SCRATCH:?SCRATCH not set}/${out}.proteins.fa"
+        pigz -dc "${proteins}.gz" > "\$PROTEINS"
+    fi
+    if [ ! -f "\$PROTEINS" ]; then
+        echo "ERROR: protein FASTA not found: ${proteins}[.gz]" >&2
         exit 1
     fi
     module load signalp/6-gpu
     TMPDIR=\${SCRATCH:-/tmp}
     signalp6 -od \$TMPDIR/${out}_signalp \\
         -org euk --mode fast -format txt \\
-        -fasta ${proteins} \\
+        -fasta \$PROTEINS \\
         --write_procs ${task.cpus} -bs 16
     mkdir -p ${out}/annotate_misc
     cp \$TMPDIR/${out}_signalp/prediction_results.txt ${out}/annotate_misc/signalp.results.txt

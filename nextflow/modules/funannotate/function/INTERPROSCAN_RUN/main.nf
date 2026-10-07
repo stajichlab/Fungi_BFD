@@ -18,13 +18,19 @@ process INTERPROSCAN_RUN {
     script:
     def proteins = "${params.target}/${out}/predict_results/${out}.proteins.fa"
     """
-    if [ ! -f "${proteins}" ]; then
-        echo "ERROR: protein FASTA not found: ${proteins}" >&2
+    PROTEINS="${proteins}"
+    if [ ! -f "\$PROTEINS" ] && [ -f "${proteins}.gz" ]; then
+        # predict compresses proteins.fa; inflate into node-local scratch for the tool
+        PROTEINS="\${SCRATCH:?SCRATCH not set}/${out}.proteins.fa"
+        pigz -dc "${proteins}.gz" > "\$PROTEINS"
+    fi
+    if [ ! -f "\$PROTEINS" ]; then
+        echo "ERROR: protein FASTA not found: ${proteins}[.gz]" >&2
         exit 1
     fi
     mkdir -p ${out}/annotate_misc
     module load interproscan
-    interproscan.sh -i ${proteins} -f XML -o ${out}/annotate_misc/iprscan.xml \\
+    interproscan.sh -i \$PROTEINS -f XML -o ${out}/annotate_misc/iprscan.xml \\
         -dp -goterms -pa -t p -cpu ${task.cpus}
     """
 

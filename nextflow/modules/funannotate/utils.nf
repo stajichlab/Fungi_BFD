@@ -8,6 +8,42 @@
 // Plain functions, not a lib/ class -- see REFACTOR_NEXTFLOW_PLAN.md section 2.1.
 //
 
+// Shell helpers for steps that call funannotate on a folder whose results are gzip-compressed.
+// funannotate update/annotate pick their inputs by suffix (.gbk, .gff3, .tbl, .scaffolds.fa) and do
+// not see .gz files. Usage inside a process script block (interpolate with ${gzShellHelpers()}):
+//   GZ_INFLATED=()
+//   gz_inflate "$DIR" .gbk .gff3      # inflate DIR/*.gbk.gz etc.; the .gz stays, mtime is kept
+//   <run funannotate>                 # capture its exit code, do not let `set -e` skip the cleanup
+//   gz_cleanup                        # remove only the copies gz_inflate made (the .gz is the master)
+//   gz_compress "$DIR"                # compress the new results (same file set as FUNANNOTATE_PREDICT)
+// UNTESTED against a real update/annotate run (2026-10-07); see docs/GZ_PREDICT_OUTPUTS.md.
+def gzShellHelpers() {
+    return '''
+    GZ_INFLATED=()
+    gz_inflate() {
+        local d="$1" s gz f; shift
+        for s in "$@"; do
+            for gz in "$d"/*"$s".gz; do
+                [ -s "$gz" ] || continue
+                f="${gz%.gz}"
+                [ -s "$f" ] && continue
+                pigz -dc "$gz" > "$f.inflate.$$" && mv "$f.inflate.$$" "$f" && touch -r "$gz" "$f" && GZ_INFLATED+=("$f")
+            done
+        done
+    }
+    gz_cleanup() {
+        if [ "${#GZ_INFLATED[@]}" -gt 0 ]; then rm -f "${GZ_INFLATED[@]}"; fi
+        GZ_INFLATED=()
+    }
+    gz_compress() {
+        find "$1" -maxdepth 1 \\( -name "*.txt" -o -name "*.mrna-transcripts.fa" \\
+                -o -name "*.gbk" -o -name "*.gff3" -o -name "*.cds-transcripts.fa" \\
+                -o -name "*.proteins.fa" -o -name "*.tbl" \\) -print0 \\
+            | xargs -0 --no-run-if-empty pigz -f
+    }
+    '''
+}
+
 // A funannotate step's GenBank output may be stored uncompressed (.gbk) or
 // gzip-compressed (.gbk.gz) so completed folders can be compressed to save space.
 // Returns the existing non-empty file (preferring .gbk), or null if neither exists.

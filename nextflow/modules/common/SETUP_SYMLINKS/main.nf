@@ -44,6 +44,9 @@ process SETUP_SYMLINKS {
             linkname=\${pair##*|}
             if [ -e "\$target" ]; then
                 ln -sfn "\$target" "\$linkname"
+            elif [ -e "\$target.gz" ]; then
+                # Compressed result (.gff3.gz, .cds-transcripts.fa.gz): link under the .gz name
+                ln -sfn "\$target.gz" "\$linkname.gz"
             else
                 echo "[WARN] source not found, skipping: \$target" >&2
             fi

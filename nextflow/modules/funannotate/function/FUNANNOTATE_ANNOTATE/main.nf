@@ -1,3 +1,5 @@
+include { gzShellHelpers } from '../../utils.nf'
+
 process FUNANNOTATE_ANNOTATE {
     tag "$out"
 
@@ -53,19 +55,29 @@ process FUNANNOTATE_ANNOTATE {
     SING_BINDS="--bind ${params.target}:${params.target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.sbt_template}:${params.sbt_template},${params.eggnog_data_dir}:${params.eggnog_data_dir},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
+    ${gzShellHelpers()}
+    # annotate reads update_results/ when that dir exists, else predict_results/ (annotate.py).
+    # Those files may be gzip-compressed; inflate the plain copies it looks for, remove them after.
+    ANNOT_IN="${params.target}/${out}/predict_results"
+    if [ -d "${params.target}/${out}/update_results" ]; then ANNOT_IN="${params.target}/${out}/update_results"; fi
+    gz_inflate "\$ANNOT_IN" .gbk .gff3 .tbl
+    ANNOTATE_RC=0
     \$SING funannotate annotate -i ${params.target}/${out} -o ${params.target}/${out} \\
         --species "${species}" --strain "${strain}" \\
         --busco_db ${busco_lineage} --rename ${locustag} \\
         --sbt ${params.sbt_template} \\
         --header_length ${header_length} \\
         ${antiSmArg} \\
-        --cpu ${task.cpus} --tmpdir \$TMPDIR
+        --cpu ${task.cpus} --tmpdir \$TMPDIR || ANNOTATE_RC=\$?
+    gz_cleanup
+    if [ "\$ANNOTATE_RC" -ne 0 ]; then echo "ERROR: funannotate annotate exited \$ANNOTATE_RC for ${out}" >&2; exit \$ANNOTATE_RC; fi
 
     EXPECTED_GBK="${params.target}/${out}/annotate_results/${out}.gbk"
     if [ ! -f "\$EXPECTED_GBK" ]; then
         echo "ERROR: funannotate annotate did not produce expected GBK: \$EXPECTED_GBK" >&2
         exit 1
     fi
+    gz_compress "${params.target}/${out}/annotate_results"
     touch ${out}.annotate.done
     """
 
