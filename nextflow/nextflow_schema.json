@@ -497,6 +497,29 @@
                     "type": "string",
                     "description": "Path to the Singularity image GENEMARK_RUN execs gmes_petap.pl/bam2hints/join_mult_hints.pl from. Default is a local conversion of docker://teambraker/braker3 (public, bundles GeneMark-ES/ET 4.72). GeneMark still requires a user-obtained license key (~/.gm_key) independent of which image runs it. A privately-built GeneMark-only alternative (https://github.com/hyphaltip/genemark-container) is also available in this lab's Singularity cache."
                 },
+                "genemark_chunked": {
+                    "type": "boolean",
+                    "description": "Scatter/gather GeneMark: train once, predict in chunks of contigs, merge. Applies to ES and fast-reuse rows with at least genemark_chunk_min_contigs contigs. false keeps the single-task route for every genome.",
+                    "default": false
+                },
+                "genemark_chunk_min_contigs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Contig count at or above which a genome takes the chunked GeneMark route.",
+                    "default": 25000
+                },
+                "genemark_chunk_contigs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Target contigs per chunk in the chunked GeneMark route (about 45 minutes at 20000 on 8 cores).",
+                    "default": 20000
+                },
+                "genemark_chunk_min_bp": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "A chunk with fewer bases than this is merged into its neighbour (gmes_petap.pl rejects input under 100,000 bp).",
+                    "default": 100000
+                },
                 "genemark_mode": {
                     "type": "string",
                     "enum": [

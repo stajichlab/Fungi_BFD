@@ -10,6 +10,7 @@ Usage: list_failed_genomes.py logs/nextflow/funannotate_trace.*.txt > failed_gen
 """
 import csv
 import gzip
+import re
 import sys
 
 
@@ -26,11 +27,16 @@ def main(paths):
             proc = r["name"].split(" (")[0].split(":")[-1]
             last[(proc, r.get("tag") or r["name"])] = r
     w = csv.writer(sys.stdout, delimiter="\t", lineterminator="\n")
-    w.writerow(["process", "genome", "status", "exit", "task_id", "hash"])
+    w.writerow(["process", "genome", "status", "exit", "task_id", "hash", "chunk"])
     n = 0
     for (proc, tag), r in sorted(last.items()):
         if r["status"] == "FAILED":
-            w.writerow([proc, tag, r["status"], r["exit"], r["task_id"], r["hash"]])
+            genome, chunk = tag, ""
+            # GENEMARK_PREDICT_CHUNK tags are <out>:<chunk>; without a tag column the name ends in "(<out>:<chunk>)"
+            m = re.match(r"^(.*):(\d{4})$", tag) or re.search(r"\((.*):(\d{4})\)$", r["name"])
+            if proc == "GENEMARK_PREDICT_CHUNK" and m:
+                genome, chunk = m.group(1), m.group(2)
+            w.writerow([proc, genome, r["status"], r["exit"], r["task_id"], r["hash"], chunk])
             n += 1
     print(f"{n} failed genome/process pairs", file=sys.stderr)
 
