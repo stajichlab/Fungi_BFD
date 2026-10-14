@@ -40,8 +40,8 @@ include { BACKFILL_ABINITIO_PARAMS }                       from '../../modules/f
 // executes) share the plain `GENEMARK_RUN` name; the eligible-sibling
 // invocation, which genuinely coexists with it in --predict_scope all, needs
 // its own alias -- same reasoning as FUNANNOTATE_PREDICT/_SIB above.
-include { GENEMARK_RUN }                                  from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
-include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from '../../modules/funannotate/predict/GENEMARK_RUN/main.nf'
+include { GENEMARK_RUN }                                  from './GENEMARK_RUN.nf'
+include { GENEMARK_RUN as GENEMARK_RUN_SIB }               from './GENEMARK_RUN.nf'
 
 include { gbkResult; staleRnaseq; staleGenome; staleTraining; sharedParamsJsonFor; staleSharedParams; sharedGenemarkModFor; trainingTranscriptBamFor; storedGenemarkFor; ownGenemarkModFor; ownAbinitioParamsFor } from '../../modules/funannotate/utils.nf'
 
