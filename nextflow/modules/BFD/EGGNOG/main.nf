@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // eggnog-mapper (diamond mode) against the EGGNOG_DATA_DIR eggnog.db +
 // eggnog_proteins.dmnd already staged for funannotate's own emapper.py
@@ -19,17 +19,19 @@ process RUN_EGGNOG {
         path("${meta.locustag}.emapper.annotations.gz"), emit: annotations
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the
     # container.
-    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}}:\${EGGNOG_DATA_DIR:-${params.eggnog_data_dir}},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.eggnog_sif}"
-    \${SING} emapper.py -i ${proteins} \\
+    \${SING} emapper.py -i ${proteins_plain} \\
         --itype proteins -m diamond \\
         --data_dir ${params.eggnog_data_dir} \\
         --cpu ${task.cpus} \\

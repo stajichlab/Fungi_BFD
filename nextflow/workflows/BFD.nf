@@ -23,7 +23,7 @@ include { BFD_FUNCTIONAL    } from '../subworkflows/local/BFD_FUNCTIONAL.nf'
 include { BFD_GENOME_STATS  } from '../subworkflows/local/BFD_GENOME_STATS.nf'
 include { BFD_MERGE         } from '../subworkflows/local/BFD_MERGE.nf'
 include { taxonRowFilter; asmidRowFilter; loadSuppressSet; suppressRowFilter } from '../modules/common/utils.nf'
-include { cleanStrain; makeSampleTag; resolveGenomeFile; dirIndex } from '../modules/common/utils.nf'
+include { cleanStrain; makeSampleTag; resolveGenomeFile; dirIndex; lookupFile } from '../modules/common/utils.nf'
 
 workflow BFD {
 
@@ -101,7 +101,7 @@ workflow BFD {
     def bfd_debug = params.bfd_debug.toBoolean()
     def proteins_ch = ready_ch
         .map { meta ->
-            def prot = pepIndex["${meta.id}.proteins.fa"]
+            def prot = lookupFile(pepIndex, "${meta.id}.proteins.fa")
             if (!prot) {
                 if (bfd_debug) log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
                 return null
@@ -111,23 +111,23 @@ workflow BFD {
         .filter { it != null }
 
     def aa_freq_ch = ready_ch.map { meta ->
-        def f = pepIndex["${meta.id}.proteins.fa"]
+        def f = lookupFile(pepIndex, "${meta.id}.proteins.fa")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def codon_freq_ch = ready_ch.map { meta ->
-        def f = cdsIndex["${meta.id}.cds-transcripts.fa"]
+        def f = lookupFile(cdsIndex, "${meta.id}.cds-transcripts.fa")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def intergenic_ch = ready_ch.map { meta ->
-        def f = gffIndex["${meta.id}.gff3"]
+        def f = lookupFile(gffIndex, "${meta.id}.gff3")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def gene_stats_ch = ready_ch.map { meta ->
-        def gff = gffIndex["${meta.id}.gff3"]
-        def dna = genomeIndex["${meta.id}.scaffolds.fa"]
+        def gff = lookupFile(gffIndex, "${meta.id}.gff3")
+        def dna = lookupFile(genomeIndex, "${meta.id}.scaffolds.fa")
         (gff && dna) ? tuple(meta, gff, dna) : null
     }.filter { it != null }
 
@@ -181,7 +181,7 @@ workflow BFD {
     }.filter { it != null }
 
     def busco_pep_ch = ready_ch.map { meta ->
-        def f = pepIndex["${meta.id}.proteins.fa"]
+        def f = lookupFile(pepIndex, "${meta.id}.proteins.fa")
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
@@ -194,8 +194,8 @@ workflow BFD {
     // FASTA (not the genome DNA), so it's its own small channel rather than
     // reusing gene_stats_ch or proteins_ch alone.
     def cgc_ch = ready_ch.map { meta ->
-        def gff  = gffIndex["${meta.id}.gff3"]
-        def prot = pepIndex["${meta.id}.proteins.fa"]
+        def gff  = lookupFile(gffIndex, "${meta.id}.gff3")
+        def prot = lookupFile(pepIndex, "${meta.id}.proteins.fa")
         (gff && prot) ? tuple(meta, gff, prot) : null
     }.filter { it != null }
 

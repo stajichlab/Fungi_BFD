@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // CAZyme Gene Cluster (CGC) / Polysaccharide Utilization Locus (PUL)
 // prediction -- item #7 (dbCAN CGC/PUL) from the functional-annotation
@@ -30,21 +30,25 @@ process RUN_CAZY_CGC {
         path("${meta.id}.cgc.tsv.gz"), emit: cgc
 
     script:
+    def gff3_plain = plainName(gff3)
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(gff3)}
+    ${gzInflate(proteins)}
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${gff3}/${proteins} may be symlinks Nextflow staged from outside \$PWD
+    # ${gff3_plain}/${proteins_plain} may be symlinks Nextflow staged from outside \$PWD
     # (e.g. a shared genome_annotation dir elsewhere under /bigdata); bind
     # their real parent dirs too, or apptainer won't see the symlink targets
     # inside the container.
-    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
-    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
     apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan easy_CGC \\
-        --input_raw_data ${proteins} \\
+        --input_raw_data ${proteins_plain} \\
         --mode protein \\
-        --input_gff ${gff3} \\
+        --input_gff ${gff3_plain} \\
         --gff_type NCBI_prok \\
         --output_dir \${OUTD} \\
         --db_dir ${params.dbcan_dbdir} \\

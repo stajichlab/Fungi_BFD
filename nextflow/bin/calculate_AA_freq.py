@@ -9,17 +9,20 @@ import gzip
 import os
 import time
 
+from bfd_common import open_text
+
 
 def calculate_aa_frequencies(fasta_file):
     """Return (species_prefix, {aa: frequency}) computed across all protein sequences in fasta_file."""
     aa_counter = Counter()
     total_aa = 0
     species = None
-    for record in SeqIO.parse(fasta_file, "fasta"):
-        if not species:
-            species = record.id.split("_")[0]
-        aa_counter.update(record.seq)
-        total_aa += len(record.seq)
+    with open_text(fasta_file) as fh:
+        for record in SeqIO.parse(fh, "fasta"):
+            if not species:
+                species = record.id.split("_")[0]
+            aa_counter.update(record.seq)
+            total_aa += len(record.seq)
 
     aa_frequencies = {aa: count / total_aa for aa, count in aa_counter.items()}
     return (species,aa_frequencies)
@@ -59,7 +62,7 @@ def main():
                 n += 1
         else:
             for file in os.listdir(args.dir):
-                if file.endswith(args.ext):
+                if file.endswith(args.ext) or file.endswith(args.ext + ".gz"):
                     if args.debug:
                         print(f"Processing {file}")
                     (prefix,frequencies) = calculate_aa_frequencies(os.path.join(args.dir,file))

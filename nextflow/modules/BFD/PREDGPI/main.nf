@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_PREDGPI {
     tag        "${meta.locustag}"
@@ -12,9 +12,11 @@ process RUN_PREDGPI {
         path("${meta.locustag}.predgpi.gff3.gz"), emit: gff3
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load predgpi
-    predgpi.py -f ${proteins} -m gff3 -o ${meta.locustag}.predgpi.gff3
+    predgpi.py -f ${proteins_plain} -m gff3 -o ${meta.locustag}.predgpi.gff3
     pigz ${meta.locustag}.predgpi.gff3
     """
 

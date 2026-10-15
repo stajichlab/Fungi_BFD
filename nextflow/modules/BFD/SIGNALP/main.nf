@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_SIGNALP {
     tag        "${meta.locustag}"
@@ -13,11 +13,13 @@ process RUN_SIGNALP {
         path("${meta.locustag}.signalp.results.txt.gz"),  emit: results
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load signalp/6-gpu
     OUTD=\$(mktemp -d)
     signalp6 -od \$OUTD -org euk --mode fast -format txt \\
-        -fasta ${proteins} --write_procs ${task.cpus} -bs 100
+        -fasta ${proteins_plain} --write_procs ${task.cpus} -bs 100
     pigz -c \$OUTD/output.gff3             > ${meta.locustag}.signalp.gff3.gz
     pigz -c \$OUTD/prediction_results.txt  > ${meta.locustag}.signalp.results.txt.gz
     rm -rf \$OUTD

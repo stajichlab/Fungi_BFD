@@ -9,6 +9,8 @@ import gzip
 import os
 import time
 
+from bfd_common import open_text
+
 
 def validate(seq, alphabet="ACGT"):
     """Return True if seq contains only characters from alphabet (default ACGT)."""
@@ -21,16 +23,17 @@ def calculate_codon_frequencies(fasta_file):
     codon_counter = Counter()
     total_codons = 0
     species = None
-    for record in SeqIO.parse(fasta_file, "fasta"):
-        if not species:
-            species = record.id.split("_")[0]
-        seqstr = str(record.seq).upper()
-        codon_count = int(len(seqstr) / 3) # round down to the nearest codon
-        for i in range(0, 3 * codon_count,3):
-            codon = seqstr[i:i+3]
-            if validate(codon):
-                codon_counter.update({codon: 1})
-        total_codons += codon_count
+    with open_text(fasta_file) as fh:
+        for record in SeqIO.parse(fh, "fasta"):
+            if not species:
+                species = record.id.split("_")[0]
+            seqstr = str(record.seq).upper()
+            codon_count = int(len(seqstr) / 3) # round down to the nearest codon
+            for i in range(0, 3 * codon_count,3):
+                codon = seqstr[i:i+3]
+                if validate(codon):
+                    codon_counter.update({codon: 1})
+            total_codons += codon_count
 
     codon_frequencies = {codon: count / total_codons for codon, count in codon_counter.items()}
     return (species,codon_frequencies)
@@ -70,7 +73,7 @@ def main():
                 n += 1
         else:
             for file in os.listdir(args.dir):
-                if file.endswith(args.ext):
+                if file.endswith(args.ext) or file.endswith(args.ext + ".gz"):
                     if args.debug:
                         print(f"Processing {file}")
                     (prefix,frequencies) = calculate_codon_frequencies(os.path.join(args.dir,file))

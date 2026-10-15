@@ -11,8 +11,17 @@ turns a bare `on` dict key into the boolean True (confirmed the hard way --
 see this plan's "Revision note"), and PyYAML isn't installed in every
 Python environment this pipeline's Nextflow labels use anyway.
 """
+import gzip
 import json
 import sys
+
+
+def open_text(path, mode="rt"):
+    """Open a plain or gzip-compressed text file transparently (chosen by a .gz suffix)."""
+    path = str(path)
+    if path.endswith(".gz"):
+        return gzip.open(path, mode)
+    return open(path, mode)
 
 
 def load_schema(path):

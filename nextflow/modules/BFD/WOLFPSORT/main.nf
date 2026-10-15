@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_WOLFPSORT {
     tag        "${meta.locustag}"
@@ -12,9 +12,11 @@ process RUN_WOLFPSORT {
         path("${meta.locustag}.wolfpsort.results.txt.gz"), emit: results
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load wolfpsort
-    cat ${proteins} | runWolfPsortSummary fungi > ${meta.locustag}.wolfpsort.results.txt
+    cat ${proteins_plain} | runWolfPsortSummary fungi > ${meta.locustag}.wolfpsort.results.txt
     pigz ${meta.locustag}.wolfpsort.results.txt
     """
 

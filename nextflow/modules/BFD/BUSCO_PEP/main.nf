@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process BUSCO_PEP {
     tag        "${meta.locustag}"
@@ -12,13 +12,15 @@ process BUSCO_PEP {
         path("${meta.locustag}.BUSCO_summary.${meta.lineage}.txt"), emit: summary
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load busco
     export BUSCO_LINEAGES=/srv/projects/db/BUSCO/v12/
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     SCRATCH=\${SCRATCH:-/tmp}
     RUNDIR="${meta.locustag}_busco_pep"
-    busco -i ${proteins} \\
+    busco -i ${proteins_plain} \\
           -l ${meta.lineage} \\
           -m proteins \\
           -o \$RUNDIR \\

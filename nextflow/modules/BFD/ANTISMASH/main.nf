@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // Secondary-metabolite biosynthetic gene cluster (BGC) prediction. Runs
 // directly off BFD's existing gff3 + genome-fasta inputs via
@@ -20,14 +20,16 @@ process RUN_ANTISMASH {
         path("${meta.id}.antismash.json.gz"), emit: json
 
     script:
+    def gff3_plain = plainName(gff3)
     """
+    ${gzInflate(gff3)}
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${gff3}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
+    # ${gff3_plain}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
     # a shared genome_annotation dir elsewhere under /bigdata); bind their real
     # parent dirs too, or apptainer won't see the symlink targets inside the
     # container.
-    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
     GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
     SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
@@ -35,7 +37,7 @@ process RUN_ANTISMASH {
         antismash --taxon ${params.antismash_taxon} \\
             --databases ${params.antismash_dbdir} \\
             --output-dir \${OUTD} \\
-            --genefinding-gff3 ${gff3} \\
+            --genefinding-gff3 ${gff3_plain} \\
             --fullhmmer --clusterhmmer --cb-general --pfam2go \\
             -c ${task.cpus} \\
             ${genome}

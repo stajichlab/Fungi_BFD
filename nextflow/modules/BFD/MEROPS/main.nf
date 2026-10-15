@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_MEROPS {
     tag        "${meta.locustag}"
@@ -12,22 +12,24 @@ process RUN_MEROPS {
         path("${meta.locustag}.blasttab.gz"), emit: blasttab
 
     script:
+    def proteins_plain = plainName(proteins)
     // Containerized blastp replaces `module load ncbi-blast` so the version is
     // pinned (blast 2.16.0 SIF, same image RUN_SWISSPROT uses for its
     // alternative engine). The MEROPS DB path still comes from the db-merops
     // module env; the DB directory is bound so the container can read it.
     """
+    ${gzInflate(proteins)}
     module load db-merops/124
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the
     # container.
-    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},\${MEROPS_DB}:\${MEROPS_DB},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec \${SING_BINDS} ${params.blastp_sif}"
-    \${SING} blastp -query ${proteins} \\
+    \${SING} blastp -query ${proteins_plain} \\
         -db \$MEROPS_DB/merops_scan.lib \\
         -out ${meta.locustag}.blasttab \\
         -num_threads ${task.cpus} \\
