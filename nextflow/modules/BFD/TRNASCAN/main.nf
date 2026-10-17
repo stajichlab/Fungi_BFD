@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // tRNA gene calling, run standalone in BFD instead of reusing funannotate's
 // cached tRNAscan-SE output -- keeps BFD's functional-annotation stack
@@ -26,14 +26,16 @@ process RUN_TRNASCAN {
         path("${meta.id}.trnascan.no-overlaps.gff3.gz"), emit: gff3
 
     script:
+    def gff3_plain = plainName(gff3)
     """
+    ${gzInflate(gff3)}
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${gff3}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
+    # ${gff3_plain}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
     # a shared genome_annotation dir elsewhere under /bigdata); bind their real
     # parent dirs too, or apptainer won't see the symlink targets inside the
     # container.
-    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3}))
+    GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
     GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
     SING_BINDS="--bind \${PWD}:\${PWD},${projectDir}:${projectDir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome}
@@ -46,7 +48,7 @@ process RUN_TRNASCAN {
 
     module load bedtools/2.30.0
     bedtools sort -i ${meta.id}.trnascan.raw.gff3   > ${meta.id}.trnascan.sorted.gff3
-    bedtools sort -i ${gff3}                        > ${meta.id}.genes.sorted.gff3
+    bedtools sort -i ${gff3_plain}                        > ${meta.id}.genes.sorted.gff3
     bedtools intersect -sorted -v \\
         -a ${meta.id}.trnascan.sorted.gff3 \\
         -b ${meta.id}.genes.sorted.gff3 > ${meta.id}.trnascan.no-overlaps.gff3

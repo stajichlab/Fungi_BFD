@@ -1,3 +1,5 @@
+include { plainName; gzInflate } from '../../common/utils.nf'
+
 process RUN_CAZY {
     tag        "${meta.locustag}"
     label      'cazy'
@@ -12,11 +14,13 @@ process RUN_CAZY {
         path("${meta.id}.substrates.tsv.gz"), emit: substrates
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load dbcanlight
     mkdir -p ${meta.id}
-    dbcanlight search -i ${proteins} -m cazyme -o ${meta.id} -t ${task.cpus}
-    dbcanlight search -i ${proteins} -m sub    -o ${meta.id} -t ${task.cpus}
+    dbcanlight search -i ${proteins_plain} -m cazyme -o ${meta.id} -t ${task.cpus}
+    dbcanlight search -i ${proteins_plain} -m sub    -o ${meta.id} -t ${task.cpus}
     dbcanlight conclude ${meta.id}
     pigz -f ${meta.id}/cazymes.tsv ${meta.id}/substrates.tsv ${meta.id}/overview.tsv
     mv ${meta.id}/overview.tsv.gz   ${meta.id}.overview.tsv.gz

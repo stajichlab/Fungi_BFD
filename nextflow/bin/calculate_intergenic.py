@@ -8,6 +8,8 @@ import sys
 import time
 from contextlib import ExitStack
 
+from bfd_common import open_text
+
 def parse_gff_get_distances(gff, debug=False):
     """
     Process a GFF file to extract gene distances
@@ -26,7 +28,7 @@ def parse_gff_get_distances(gff, debug=False):
         print(f"DEBUG: parse_gff_get_distances - Reading {gff}")
     genedata = {}
     
-    with open(gff, "r") as gff_fh:
+    with open_text(gff) as gff_fh:
         transcript2gene = {}
         time0 = time.time()
         for line in gff_fh:

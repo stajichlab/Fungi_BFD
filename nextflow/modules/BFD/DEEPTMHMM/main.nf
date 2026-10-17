@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // DeepTMHMM (deep-learning TM-topology caller, supersedes classic TMHMM --
 // see RUN_TMHMM alongside this). No Lmod module or bioconda package exists;
@@ -19,19 +19,21 @@ process RUN_DEEPTMHMM {
         path("${meta.locustag}.deeptmhmm.gff3.gz"), emit: gff3
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load apptainer
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the
     # container.
-    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     SING="apptainer exec ${params.deeptmhmm_gpu ? '--nv' : ''} \${SING_BINDS} ${params.deeptmhmm_sif}"
     OUTD=\$(mktemp -d)
-    \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta \${PWD}/${proteins} --output-dir \${OUTD}" || \\
-    \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta ${proteins} --output-dir \${OUTD}"
+    \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta \${PWD}/${proteins_plain} --output-dir \${OUTD}" || \\
+    \${SING} bash -c "cd /opt/deeptmhmm && python3 predict.py --fasta ${proteins_plain} --output-dir \${OUTD}"
     pigz -c \$OUTD/TMRs.gff3 > ${meta.locustag}.deeptmhmm.gff3.gz
     rm -rf \$OUTD
     """

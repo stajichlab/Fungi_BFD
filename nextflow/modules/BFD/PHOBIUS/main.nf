@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // Phobius has no public container -- it's an academic-license binary
 // (phobius.binf.ku.dk), not redistributable on bioconda/biocontainers, so
@@ -18,9 +18,11 @@ process RUN_PHOBIUS {
         path("${meta.locustag}.phobius.short.txt.gz"), emit: short_txt
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load phobius
-    phobius.pl -short ${proteins} > ${meta.locustag}.phobius.short.txt
+    phobius.pl -short ${proteins_plain} > ${meta.locustag}.phobius.short.txt
     pigz ${meta.locustag}.phobius.short.txt
     """
 

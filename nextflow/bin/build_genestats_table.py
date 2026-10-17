@@ -10,6 +10,8 @@ import time
 import tempfile
 from contextlib import ExitStack
 
+from bfd_common import open_text
+
 from Bio.Seq import Seq
 from pyfaidx import Fasta
 from pybedtools import BedTool
@@ -74,7 +76,7 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
     else:
         tRNA_gff = None
 
-    with open(gff, "r") as gff_fh:
+    with open_text(gff) as gff_fh:
         if debug:
             print(f"DEBUG: tRNA_gff is {tRNA_gff}")
             print(f"DEBUG: tRNA_temp is {temp_tRNA.name}")

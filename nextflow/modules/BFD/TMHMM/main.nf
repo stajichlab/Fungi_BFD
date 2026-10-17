@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_TMHMM {
     tag        "${meta.locustag}"
@@ -13,10 +13,12 @@ process RUN_TMHMM {
         path("${meta.locustag}.tmhmm_results.tsv.gz"), emit: full_tsv
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load tmhmm
-    tmhmm --noplot         < ${proteins} > ${meta.locustag}.tmhmm_results.tsv
-    tmhmm --short --noplot < ${proteins} > ${meta.locustag}.tmhmm_short.tsv
+    tmhmm --noplot         < ${proteins_plain} > ${meta.locustag}.tmhmm_results.tsv
+    tmhmm --short --noplot < ${proteins_plain} > ${meta.locustag}.tmhmm_short.tsv
     pigz ${meta.locustag}.tmhmm_results.tsv ${meta.locustag}.tmhmm_short.tsv
     """
 

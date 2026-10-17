@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_TARGETP {
     tag        "${meta.locustag}"
@@ -12,11 +12,13 @@ process RUN_TARGETP {
         path("${meta.locustag}_summary.targetp2.gz"), emit: summary
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     TMPD=\$(mktemp -d)
     module load targetp
     targetp -batch 50 -tmp \$TMPD -format short \\
-        -fasta ${proteins} -org non-pl -prefix ${meta.locustag}
+        -fasta ${proteins_plain} -org non-pl -prefix ${meta.locustag}
     pigz -f ${meta.locustag}_summary.targetp2
     rm -rf \$TMPD
     """

@@ -44,10 +44,17 @@ process SETUP_SYMLINKS {
             linkname=\${pair##*|}
             if [ -e "\$target" ]; then
                 ln -sfn "\$target" "\$linkname"
+                # The result may have been uncompressed again: drop a stale .gz link
+                [ -L "\$linkname.gz" ] && rm -f "\$linkname.gz"
             elif [ -e "\$target.gz" ]; then
                 # Compressed result (.gff3.gz, .cds-transcripts.fa.gz): link under the .gz name
                 ln -sfn "\$target.gz" "\$linkname.gz"
+                # The plain link left from before compression now dangles: remove it
+                [ -L "\$linkname" ] && rm -f "\$linkname"
             else
+                # Neither form exists: remove dangling links of either form
+                [ -L "\$linkname" ] && [ ! -e "\$linkname" ] && rm -f "\$linkname"
+                [ -L "\$linkname.gz" ] && [ ! -e "\$linkname.gz" ] && rm -f "\$linkname.gz"
                 echo "[WARN] source not found, skipping: \$target" >&2
             fi
         done

@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_SWISSPROT {
     tag        "${meta.locustag}"
@@ -23,19 +23,21 @@ process RUN_SWISSPROT {
     // kept); the 80-80 functional-transfer flag is derived in the merge, not
     // pre-filtered here.
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load apptainer
     SWISSPROT_DB=${params.swissprot_dbdir}
     export TMPDIR=\${SCRATCH:-/tmp}
-    # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the
     # container.
-    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+    PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},\${SWISSPROT_DB}:\${SWISSPROT_DB},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     if [ "${params.swissprot_search}" = "blastp" ]; then
         SING="apptainer exec \${SING_BINDS} ${params.blastp_sif}"
-        \${SING} blastp -query ${proteins} \\
+        \${SING} blastp -query ${proteins_plain} \\
             -db \${SWISSPROT_DB}/uniprot_sprot \\
             -out ${meta.locustag}.blasttab \\
             -num_threads ${task.cpus} \\
@@ -47,7 +49,7 @@ process RUN_SWISSPROT {
         SING="apptainer exec \${SING_BINDS} ${params.diamond_sif}"
         \${SING} diamond blastp --sensitive \\
             -d \${SWISSPROT_DB}/uniprot_sprot.dmnd \\
-            -q ${proteins} \\
+            -q ${proteins_plain} \\
             -o ${meta.locustag}.blasttab \\
             --threads ${task.cpus} \\
             -k ${params.swissprot_max_targets} \\

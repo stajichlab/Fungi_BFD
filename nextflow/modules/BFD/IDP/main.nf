@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_IDP {
     tag        "${meta.locustag}"
@@ -14,9 +14,11 @@ process RUN_IDP {
         path("${meta.locustag}.idp_summary.csv.gz"), emit: idp_summary_csv
 
     script:
+    def proteins_plain = plainName(proteins)
     """
+    ${gzInflate(proteins)}
     module load aiupred
-    aiupred.py -i ${proteins} -o ${meta.locustag}.aiupred.txt
+    aiupred.py -i ${proteins_plain} -o ${meta.locustag}.aiupred.txt
     pigz ${meta.locustag}.aiupred.txt
     python3 ${projectDir}/bin/gather_AIUPred.py ${meta.locustag}.aiupred.txt.gz \\
         --outfile      ${meta.locustag}.idp.csv \\

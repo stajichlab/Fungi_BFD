@@ -482,6 +482,38 @@ def dirIndex(String dir) {
     dirPath.toFile().listFiles().collectEntries { p -> [(p.getName()): file(p.toString(), glob: false)] }
 }
 
+// ── gz-aware input lookup and inflate ────────────────────────────────────────
+// predict_results holds a mix of plain and gzip-compressed files (see
+// docs/GZ_PREDICT_OUTPUTS.md). SETUP_SYMLINKS links a compressed result as
+// <name>.gz. lookupFile() returns the live file for <name> from a dirIndex():
+// the plain entry if it resolves, else <name>.gz, else null. A plain entry that
+// is a dangling symlink (the target was compressed later) is skipped.
+// lastModified() on the result follows the symlink, so clearIfStale() compares
+// output mtimes with the mtime of the real (.gz) file.
+def lookupFile(Map index, String name) {
+    def plain = index[name]
+    if (plain && plain.exists()) return plain
+    def gz = index["${name}.gz"]
+    if (gz && gz.exists()) return gz
+    return null
+}
+
+// Name of a staged input with any .gz suffix removed.
+def plainName(f) {
+    return f.toString().tokenize('/')[-1].replaceAll(/\.gz$/, '')
+}
+
+// Shell line for a process script: when the staged input f is a .gz, inflate it
+// into the task work dir under plainName(f), so a tool that cannot read gzip sees
+// a plain file. Returns '' for a plain input. The copy lives in the work dir and
+// is never written next to the shared predict_results.
+def gzInflate(f) {
+    def n = f.toString().tokenize('/')[-1]
+    if (!n.endsWith('.gz')) return ''
+    def p = plainName(f)
+    return "pigz -dc '${n}' > '${p}' || { echo '[ERROR] cannot inflate ${n}' >&2; exit 1; }"
+}
+
 // Resolve a genome FASTA for BFD's genome-stats channels, which need to work
 // both post-annotation (genome_dir holds SETUP_SYMLINKS' <meta.id>.scaffolds.fa)
 // and pre-annotation (genome_dir = input_clean_genomes/, holding raw/clean
@@ -498,7 +530,8 @@ def dirIndex(String dir) {
 // worse, three .exists() calls) on every single genome.
 def resolveGenomeFile(Map genomeIndex, String metaId, String asmid) {
     def byId = genomeIndex["${metaId}.scaffolds.fa"]
-    if (byId) return byId
+    // A dangling link (predict_results gone) must not shadow the ASMID fallback.
+    if (byId && byId.exists()) return byId
     if (!asmid) return null
     return genomeIndex["${asmid}.fa.gz"] ?: genomeIndex["${asmid}.masked.fasta.gz"]
 }

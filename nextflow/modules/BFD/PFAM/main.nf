@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process RUN_PFAM {
     tag        "${meta.locustag}"
@@ -13,6 +13,7 @@ process RUN_PFAM {
         path("${meta.locustag}.tblout.gz"),  emit: tblout
 
     script:
+    def proteins_plain = plainName(proteins)
     // --cpu-bind=none is required for multi-task srun on this cluster -- the
     // default cpu-bind mode conflicts with the job step's cgroup/allocation
     // mask and fails every task outright ("CPU binding outside of job step
@@ -25,6 +26,7 @@ process RUN_PFAM {
     // assumed. Only pass --cpu in the non-MPI (threaded) branch.
     def cpu_flag   = params.pfam_tasks > 1 ? "" : "--cpu ${task.cpus}"
     """
+    ${gzInflate(proteins)}
     module load db-pfam
     if [ ! -z "${mpi_flag}" ]; then
         module load hmmer/3.4-mpi
@@ -42,18 +44,18 @@ process RUN_PFAM {
         module load apptainer
         PFAM_SIF=${params.pfam_sif}
         export TMPDIR=\${SCRATCH:-/tmp}
-        # ${proteins} may be a symlink Nextflow staged from outside \$PWD (e.g.
+        # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g.
         # a shared genome_annotation dir elsewhere under /bigdata); bind its
         # real parent dir too, or apptainer won't see the symlink target
         # inside the container.
-        PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins}))
+        PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
         SING_BINDS="--bind \${PWD}:\${PWD},\${PFAM_DB}:\${PFAM_DB},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
         SING="apptainer exec \${SING_BINDS} \${PFAM_SIF}"
     fi
     ${mpi_launch} \${SING} hmmsearch ${mpi_flag} --cut_ga --noali ${cpu_flag} \\
         --domtbl    ${meta.locustag}.domtblout \\
         --tblout    ${meta.locustag}.tblout \\
-        \$PFAM_DB/Pfam-A.hmm ${proteins} > /dev/null
+        \$PFAM_DB/Pfam-A.hmm ${proteins_plain} > /dev/null
     pigz ${meta.locustag}.domtblout ${meta.locustag}.tblout
     """
 
