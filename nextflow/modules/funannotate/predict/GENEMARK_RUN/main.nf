@@ -91,6 +91,11 @@ process GENEMARK_RUN {
     tuple val(out), val(species), path("${out}.genemark.mod"), optional: true, emit: mod
 
     script:
+    // gmes_petap.pl (CheckGcode) accepts only --gcode 1, 6 and 29; table 26 gives
+    // "error, input genetic code 26 is not supported" (exit 1). Table 26 (CUG=Ala)
+    // keeps the standard stop codons, so GeneMark runs with its default code 1.
+    // Used only for the --gcode probe below; the rendered script is unchanged for other tables.
+    def gm_table = (transl_table.toString() == '26') ? '1' : transl_table
     def filterIntronsFindStrand = "${workflow.projectDir}/bin/vendor/filterIntronsFindStrand.pl"
     """
     # ── Skip cleanly if a current GTF already exists (idempotent -resume) ───
@@ -226,9 +231,9 @@ process GENEMARK_RUN {
 
     # ── --gcode support probe (funannotate's _genemark_supports_gcode()) ────
     GCODE_ARGS=()
-    if [ "${transl_table}" = "6" ] || [ "${transl_table}" = "26" ]; then
+    if [ "${gm_table}" = "6" ] || [ "${gm_table}" = "26" ]; then
         if \$SING gmes_petap.pl 2>&1 | grep -q -- '--gcode'; then
-            GCODE_ARGS=(--gcode "${transl_table}")
+            GCODE_ARGS=(--gcode "${gm_table}")
         else
             echo "[WARN] GeneMark does not support --gcode in this version; running with default code 1 -- gene calls in CUG/alt-table genomes may be unreliable" >&2
         fi

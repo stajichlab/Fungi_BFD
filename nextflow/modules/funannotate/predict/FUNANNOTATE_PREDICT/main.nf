@@ -116,7 +116,7 @@ process FUNANNOTATE_PREDICT {
     # verified code-identical to the patch file (comments aside) via
     # `apptainer exec ... cat /pixi/.../funannotate/aux_scripts/augustus_parallel.py`.
     SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.proteins_microsporidia}:${params.proteins_microsporidia},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR"
-    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_predict_sif ?: params.funannotate_sif}"
 
     # Microsporidia protein evidence override (see profile_funannotate.config's
     # proteins_microsporidia comment for the exonerate-alignment rationale).
@@ -442,7 +442,7 @@ process FUNANNOTATE_PREDICT {
             *) SING_BINDS="\$SING_BINDS,\$(dirname "${shared_params_json}"):\$(dirname "${shared_params_json}")" ;;
         esac
     fi
-    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_predict_sif ?: params.funannotate_sif}"
 
     # ── Repeat-aware EVM mode ─────────────────────────────────────────────────
     # See profile_funannotate.config's predict_evm_repeat_pct_threshold comment
@@ -460,6 +460,37 @@ process FUNANNOTATE_PREDICT {
         fi
     fi
 
+    # EVM in node-local scratch (predict --evm_tmpdir): EVM makes one directory per contig,
+    # which is slow on /bigdata for genomes with 100k+ contigs (Massospora_platypediae:
+    # about 17,600 s on /bigdata against 2,442 s on scratch, same gene models). Only passed
+    # when the predict_evm_tmpdir param is true and this funannotate lists the option
+    # (1.9.1-beta.1 and later); older images would reject the unknown flag.
+    # \$TMPDIR is \${SCRATCH:-/tmp} (exported above). The EVM directory is removed by
+    # predict after a successful run and kept, with its path in the log, after a failure.
+    # The help text goes to a variable first: with pipefail, grep -q closing the pipe early
+    # can make the pipeline report failure (SIGPIPE) although the option is listed.
+    EVM_TMPDIR_FLAG=()
+    PREDICT_HELP=""
+    if [ "${params.predict_evm_tmpdir}" = "true" ]; then
+        PREDICT_HELP=\$(\$SING funannotate predict --help 2>&1 || true)
+    fi
+    if [ "${params.predict_evm_tmpdir}" = "true" ]; then
+        # Scratch check: \$SCRATCH must be set (else \$TMPDIR is /tmp, not the job's
+        # node-local directory), writable, and have predict_evm_tmpdir_min_gb free.
+        SCRATCH_FREE_GB=0
+        if [ -n "\${SCRATCH:-}" ] && [ -d "\$SCRATCH" ] && [ -w "\$SCRATCH" ]; then
+            SCRATCH_FREE_GB=\$(df -Pk "\$SCRATCH" | awk 'NR==2{printf "%d", \$4/1048576}')
+        fi
+        if [[ "\$PREDICT_HELP" != *"--evm_tmpdir"* ]]; then
+            echo "[INFO] ${out}: funannotate in this image has no --evm_tmpdir; EVM stays in predict_misc"
+        elif [ "\$SCRATCH_FREE_GB" -lt ${params.predict_evm_tmpdir_min_gb} ]; then
+            echo "[WARN] ${out}: SCRATCH='\${SCRATCH:-}' has \${SCRATCH_FREE_GB} GB free or is unusable (need ${params.predict_evm_tmpdir_min_gb}); EVM stays in predict_misc"
+        else
+            EVM_TMPDIR_FLAG=(--evm_tmpdir "\$TMPDIR")
+            echo "[INFO] ${out}: EVM will run under \$TMPDIR (--evm_tmpdir), \${SCRATCH_FREE_GB} GB free"
+        fi
+    fi
+
     \$SING funannotate predict --name ${locustag} -i "\$GENOME_IN" --strain "${strain}" \\
         -o "\$PREDICTDIR" -s "${species}" --cpu ${task.cpus} --busco_db ${busco_lineage} \\
         --AUGUSTUS_CONFIG_PATH \$AUGUSTUS_CONFIG_PATH -w "\${WEIGHT_ARGS[@]}" \\
@@ -467,7 +498,7 @@ process FUNANNOTATE_PREDICT {
         --keep_no_stops --header_length ${header_length} --protein_evidence "\$PROTEIN_EVIDENCE" \\
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
-        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" "\${EVM_REPEAT_FLAGS[@]}" || true
+        "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" "\${EVM_REPEAT_FLAGS[@]}" "\${EVM_TMPDIR_FLAG[@]}" || true
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"
