@@ -225,6 +225,9 @@ EOF
 #                   never a "missing image" problem -- see
 #                   nextflow/conf/profile_ANI.config's skani_container
 #                   comment for the full incident).
+# funannotate-1.9.1-beta.2.sif (funannotate_predict_sif) is NOT listed: it is a local overlay built with
+# funannotate-live scripts/build_overlay_sif.sh (base funannotate-1.9.0.sif), not a registry image.
+# It must already exist in the cache; a pull would fail or fetch a different image.
 PINNED_SIFS="\
 AAFTF-latest.sif|public|aaftf_sif|docker://ghcr.io/stajichlab/aaftf:latest|
 funannotate-1.9.0-rc.6.sif|public|funannotate_sif|docker://ghcr.io/nextgenusfs/funannotate:v1.9.0-rc.6|
