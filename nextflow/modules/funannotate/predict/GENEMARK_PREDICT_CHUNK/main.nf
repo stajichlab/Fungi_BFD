@@ -25,6 +25,10 @@ process GENEMARK_PREDICT_CHUNK {
     tuple val(out), val(idx), val(n_chunks), path("${out}.chunk_${idx}.gtf"), emit: gtf
 
     script:
+    // gmes_petap.pl (CheckGcode) accepts only --gcode 1, 6 and 29; table 26 gives
+    // "error, input genetic code 26 is not supported" (exit 1). Table 26 (CUG=Ala)
+    // keeps the standard stop codons, so GeneMark runs with its default code 1.
+    def gm_table = (transl_table.toString() == '26') ? '1' : transl_table
     """
     set -euo pipefail
     source /etc/profile.d/modules.sh 2>/dev/null || true
@@ -47,10 +51,10 @@ process GENEMARK_PREDICT_CHUNK {
     # Same --gcode decision as GENEMARK_TRAIN. Capture the help text first: piping gmes into
     # `grep -q` under pipefail can fail on SIGPIPE. An empty help text means the probe itself failed.
     GCODE_ARGS=()
-    if [ "${transl_table}" = "6" ] || [ "${transl_table}" = "26" ]; then
+    if [ "${gm_table}" = "6" ] || [ "${gm_table}" = "26" ]; then
         GMES_HELP=\$(\$SING gmes_petap.pl 2>&1 || true)
         [ -n "\$GMES_HELP" ] || { echo "ERROR: could not run gmes_petap.pl to probe --gcode support (transl_table ${transl_table})" >&2; exit 1; }
-        if printf '%s' "\$GMES_HELP" | grep -q -- '--gcode'; then GCODE_ARGS=(--gcode "${transl_table}"); fi
+        if printf '%s' "\$GMES_HELP" | grep -q -- '--gcode'; then GCODE_ARGS=(--gcode "${gm_table}"); fi
     fi
 
     CHUNK_CONTIGS=\$(grep -c '^>' "\$WORK/genome.fa")

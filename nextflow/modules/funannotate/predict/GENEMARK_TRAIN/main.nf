@@ -116,6 +116,13 @@ process GENEMARK_TRAIN {
     tuple val(out), path("chunks/chunk_*.fa.gz"), optional: true, emit: chunks
 
     script:
+    // gmes_petap.pl (CheckGcode) accepts only --gcode 1, 6 and 29; table 26 gives
+    // "error, input genetic code 26 is not supported" (exit 1). Table 26 (CUG=Ala)
+    // keeps the standard stop codons, so GeneMark runs with its default code 1.
+    def gm_table = (transl_table.toString() == '26') ? '1' : transl_table
+    // prodigal 2.6.3 accepts only tables 1-6, 9-16 and 21-25 (tested 0-31: others exit 15,
+    // "Invalid translation table specified."). Any other table (e.g. 26) falls back to table 1.
+    def prodigal_table = (transl_table.toString() in ['1','2','3','4','5','6','9','10','11','12','13','14','15','16','21','22','23','24','25']) ? transl_table.toString() : '1'
     def filterIntronsFindStrand = "${workflow.projectDir}/bin/vendor/filterIntronsFindStrand.pl"
     """
     # ── Skip cleanly if a current GTF already exists (idempotent -resume) ───
@@ -257,7 +264,10 @@ process GENEMARK_TRAIN {
     if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
         echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
         module load prodigal
-        prodigal -i genome.fa -o "${out}.prodigal.raw.gff3" -f gff -p single -g "${transl_table}"
+        if [ "${prodigal_table}" != "${transl_table}" ]; then
+            echo "[WARN] GENEMARK_RUN ${out}: prodigal does not support translation table ${transl_table}; using table ${prodigal_table}" >&2
+        fi
+        prodigal -i genome.fa -o "${out}.prodigal.raw.gff3" -f gff -p single -g "${prodigal_table}"
         python "${workflow.projectDir}/bin/prodigal_hierarchy.py" \\
             "${out}.prodigal.raw.gff3" "${out}.other.gff3"
         PRODIGAL_REPORT="${params.target}/prodigal_selected_microsporidia.tsv"
@@ -268,14 +278,14 @@ process GENEMARK_TRAIN {
 
     # ── --gcode support probe (funannotate's _genemark_supports_gcode()) ────
     GCODE_ARGS=()
-    if [ "${transl_table}" = "6" ] || [ "${transl_table}" = "26" ]; then
+    if [ "${gm_table}" = "6" ] || [ "${gm_table}" = "26" ]; then
         if \$SING gmes_petap.pl 2>&1 | grep -q -- '--gcode'; then
-            GCODE_ARGS=(--gcode "${transl_table}")
+            GCODE_ARGS=(--gcode "${gm_table}")
         else
             echo "[WARN] GeneMark does not support --gcode in this version; running with default code 1 -- gene calls in CUG/alt-table genomes may be unreliable" >&2
         fi
-    elif [ "${transl_table}" != "1" ]; then
-        echo "[WARN] GeneMark only supports --gcode 6 or 26; ignoring table ${transl_table} and running with default code 1" >&2
+    elif [ "${gm_table}" != "1" ]; then
+        echo "[WARN] GeneMark only supports --gcode 1, 6 and 29; ignoring table ${transl_table} and running with default code 1" >&2
     fi
 
     # gmes_petap.pl's own "too small" abort (e.g. "error, input sequence size

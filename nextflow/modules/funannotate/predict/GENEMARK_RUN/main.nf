@@ -96,6 +96,9 @@ process GENEMARK_RUN {
     // keeps the standard stop codons, so GeneMark runs with its default code 1.
     // Used only for the --gcode probe below; the rendered script is unchanged for other tables.
     def gm_table = (transl_table.toString() == '26') ? '1' : transl_table
+    // prodigal 2.6.3 accepts only tables 1-6, 9-16 and 21-25 (tested 0-31: others exit 15,
+    // "Invalid translation table specified."). Any other table (e.g. 26) falls back to table 1.
+    def prodigal_table = (transl_table.toString() in ['1','2','3','4','5','6','9','10','11','12','13','14','15','16','21','22','23','24','25']) ? transl_table.toString() : '1'
     def filterIntronsFindStrand = "${workflow.projectDir}/bin/vendor/filterIntronsFindStrand.pl"
     """
     # ── Skip cleanly if a current GTF already exists (idempotent -resume) ───
@@ -220,7 +223,10 @@ process GENEMARK_RUN {
     if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
         echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
         module load prodigal
-        prodigal -i genome.fa -o "${out}.prodigal.raw.gff3" -f gff -p single -g "${transl_table}"
+        if [ "${prodigal_table}" != "${transl_table}" ]; then
+            echo "[WARN] GENEMARK_RUN ${out}: prodigal does not support translation table ${transl_table}; using table ${prodigal_table}" >&2
+        fi
+        prodigal -i genome.fa -o "${out}.prodigal.raw.gff3" -f gff -p single -g "${prodigal_table}"
         python "${workflow.projectDir}/bin/prodigal_hierarchy.py" \\
             "${out}.prodigal.raw.gff3" "${out}.other.gff3"
         PRODIGAL_REPORT="${params.target}/prodigal_selected_microsporidia.tsv"
