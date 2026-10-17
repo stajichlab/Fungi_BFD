@@ -829,6 +829,10 @@
                     "type": "string",
                     "description": "AAFTF Singularity image (genome cleaning, CALC_ASM_STATS)."
                 },
+                "taxonkit_container": {
+                    "type": "string",
+                    "description": "taxonkit container for GENOME_CLEAN and GENOME_CLEAN_BATCH's phylum lookup (AAFTF >= 0.7 images no longer ship taxonkit)."
+                },
                 "run_aa_freq": {
                     "type": "boolean",
                     "default": true
