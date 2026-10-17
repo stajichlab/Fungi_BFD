@@ -32,8 +32,8 @@ process GENOME_CLEAN_BATCH {
     module load apptainer
     AAFTF_SIF=${params.aaftf_sif}
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
-    # AAFTF + taxonkit now come from the AAFTF SIF (replaces `module load AAFTF`
-    # and `module load taxonkit`). fcs_gx_purge takes its DB via an explicit
+    # AAFTF comes from the AAFTF SIF (replaces `module load AAFTF`); taxonkit
+    # comes from params.taxonkit_container via \$TSING. fcs_gx_purge takes its DB via an explicit
     # --db /dev/shm/gxdb/all flag (not the image's AAFTF_DB env default), so
     # only /dev/shm needs binding for that -- no separate AAFTF_DB bind.
     # \$SCRATCH (node-local, NOT under /bigdata) also needs an explicit bind --
@@ -43,6 +43,8 @@ process GENOME_CLEAN_BATCH {
     # GENEMARK_RUN, confirmed 2026-08-24).
     SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
+    # taxonkit is not in the AAFTF >= 0.7 image; it runs from params.taxonkit_container.
+    TSING="apptainer exec --bind ${taxondb}:${taxondb}:ro ${params.taxonkit_container}"
 
     TAXONKIT_DB=${taxondb}
     DEST=${launchDir}/input_clean_genomes
@@ -122,13 +124,13 @@ BATCH_EOF
         phylum_name=\$(awk -F',' -v id="\$asmid" '\$1==id{print \$7; exit}' ${samples_csv})
         phylum=""
         if [ -n "\$phylum_name" ]; then
-            phylum=\$(echo "\$phylum_name" | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            phylum=\$(echo "\$phylum_name" | \$TSING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
             echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_name=\$phylum_name -> phylum_taxid=\$phylum (from samples.csv PHYLUM)"
         fi
         if [ -z "\$phylum" ]; then
-            phylum=\$(echo \$taxonid | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
+            phylum=\$(echo \$taxonid | \$TSING taxonkit --data-dir \$TAXONKIT_DB lineage | \$TSING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | \$TSING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
             if [ -z "\$phylum" ]; then
-                phylum=\$(echo \$taxonid | \$SING taxonkit --data-dir \$TAXONKIT_DB lineage | \$SING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | \$SING taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
+                phylum=\$(echo \$taxonid | \$TSING taxonkit --data-dir \$TAXONKIT_DB lineage | \$TSING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{K}" --output-ambiguous-result | cut -f3 | \$TSING taxonkit --data-dir \$TAXONKIT_DB name2taxid | uniq | cut -f2 | head -n 1)
             fi
             echo "[\$i/\$n_total][INFO] \$asmid taxonid=\$taxonid phylum_taxid=\$phylum (from taxonkit lineage, samples.csv PHYLUM was blank or unresolvable)"
         fi
@@ -139,7 +141,7 @@ BATCH_EOF
 
         pigz -dc "\$gz" > \$SCRATCH/\${asmid}.raw.fa
         if \$SING AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
-            -i \$SCRATCH/\${asmid}.raw.fa --cpus ${task.cpus} \
+            -i \$SCRATCH/\${asmid}.raw.fa \
             -o \$SCRATCH/\${asmid}.purge.fasta \
             -t "\$phylum" -w \$SCRATCH/\${asmid}.fcs_report ; then
             cat \$SCRATCH/\${asmid}.purge.fasta | ${params.clean_script} --len ${params.min_contig_len} > \$SCRATCH/\${asmid}.clean.fa \\
