@@ -140,25 +140,36 @@ BATCH_EOF
         fi
 
         pigz -dc "\$gz" > \$SCRATCH/\${asmid}.raw.fa
-        if \$SING AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
-            -i \$SCRATCH/\${asmid}.raw.fa \
-            -o \$SCRATCH/\${asmid}.purge.fasta \
-            -t "\$phylum" -w \$SCRATCH/\${asmid}.fcs_report ; then
-            cat \$SCRATCH/\${asmid}.purge.fasta | ${params.clean_script} --len ${params.min_contig_len} > \$SCRATCH/\${asmid}.clean.fa \\
+        # AAFTF >= 0.7: fcs_gx_purge -o is an output DIRECTORY. It gets <input prefix>.fcsgx_cleaned.fasta and
+        # <input prefix>.fcs_gx_report.txt; the input prefix here is <asmid>.raw. Its exit code is not a
+        # reliable success signal, so success requires the cleaned file to exist and be non-empty.
+        FCS_OUT=\$SCRATCH/\${asmid}.fcs_out
+        PURGED=\$FCS_OUT/\${asmid}.raw.fcsgx_cleaned.fasta
+        mkdir -p \$FCS_OUT
+        if \$SING AAFTF fcs_gx_purge -d /dev/shm/gxdb/all \
+            -i \$SCRATCH/\${asmid}.raw.fa -c ${task.cpus} \
+            -o \$FCS_OUT \
+            -t "\$phylum" -w \$SCRATCH/\${asmid}.fcs_report \
+            && [ -s "\$PURGED" ] ; then
+            ${params.clean_script} --len ${params.min_contig_len} < \$PURGED > \$SCRATCH/\${asmid}.clean.fa \\
                 && pigz -c \$SCRATCH/\${asmid}.clean.fa > \${target}.tmp \\
                 && mv \${target}.tmp \$target
             rm -f \$SCRATCH/\${asmid}.clean.fa
-            echo "[\$i/\$n_total][OK] \$asmid -> \$target (\$(du -sh \$target | cut -f1))"
-            check_min_length "\$asmid" "\$target"
-            pigz -f \$SCRATCH/\${asmid}.purge.fasta
-            [ -f \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv ] && pigz -f \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv
-            mv \$SCRATCH/\${asmid}.purge.fasta.gz \$DEST/clean/ 2>/dev/null || true
-            [ -f \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv.gz ] && mv \$SCRATCH/\${asmid}.purge.fcs_gx-taxonomy.tsv.gz \$DEST/clean/
-            printf '%s\\t%s\\n' "\$asmid" "\$target" >> \$MANIFEST
+            if [ -s \$target ] && [ "\$(pigz -dc \$target | grep -c '^>')" -gt 0 ]; then
+                echo "[\$i/\$n_total][OK] \$asmid -> \$target (\$(du -sh \$target | cut -f1))"
+                check_min_length "\$asmid" "\$target"
+                pigz -c \$PURGED > \$DEST/clean/\${asmid}.purge.fasta.gz
+                [ -f \$FCS_OUT/\${asmid}.raw.fcs_gx_report.txt ] && pigz -c \$FCS_OUT/\${asmid}.raw.fcs_gx_report.txt > \$DEST/clean/\${asmid}.fcs_gx_report.txt.gz
+                printf '%s\\t%s\\n' "\$asmid" "\$target" >> \$MANIFEST
+            else
+                echo "[\$i/\$n_total][FAIL] \$asmid: \$target was not produced or has no contigs" >&2
+                rm -f \$target
+            fi
         else
-            echo "[\$i/\$n_total][FAIL] fcs_gx_purge failed for \$asmid" >&2
+            echo "[\$i/\$n_total][FAIL] fcs_gx_purge failed for \$asmid (no report / empty cleaned fasta)" >&2
         fi
-        rm -f \$SCRATCH/\${asmid}.raw.fa \$SCRATCH/\${asmid}.purge.fasta
+        rm -rf \$FCS_OUT
+        rm -f \$SCRATCH/\${asmid}.raw.fa
     done < batch.tsv
 
     echo "[INFO] batch ${task.index} complete: \$(grep -c . \$MANIFEST || echo 0) cleaned genomes in manifest"
@@ -178,7 +189,7 @@ BATCH_EOF
     while IFS=\$'\\t' read -r asmid gz taxonid; do
         [ -z "\$asmid" ] && continue
         echo ">stub_\${asmid}" | pigz -c > \$DEST/\${asmid}.fa.gz
-        touch \$DEST/clean/\${asmid}.purge.fasta \$DEST/clean/\${asmid}.purge.fcs_gx-taxonomy.tsv
+        touch \$DEST/clean/\${asmid}.purge.fasta \$DEST/clean/\${asmid}.fcs_gx_report.txt
         printf '%s\\t%s\\n' "\$asmid" "\$DEST/\${asmid}.fa.gz" >> \$MANIFEST
     done < batch.tsv
     """
