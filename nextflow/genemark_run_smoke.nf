@@ -35,6 +35,8 @@ params.mode               = 'ES'
 params.training_bam       = ''
 params.shared_mod         = ''
 params.force_independent  = 'false'
+// 'true' exercises the microsporidia Prodigal supplement (default 'false' as before).
+params.is_microsporidia   = 'false'
 // Where to copy results -- defaults next to this script for convenience,
 // override with --out_dir to land them in analysis/genemark_run_validation/outputs/.
 params.out_dir            = "${projectDir}/manual_outputs"
@@ -49,7 +51,7 @@ workflow {
         tuple(params.out, params.asmid, params.species, params.strain,
               file(params.genome_fa), params.transl_table,
               params.mode, params.training_bam,
-              params.force_independent, params.shared_mod, 'false')
+              params.force_independent, params.shared_mod, params.is_microsporidia)
     )
     GENEMARK_RUN(genemark_in)
     def outDir = file(params.out_dir)

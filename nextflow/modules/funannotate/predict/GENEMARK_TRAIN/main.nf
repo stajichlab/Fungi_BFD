@@ -239,14 +239,11 @@ process GENEMARK_TRAIN {
             --min-contig-len ${params.predict_min_training_contig_len} \\
             --min-training-contigs ${params.predict_min_training_contigs} \\
             --abs-min-bp ${params.predict_abs_min_asm_bp})
-    if [ "\$ASM_VERDICT" != "ok" ]; then
-        echo "[WARN] GENEMARK_RUN ${out}: preflight verdict '\$ASM_VERDICT' (\$ASM_BP bp, \$ASM_CTG contigs, N50 \$ASM_N50); skipping GeneMark -- predict's own preflight guard will flag/report this genome" >&2
-        record_genemark_skip "preflight_\$ASM_VERDICT" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50"
-        touch "${out}.genemark.gtf"
-        rm -f genome.fa
-        exit 0
-    fi
-
+    # (Moved ahead of the pre-flight guard below, 2026-10-21: the guard exits 0 for
+    # small_fragmented genomes, so a small AND fragmented microsporidium never reached
+    # this block and predict's own "small_fragmented but has Prodigal evidence" escape
+    # could not fire. Spraguea_lophii_42_110 -- 4.27 Mb, 746 contigs -- was skipped
+    # this way. GeneMark itself is still skipped by the guard; only Prodigal runs.)
     # ── Microsporidia Prodigal supplement ────────────────────────────────────
     # Gated on PHYLUM (is_microsporidia, computed once in Groovy from
     # loadMicrosporidiaOutSet()) AND total assembled bp -- NOT the
@@ -261,7 +258,10 @@ process GENEMARK_TRAIN {
     # (${out}.other.gff3 is already touched above, right after genome.fa was
     # inflated, so every exit path -- including the small_fragmented
     # pre-flight guard -- has it.)
-    if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ]; then
+    # too_small / no_training_contigs are skipped by predict whatever Prodigal finds
+    # (its escape only covers small_fragmented), so don't risk a Prodigal failure there.
+    if [ "${is_microsporidia}" = "true" ] && [ "\$ASM_BP" -lt "${params.predict_min_asm_bp}" ] \\
+            && { [ "\$ASM_VERDICT" = "ok" ] || [ "\$ASM_VERDICT" = "small_fragmented" ]; }; then
         echo "[INFO] GENEMARK_RUN ${out}: microsporidia + small (\$ASM_BP bp < ${params.predict_min_asm_bp}); running Prodigal supplement"
         module load prodigal
         if [ "${prodigal_table}" != "${transl_table}" ]; then
@@ -274,6 +274,14 @@ process GENEMARK_TRAIN {
         mkdir -p "${params.target}"
         [ -s "\$PRODIGAL_REPORT" ] || printf 'out\tasmid\treason\ttotal_bp\n' > "\$PRODIGAL_REPORT"
         printf '%s\t%s\t%s\t%s\n' "${out}" "${asmid}" "microsporidia_phylum_and_small" "\$ASM_BP" >> "\$PRODIGAL_REPORT"
+    fi
+
+    if [ "\$ASM_VERDICT" != "ok" ]; then
+        echo "[WARN] GENEMARK_RUN ${out}: preflight verdict '\$ASM_VERDICT' (\$ASM_BP bp, \$ASM_CTG contigs, N50 \$ASM_N50); skipping GeneMark -- predict's own preflight guard will flag/report this genome" >&2
+        record_genemark_skip "preflight_\$ASM_VERDICT" "\$ASM_BP" "\$ASM_CTG" "\$ASM_N50"
+        touch "${out}.genemark.gtf"
+        rm -f genome.fa
+        exit 0
     fi
 
     # ── --gcode support probe (funannotate's _genemark_supports_gcode()) ────
