@@ -13,6 +13,8 @@ Python environment this pipeline's Nextflow labels use anyway.
 """
 import gzip
 import json
+import os
+import re
 import sys
 
 
@@ -22,6 +24,22 @@ def open_text(path, mode="rt"):
     if path.endswith(".gz"):
         return gzip.open(path, mode)
     return open(path, mode)
+
+
+def gff_stem(name, ext="gff3"):
+    """Return the sample stem of a GFF file name, with or without a .gz suffix.
+
+    "X.gff3" -> "X"; "X.gff3.gz" -> "X". A plain str.replace(ext, "") turns
+    "X.gff3.gz" into "X..gz", which then breaks any path built from the stem.
+    """
+    ext = re.escape(str(ext).lstrip("."))
+    return re.sub(r"\." + ext + r"(\.gz)?$", "", os.path.basename(str(name)))
+
+
+def is_gff_name(name, ext="gff3"):
+    """True if name ends in .<ext> or .<ext>.gz."""
+    ext = re.escape(str(ext).lstrip("."))
+    return re.search(r"\." + ext + r"(\.gz)?$", str(name)) is not None
 
 
 def load_schema(path):

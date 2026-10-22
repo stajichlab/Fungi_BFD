@@ -44,8 +44,10 @@ workflow PHYling {
             def locustag = row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim()
             def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
             def fasta    = file("${input_dir}/${basename}${suffix}", glob: false)
+            // SETUP_SYMLINKS links a compressed result as <name>.gz
+            if (!fasta.exists()) fasta = file("${input_dir}/${basename}${suffix}.gz", glob: false)
             if (!fasta.exists()) {
-                log.warn "PHYling: skipping ${basename} (${locustag}): ${basename}${suffix} not found"
+                log.warn "PHYling: skipping ${basename} (${locustag}): ${basename}${suffix}[.gz] not found"
                 return null
             }
             return fasta

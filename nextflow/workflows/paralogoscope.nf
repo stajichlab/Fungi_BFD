@@ -1,5 +1,5 @@
 include { PARALOGOSCOPE } from '../subworkflows/local/PARALOGOSCOPE.nf'
-include { cleanStrain; makeSampleTag; dirIndex } from '../modules/common/utils.nf'
+include { cleanStrain; makeSampleTag; dirIndex; lookupFile } from '../modules/common/utils.nf'
 
 //
 // paralogoscope — per-species whole-genome duplication dating via wgd
@@ -67,9 +67,9 @@ workflow PARALOGOSCOPE_RUN {
                 species : row['SPECIES']?.trim() ?: '',
                 strain  : cleanStrain(row['STRAIN']?.trim() ?: ''),
             ]
-            def cds = cdsIndex["${meta.id}.cds-transcripts.fa"]
+            def cds = lookupFile(cdsIndex, "${meta.id}.cds-transcripts.fa")
             if (!cds) {
-                log.warn "paralogoscope: skipping ${meta.id} (${lt}): no ${meta.id}.cds-transcripts.fa in ${params.cds_dir}"
+                log.warn "paralogoscope: skipping ${meta.id} (${lt}): no ${meta.id}.cds-transcripts.fa[.gz] in ${params.cds_dir}"
                 return null
             }
             return tuple(meta, cds)
@@ -94,7 +94,7 @@ workflow PARALOGOSCOPE_RUN {
                 species : row['SPECIES']?.trim() ?: '',
                 strain  : cleanStrain(row['STRAIN']?.trim() ?: ''),
             ]
-            def gff = gffIndex["${meta.id}.gff3"]
+            def gff = lookupFile(gffIndex, "${meta.id}.gff3")
             if (!gff) {
                 log.warn "paralogoscope: no GFF3 for ${meta.id}, wgd syn will skip it"
                 return null

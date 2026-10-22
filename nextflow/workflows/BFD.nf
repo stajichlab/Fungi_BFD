@@ -93,15 +93,19 @@ workflow BFD {
     // pep/cds/gff/genome dirs, but genome_dir already shares input_clean_genomes'
     // S3 convention with the ANI k8s profile, so this is latent, not
     // hypothetical -- and the redundant lookups were pure waste either way.
-    def pepIndex    = dirIndex(params.pep_dir)
-    def cdsIndex    = dirIndex(params.cds_dir)
-    def gffIndex    = dirIndex(params.gff_dir)
-    def genomeIndex = dirIndex(params.genome_dir)
+    // The indexes are built lazily, on first use inside a channel closure. With
+    // run_setup=true, SETUP_SYMLINKS creates the input/ links during this run.
+    // An index built here, at workflow definition, is a snapshot from before the
+    // links exist, so only the links already on disk at launch would be found
+    // (2026-10-21: 99 of ~23,500 genomes ran). The first element reaches a
+    // closure only after SETUP_SYMLINKS has finished, so the listing is complete.
+    def indexCache = new java.util.concurrent.ConcurrentHashMap()
+    def lazyIndex  = { String d -> indexCache.computeIfAbsent(d, { k -> dirIndex(k) }) }
 
     def bfd_debug = params.bfd_debug.toBoolean()
     def proteins_ch = ready_ch
         .map { meta ->
-            def prot = lookupFile(pepIndex, "${meta.id}.proteins.fa")
+            def prot = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
             if (!prot) {
                 if (bfd_debug) log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
                 return null
@@ -111,23 +115,23 @@ workflow BFD {
         .filter { it != null }
 
     def aa_freq_ch = ready_ch.map { meta ->
-        def f = lookupFile(pepIndex, "${meta.id}.proteins.fa")
+        def f = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def codon_freq_ch = ready_ch.map { meta ->
-        def f = lookupFile(cdsIndex, "${meta.id}.cds-transcripts.fa")
+        def f = lookupFile(lazyIndex.call(params.cds_dir), "${meta.id}.cds-transcripts.fa")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def intergenic_ch = ready_ch.map { meta ->
-        def f = lookupFile(gffIndex, "${meta.id}.gff3")
+        def f = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
         f ? tuple(meta, f) : null
     }.filter { it != null }
 
     def gene_stats_ch = ready_ch.map { meta ->
-        def gff = lookupFile(gffIndex, "${meta.id}.gff3")
-        def dna = lookupFile(genomeIndex, "${meta.id}.scaffolds.fa")
+        def gff = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
+        def dna = lookupFile(lazyIndex.call(params.genome_dir), "${meta.id}.scaffolds.fa")
         (gff && dna) ? tuple(meta, gff, dna) : null
     }.filter { it != null }
 
@@ -156,7 +160,7 @@ workflow BFD {
 
     def asm_stats_ch = ready_with_asmid_ch
         .map { meta ->
-            def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
+            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
             if (!f) { log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
             f ? tuple(meta, f) : null
         }
@@ -165,7 +169,7 @@ workflow BFD {
     // Telomere finder reuses the same assembly input as asm_stats.
     def telomeres_ch = ready_with_asmid_ch
         .map { meta ->
-            def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
+            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
             if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
             f ? tuple(meta, f) : null
         }
@@ -175,13 +179,13 @@ workflow BFD {
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
     def busco_genome_ch = ready_with_asmid_ch.map { meta ->
-        def f = resolveGenomeFile(genomeIndex, meta.id, meta.asmid)
+        def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
         if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
     def busco_pep_ch = ready_ch.map { meta ->
-        def f = lookupFile(pepIndex, "${meta.id}.proteins.fa")
+        def f = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
@@ -194,8 +198,8 @@ workflow BFD {
     // FASTA (not the genome DNA), so it's its own small channel rather than
     // reusing gene_stats_ch or proteins_ch alone.
     def cgc_ch = ready_ch.map { meta ->
-        def gff  = lookupFile(gffIndex, "${meta.id}.gff3")
-        def prot = lookupFile(pepIndex, "${meta.id}.proteins.fa")
+        def gff  = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
+        def prot = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
         (gff && prot) ? tuple(meta, gff, prot) : null
     }.filter { it != null }
 

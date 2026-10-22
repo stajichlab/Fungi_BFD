@@ -59,8 +59,19 @@ process SETUP_SYMLINKS {
             fi
         done
 
-        if [ -f "\$misc/trnascan.no-overlaps.gff3" ]; then
-            ln -sfn "\$misc/trnascan.no-overlaps.gff3" "${params.trna_dir}/\${basename}.trna.gff3"
+        # tRNA GFF3: link the plain file, or <name>.gz when only that exists (same
+        # rule as the pairs above). Silent when neither exists: not every genome has one.
+        local trna_target="\$misc/trnascan.no-overlaps.gff3"
+        local trna_link="${params.trna_dir}/\${basename}.trna.gff3"
+        if [ -e "\$trna_target" ]; then
+            ln -sfn "\$trna_target" "\$trna_link"
+            [ -L "\$trna_link.gz" ] && rm -f "\$trna_link.gz"
+        elif [ -e "\$trna_target.gz" ]; then
+            ln -sfn "\$trna_target.gz" "\$trna_link.gz"
+            [ -L "\$trna_link" ] && rm -f "\$trna_link"
+        else
+            [ -L "\$trna_link" ] && [ ! -e "\$trna_link" ] && rm -f "\$trna_link"
+            [ -L "\$trna_link.gz" ] && [ ! -e "\$trna_link.gz" ] && rm -f "\$trna_link.gz"
         fi
 
         printf '%s\\t%s\\n' "\$locustag" "\$basename" > "\${manifest_dir}/\${basename}"
