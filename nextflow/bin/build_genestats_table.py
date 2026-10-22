@@ -606,7 +606,7 @@ def main():
                     )
         elif args.gff_file:
             for gff_file in args.gff_file:
-                filename_stem = gff_stem(gff_file, args.gffext)
+                filename_stem = gff_stem(os.path.basename(gff_file), args.gffext)
                 filenames.append([filename_stem, gff_file])
         for gff_tuple in filenames:
             (fstem, gff_file_l) = gff_tuple

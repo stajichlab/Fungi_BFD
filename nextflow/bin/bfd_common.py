@@ -40,6 +40,16 @@ def is_gff_name(name, ext="gff3"):
     """True if name ends in .<ext> or .<ext>.gz."""
     ext = re.escape(str(ext).lstrip("."))
     return re.search(r"\." + ext + r"(\.gz)?$", str(name)) is not None
+def is_gff_name(name, gffext):
+    """True if name ends in gffext, optionally followed by .gz."""
+    return re.sub(r"\.gz$", "", name).endswith(gffext)
+
+
+def gff_stem(name, gffext):
+    """Genome stem of a GFF file name, ignoring a trailing .gz."""
+    name = re.sub(r"\.gz$", "", name)
+    stem = name.replace(gffext, "")
+    return stem[:-1] if stem.endswith(".") else stem
 
 
 def load_schema(path):

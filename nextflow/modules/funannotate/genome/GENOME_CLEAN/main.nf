@@ -73,13 +73,26 @@ process GENOME_CLEAN {
     echo "[INFO] Phylum for ${asmid} (taxonid=${taxonid}): \$phylum"
     echo "[INFO] Decompressing and cleaning genome for ${asmid}..."
     pigz -dc ${genome_gz} > \$SCRATCH/${asmid}.raw.fa
-    \$SING AAFTF fcs_gx_purge --db /dev/shm/gxdb/all \
-        -i \$SCRATCH/${asmid}.raw.fa \
-        -o \$SCRATCH/${asmid}.purge.fasta \
+    # AAFTF >= 0.7: fcs_gx_purge -o is an output DIRECTORY. It gets <input prefix>.fcsgx_cleaned.fasta and
+    # <input prefix>.fcs_gx_report.txt; the input prefix here is ${asmid}.raw.
+    FCS_OUT=\$SCRATCH/${asmid}.fcs_out
+    mkdir -p \$FCS_OUT
+    \$SING AAFTF fcs_gx_purge -d /dev/shm/gxdb/all \
+        -i \$SCRATCH/${asmid}.raw.fa -c ${task.cpus} \
+        -o \$FCS_OUT \
         -t "\$phylum" -w \$SCRATCH/${asmid}.fcs_report
+    PURGED=\$FCS_OUT/${asmid}.raw.fcsgx_cleaned.fasta
+    # fcs_gx_purge's exit code is not a reliable success signal; require the cleaned file.
+    if [ ! -s "\$PURGED" ]; then
+        echo "ERROR: fcs_gx_purge produced no \$PURGED for ${asmid}" >&2
+        exit 1
+    fi
     mkdir -p ${launchDir}/input_clean_genomes/clean
-    cat \$SCRATCH/${asmid}.purge.fasta | \
-        ${params.clean_script} --len ${params.min_contig_len} > \$SCRATCH/${asmid}.clean.fa
+    ${params.clean_script} --len ${params.min_contig_len} < \$PURGED > \$SCRATCH/${asmid}.clean.fa
+    if [ ! -s \$SCRATCH/${asmid}.clean.fa ]; then
+        echo "ERROR: no contigs left for ${asmid} after the FCS-GX purge and length filter" >&2
+        exit 1
+    fi
     echo "[INFO] Clean genome written: ${asmid}.fa (\$(du -sh \$SCRATCH/${asmid}.clean.fa | cut -f1)); compressing to ${asmid}.fa.gz"
     pigz -c \$SCRATCH/${asmid}.clean.fa > ${asmid}.fa.gz
     rm -f \$SCRATCH/${asmid}.clean.fa
@@ -93,11 +106,10 @@ process GENOME_CLEAN {
         printf '%s,Assembly too short %s bp in length\\n' "${asmid}" "\$total_len" >> TO_ADD_TO_SUPRESS.csv
     fi
 
-    pigz \$SCRATCH/${asmid}.purge.fasta
-    [ -f \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv ] && pigz \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv
-    mv \$SCRATCH/${asmid}.purge.fasta.gz ${launchDir}/input_clean_genomes/clean/
-    [ -f \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv.gz ] && \
-        mv \$SCRATCH/${asmid}.purge.fcs_gx-taxonomy.tsv.gz ${launchDir}/input_clean_genomes/clean/
+    pigz -c \$PURGED > ${launchDir}/input_clean_genomes/clean/${asmid}.purge.fasta.gz
+    [ -f \$FCS_OUT/${asmid}.raw.fcs_gx_report.txt ] && \
+        pigz -c \$FCS_OUT/${asmid}.raw.fcs_gx_report.txt > ${launchDir}/input_clean_genomes/clean/${asmid}.fcs_gx_report.txt.gz
+    rm -rf \$FCS_OUT
     """
 
     stub:
@@ -106,6 +118,6 @@ process GENOME_CLEAN {
     : > TO_ADD_TO_SUPRESS.csv
     mkdir -p ${launchDir}/input_clean_genomes/clean
     touch ${launchDir}/input_clean_genomes/clean/${asmid}.purge.fasta
-    touch ${launchDir}/input_clean_genomes/clean/${asmid}.purge.fcs_gx-taxonomy.tsv
+    touch ${launchDir}/input_clean_genomes/clean/${asmid}.fcs_gx_report.txt
     """
 }
