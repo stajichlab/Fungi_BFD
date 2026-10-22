@@ -216,6 +216,58 @@ FUNANNOTATE_ANNOTATE  funannotate annotate — functional annotation, GO terms,
 
 ---
 
+## RNA-seq source: SRA download or your own reads
+
+RNA-seq is handled **per species** (all strains of a species share the same
+reads). A species uses one of two strategies. They are alternatives: you can use
+a different one for each species in the same run, but you normally do not
+combine them for one species.
+
+| | A. Public reads from NCBI SRA (default) | B. Your own reads |
+|---|---|---|
+| **You do** | nothing | put the files in `rnaseq_reads/` (below) |
+| **Pipeline does** | queries SRA, downloads and normalizes up to `--max_rnaseq_runs` runs | uses your files as they are |
+| **Result** | `rnaseq_reads/<species_tag>_norm_{R1,R2,SE}.fastq.gz` and `rnaseq_reads/sra_query/<species_tag>.sra_query.csv` | the same three `_norm_` files |
+
+The species tag is `SPECIES` with spaces changed to `_`.
+
+**How the pipeline decides, per species**
+
+1. Existing `rnaseq_reads/<species_tag>_norm_*.fastq.gz` are reused and nothing is
+   downloaded: `SRA_FETCH`, `SRA_FETCH_SE` and `WRITE_EMPTY_READS` all use
+   `storeDir "${launchDir}/rnaseq_reads"`.
+2. A cached `rnaseq_reads/sra_query/<species_tag>.sra_query.csv` skips the SRA
+   search when it lists at least one run. A **header-only** CSV counts as cached
+   only when a matching `<species_tag>.sra_query.key` sidecar exists, because a
+   header-only CSV may come from a failed query. Otherwise the species is queried
+   again.
+3. With neither, the pipeline searches SRA and downloads (strategy A).
+
+**Strategy B: supply your own reads**
+
+```text
+rnaseq_reads/<species_tag>_norm_R1.fastq.gz   # paired-end read 1 (libraries joined)
+rnaseq_reads/<species_tag>_norm_R2.fastq.gz   # paired-end read 2, same order as R1
+rnaseq_reads/<species_tag>_norm_SE.fastq.gz   # single-end reads, or an empty file
+rnaseq_reads/sra_query/<species_tag>.sra_query.csv   # header-only (see below)
+```
+
+- Use real files, not links, and trim adapters first. The pipeline does not trim or
+  normalize reads you supply.
+- Because of rule 1, SRA_FETCH never downloads for such a species. To also avoid the
+  NCBI query, run with `--skip_sra_query true` and give every species a CSV. A
+  header-only CSV (`species_tag,taxonid,sra_accession,spots,platform,layout`) is
+  then routed to `WRITE_EMPTY_READS`, which finds your files and does nothing.
+  `--skip_sra_query true` **skips any species with no CSV**, so those get no RNA-seq at all.
+  Without `--skip_sra_query`, add the `.sra_query.key` sidecar as well. Its text is
+  `v2|<taxids>` (the species' taxon IDs, most frequent first, `+`-joined, as built by
+  `sraQueryTaxids()` in `FUNANNOTATE_RNASEQ.nf`).
+
+**`--run_sra_fetch false` is a whole-run switch.** It turns off SRA, Trinity and
+training for every species, **including those with your own reads**, which then go
+straight to prediction as ab-initio. Your own reads are only used when it is `true`
+(the default).
+
 ## RNA-seq discovery and download: two-phase design
 
 The SRA workflow is split into a **lightweight query phase** (SRA_QUERY_BATCH) and a
