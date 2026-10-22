@@ -273,6 +273,7 @@ def loadSuppressSet() {
     }
     def f = file(params.suppress as String)
     if (!f.exists()) {
+        log.warn "Suppress list '${params.suppress}' not found (resolved to ${f.toAbsolutePath()}); no ASMIDs will be suppressed. Set --suppress to an existing file, or link suppress.txt into the launch directory."
         return ([] as Set)
     }
     def suppressSet = f.readLines()
