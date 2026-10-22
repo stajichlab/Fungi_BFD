@@ -12,7 +12,7 @@
 // accumulates more than a few hundred files. Files keep wgd's natural names
 // (they embed the source cds id), which also means a re-annotated sample
 // produces a new filename and can never be served a stale storeDir hit.
-include { hashBucketForType } from '../../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../../common/utils.nf'
 
 process WGD_DMD {
     tag        "${meta.id}"
@@ -27,7 +27,11 @@ process WGD_DMD {
     tuple val(meta), path(cds), path("*.tsv"), emit: families
 
     script:
+    // wgd gets a plain file: a .gz input is inflated under its plain name (so the
+    // output names stay <id>.cds-transcripts.fa.*, which merge_wgd_ks.py parses).
+    def cds_plain = plainName(cds)
     """
+    ${gzInflate(cds)}
     module load apptainer squashfuse fuse
     export TMPDIR=\${SCRATCH:-/tmp}
     PWD_REAL=\$(realpath \${PWD})
@@ -38,7 +42,7 @@ process WGD_DMD {
         --outdir wgd_dmd \\
         --eval ${params.wgd_mcl_evalue} \\
         --inflation ${params.wgd_mcl_inflation} \\
-        ${cds}
+        ${cds_plain}
 
     [ -f wgd_dmd/*.tsv ] || { echo "ERROR: wgd dmd produced no families file" >&2; exit 1; }
     mv wgd_dmd/*.tsv .

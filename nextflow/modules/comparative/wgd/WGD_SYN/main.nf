@@ -7,7 +7,7 @@
 // hash sub-folder keyed on the stable LOCUSTAG (see WGD_DMD notes). Files are
 // moved out of the wgd_syn/ subdir to the workdir root so storeDir places
 // them directly in the bucket.
-include { hashBucketForType } from '../../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../../common/utils.nf'
 
 process WGD_SYN {
     tag        "${meta.id}"
@@ -23,7 +23,10 @@ process WGD_SYN {
     path("*.dot.pdf"), optional: true, emit: dotplot
 
     script:
+    // wgd syn gets a plain GFF: a .gz input is inflated under its plain name.
+    def gff_plain = plainName(gff)
     """
+    ${gzInflate(gff)}
     module load apptainer squashfuse fuse
     export TMPDIR=\${SCRATCH:-/tmp}
     PWD_REAL=\$(realpath \${PWD})
@@ -34,7 +37,7 @@ process WGD_SYN {
         --env LD_LIBRARY_PATH=/opt/conda/lib \\
         --env OMPI_ALLOW_RUN_AS_ROOT=1,OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \\
         ${params.wgd_sif} bash -c \\
-        'env -u SLURM_JOB_ID -u SLURM_JOBID -u SLURM_JOB_NODELIST -u SLURM_JOB_NUM_NODES -u SLURM_JOB_PARTITION -u SLURM_JOB_USER -u SLURM_JOB_UID -u SLURM_NODELIST -u SLURM_NODEID -u SLURM_NTASKS -u SLURM_PROCID -u SLURM_STEP_NUM_TASKS -u SLURM_TASKS_PER_NODE -u SLURM_TASK_PID -u SLURM_CPUS_ON_NODE -u SLURM_CPU_BIND -u SLURM_LOCALID -u SLURM_SUBMIT_DIR -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_CPU -u SLURM_CLUSTER_NAME -u SLURM_CONF -u SLURM_WORKING_DIR -u PMI_FD -u PMI_RANK -u PMI_SIZE -u PMI_JOBID -u PMI_ID -u PMI_PORT -u PMI_DEBUG bash -c "wgd syn --outdir wgd_syn -f mRNA -a ID \\${families} \\${gff}"'
+        'env -u SLURM_JOB_ID -u SLURM_JOBID -u SLURM_JOB_NODELIST -u SLURM_JOB_NUM_NODES -u SLURM_JOB_PARTITION -u SLURM_JOB_USER -u SLURM_JOB_UID -u SLURM_NODELIST -u SLURM_NODEID -u SLURM_NTASKS -u SLURM_PROCID -u SLURM_STEP_NUM_TASKS -u SLURM_TASKS_PER_NODE -u SLURM_TASK_PID -u SLURM_CPUS_ON_NODE -u SLURM_CPU_BIND -u SLURM_LOCALID -u SLURM_SUBMIT_DIR -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_CPU -u SLURM_CLUSTER_NAME -u SLURM_CONF -u SLURM_WORKING_DIR -u PMI_FD -u PMI_RANK -u PMI_SIZE -u PMI_JOBID -u PMI_ID -u PMI_PORT -u PMI_DEBUG bash -c "wgd syn --outdir wgd_syn -f mRNA -a ID \\${families} \\${gff_plain}"'
 
     [ -f wgd_syn/anchors.csv ] || [ -s wgd_syn/iadhore-out/anchorpoints.txt ] \
         || { echo "ERROR: wgd syn produced no i-ADHoRe output" >&2; exit 1; }

@@ -10,7 +10,7 @@ import time
 import tempfile
 from contextlib import ExitStack
 
-from bfd_common import gff_stem, is_gff_name, open_text
+from bfd_common import open_text, gff_stem, is_gff_name
 
 from Bio.Seq import Seq
 from pyfaidx import Fasta

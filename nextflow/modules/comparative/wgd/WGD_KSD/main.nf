@@ -11,7 +11,7 @@
 // hash sub-folder keyed on the stable LOCUSTAG (see WGD_DMD notes). Files are
 // moved out of the wgd_ksd/ subdir to the workdir root so storeDir places
 // them directly in the bucket.
-include { hashBucketForType } from '../../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../../common/utils.nf'
 
 process WGD_KSD {
     tag        "${meta.id}"
@@ -28,7 +28,11 @@ process WGD_KSD {
     path("*.ksd.svg"), emit: ks_plot_svg
 
     script:
+    // wgd gets a plain file: a .gz input is inflated under its plain name (so the
+    // output names stay <id>.cds-transcripts.fa.*, which merge_wgd_ks.py parses).
+    def cds_plain = plainName(cds)
     """
+    ${gzInflate(cds)}
     module load apptainer squashfuse fuse
     export TMPDIR=\${SCRATCH:-/tmp}
     PWD_REAL=\$(realpath \${PWD})
@@ -38,7 +42,7 @@ process WGD_KSD {
         ${params.wgd_sif} wgd ksd \\
         --outdir wgd_ksd \\
         --nthreads ${task.cpus} \\
-        ${families} ${cds}
+        ${families} ${cds_plain}
 
     [ -f wgd_ksd/*.ks.tsv ] || { echo "ERROR: wgd ksd produced no ks.tsv output" >&2; exit 1; }
     mv wgd_ksd/*.ks.tsv wgd_ksd/*.ksd.pdf wgd_ksd/*.ksd.svg .
