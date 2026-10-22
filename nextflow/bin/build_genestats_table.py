@@ -10,7 +10,7 @@ import time
 import tempfile
 from contextlib import ExitStack
 
-from bfd_common import open_text
+from bfd_common import gff_stem, is_gff_name, open_text
 
 from Bio.Seq import Seq
 from pyfaidx import Fasta
@@ -599,18 +599,14 @@ def main():
         filenames = []
         if args.gff_dir and os.path.isdir(args.gff_dir):
             for gff_file in os.listdir(args.gff_dir):
-                if gff_file.endswith(args.gffext):
-                    filename_stem = gff_file.replace(args.gffext, "")
-                    if filename_stem.endswith("."):
-                        filename_stem = filename_stem[:-1]
+                if is_gff_name(gff_file, args.gffext):
+                    filename_stem = gff_stem(gff_file, args.gffext)
                     filenames.append(
                         [filename_stem, os.path.join(args.gff_dir, gff_file)]
                     )
         elif args.gff_file:
             for gff_file in args.gff_file:
-                filename_stem = os.path.basename(gff_file).replace(args.gffext, "")
-                if filename_stem.endswith("."):
-                    filename_stem = filename_stem[:-1]
+                filename_stem = gff_stem(os.path.basename(gff_file), args.gffext)
                 filenames.append([filename_stem, gff_file])
         for gff_tuple in filenames:
             (fstem, gff_file_l) = gff_tuple

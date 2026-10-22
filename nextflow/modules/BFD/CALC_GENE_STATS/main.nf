@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; gzInflate } from '../../common/utils.nf'
 
 process CALC_GENE_STATS {
     label    'genestats'
@@ -20,6 +20,7 @@ process CALC_GENE_STATS {
     script:
     """
     set -euo pipefail
+    ${gzInflate(dna_file)}
     source /etc/profile.d/modules.sh 2>/dev/null || true
     module load biopython
     module load bedtools/2.30.0
