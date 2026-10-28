@@ -22,6 +22,8 @@ process CALC_ASM_STATS {
     SING_BINDS="--bind \${PWD}:\${PWD},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.aaftf_sif} \\
         AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
+    # Read by bin/summarize_asm_stats.py; a stats file without this line is annotated.
+    echo "ANNOTATION STATUS = ${meta.annotated == false ? 'unannotated' : 'annotated'}" >> ${meta.asmid}.stats.txt
     """
 
     stub:

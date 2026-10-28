@@ -47,10 +47,12 @@
       {"name": "masked_pct", "type": "DOUBLE"},
       {"name": "t2t_scaffolds", "type": "BIGINT"},
       {"name": "telomere_fwd", "type": "BIGINT"},
-      {"name": "telomere_rev", "type": "BIGINT"}
+      {"name": "telomere_rev", "type": "BIGINT"},
+      {"name": "annotation_status", "type": "VARCHAR"}
     ],
     "changelog": [
-      "v1 (2026-09-09): matches build_BFD_duckDB.sh's pre-migration asm_stats CREATE TABLE"
+      "v1 (2026-09-09): matches build_BFD_duckDB.sh's pre-migration asm_stats CREATE TABLE",
+      "v1+ (2026-10-28): add annotation_status (annotated|unannotated) for assemblies predict skipped"
     ]
   },
   "busco_genome": {

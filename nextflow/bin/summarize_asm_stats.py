@@ -37,6 +37,7 @@ FIELD_MAP = {
     "T2T SCAFFOLDS": "t2t_scaffolds",
     "TELOMERE FWD": "telomere_fwd",
     "TELOMERE REV": "telomere_rev",
+    "ANNOTATION STATUS": "annotation_status",
 }
 
 COLUMNS = [
@@ -47,6 +48,7 @@ COLUMNS = [
     "gc_pct", "n_gap_count", "total_n_bases",
     "masked_bases", "masked_pct",
     "t2t_scaffolds", "telomere_fwd", "telomere_rev",
+    "annotation_status",
 ]
 
 
@@ -142,6 +144,8 @@ def main():
 
         row = {"ASMID": stem, "SPECIES": species, "STRAIN": strain}
         row.update(stats)
+        # Reports written before the flag existed all came from annotated scaffolds.
+        row.setdefault("annotation_status", "annotated")
         rows.append(row)
 
     if missing_meta:

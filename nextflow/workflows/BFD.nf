@@ -101,6 +101,10 @@ workflow BFD {
     // closure only after SETUP_SYMLINKS has finished, so the listing is complete.
     def indexCache = new java.util.concurrent.ConcurrentHashMap()
     def lazyIndex  = { String d -> indexCache.computeIfAbsent(d, { k -> dirIndex(k) }) }
+    // Optional second source for asm_stats/telomeres/BUSCO genome: genomes predict
+    // skipped have no predict_results scaffolds, so input/dna holds no usable file
+    // for them. Lazy for the same reason as the indexes above.
+    def cleanIndex = { params.clean_genome_dir ? lazyIndex.call(params.clean_genome_dir as String) : [:] }
 
     def bfd_debug = params.bfd_debug.toBoolean()
     def proteins_ch = ready_ch
@@ -161,16 +165,22 @@ workflow BFD {
     def asm_stats_ch = ready_with_asmid_ch
         .map { meta ->
             def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
-            if (!f) { log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
-            f ? tuple(meta, f) : null
+            def annotated = true
+            if (!f) {
+                // No annotated scaffolds: use the original assembly and mark it.
+                f = resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
+                annotated = false
+            }
+            if (!f) { log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
+            f ? tuple(meta + [annotated: annotated], f) : null
         }
         .filter { it != null }
 
     // Telomere finder reuses the same assembly input as asm_stats.
     def telomeres_ch = ready_with_asmid_ch
         .map { meta ->
-            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
-            if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
+            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid) ?: resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
+            if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
             f ? tuple(meta, f) : null
         }
         .filter { it != null }
@@ -179,8 +189,8 @@ workflow BFD {
     // val(lineage) slot is kept explicit so per-clade overrides can be wired in
     // here later (e.g. from row.BUSCO_LINEAGE).
     def busco_genome_ch = ready_with_asmid_ch.map { meta ->
-        def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
-        if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir}" }
+        def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid) ?: resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
+        if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
         f ? tuple(meta + [lineage: params.busco_lineage], f) : null
     }.filter { it != null }
 
