@@ -591,6 +591,11 @@
                     "format": "directory-path",
                     "description": "Genome DNA input dir."
                 },
+                "clean_genome_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Directory of original assemblies (<asmid>.fa.gz or <asmid>.masked.fasta.gz). BFD.nf falls back to it for asm_stats, telomeres and BUSCO genome when genome_dir has no scaffolds file (predict skipped the genome); asm_stats flags those genomes unannotated. Optional."
+                },
                 "genome_annotation": {
                     "type": "string",
                     "format": "directory-path",
