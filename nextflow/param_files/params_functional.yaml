@@ -3,22 +3,54 @@
 # nextflow/nf-schema version rejects CLI-passed booleans for BFD.nf, which
 # calls validateParameters() (confirmed 2026-08-26; see
 # nextflow/run_genome_clean_mask.sh's header comment for the full story).
-# Non-boolean overrides (--n_test, --taxon, --asmid) are still safe on the CLI.
+# Numbers and booleans must be set here, not on the CLI. Since Nextflow 26.04.2 (tested on
+# 25.10.4, 26.04.2-26.04.6) every CLI param arrives as a String, so nf-schema rejects
+# --n_test 20 with "Value is [string] but should be [integer]". String params
+# (--samples, --taxon, --asmid) are still safe on the CLI.
 
 pipeline: BFD
-n_test: 100
-run_setup: true
+n_test: 0
+# Two-step run: run_BFD_setup.sh creates the input/ links first (pipeline setup_symlinks),
+# then this run reads them. Set true to let BFD create them inside the run (untested at full size).
+run_setup: false
 run_pfam: false
 run_cazy: true
 run_merops: true
 run_swissprot: true
 run_infernal: false
-run_deeptmhmm: true
-run_signalp: true
-run_tmhmm: false
+run_deeptmhmm: false
+run_signalp: false
+run_tmhmm: true
 run_targetp: false
-run_idp: true
+run_idp: false
 run_wolfpsort: true
-run_predgpi: false
+run_predgpi: true
 run_busco_genome: true
 run_busco_pep: true
+
+# Added 2026-10-21: switches that were previously implicit. Values match the
+# conf/profile_BFD.config defaults, so run behavior is unchanged. Flip to
+# toggle.
+
+# SwissProt accession -> annotation table (swissprot_annot.parquet)
+run_swissprot_annot: true
+
+# Genome-stats tools (BFD_GENOME_STATS)
+run_asm_stats: true
+run_telomeres: true
+run_aa_freq: true
+run_codon_freq: true
+run_intergenic: true
+run_gene_stats: true
+
+# New functional-annotation tools, opt-in (see profile_BFD.config)
+run_eggnog: false
+run_phobius: false
+run_tcdb: false
+run_tf: false
+run_antismash: false
+run_trnascan: false
+run_cazy_cgc: false
+
+# Merge into DuckDB
+run_build_duckdb: false
