@@ -14,9 +14,9 @@ process BUSCO_GENOME {
     script:
     """
     module load busco
-    export BUSCO_LINEAGES=/srv/projects/db/BUSCO/v12/
+    export BUSCO_LINEAGES=${params.busco_lineages_dir}
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
-    SCRATCH=\${SCRATCH:-/tmp}
+    : \${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     RUNDIR="${meta.asmid}_busco_genome"
     busco -i ${genome} \\
           -l ${meta.lineage} \\

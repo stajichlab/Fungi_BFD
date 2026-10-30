@@ -21,7 +21,7 @@ process RUN_MEROPS {
     ${gzInflate(proteins)}
     module load db-merops/124
     module load apptainer
-    export TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the

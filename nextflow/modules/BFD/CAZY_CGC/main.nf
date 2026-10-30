@@ -36,7 +36,7 @@ process RUN_CAZY_CGC {
     ${gzInflate(gff3)}
     ${gzInflate(proteins)}
     module load apptainer
-    export TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${gff3_plain}/${proteins_plain} may be symlinks Nextflow staged from outside \$PWD
     # (e.g. a shared genome_annotation dir elsewhere under /bigdata); bind
     # their real parent dirs too, or apptainer won't see the symlink targets

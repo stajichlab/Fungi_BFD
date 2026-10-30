@@ -21,7 +21,7 @@ process SETUP_DBCAN_DB {
     """
     set -euo pipefail
     module load apptainer
-    export TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     SING_BINDS="--bind \${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan database --db_dir . --aws_s3
     """

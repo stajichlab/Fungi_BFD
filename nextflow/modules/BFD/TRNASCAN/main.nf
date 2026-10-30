@@ -30,7 +30,7 @@ process RUN_TRNASCAN {
     """
     ${gzInflate(gff3)}
     module load apptainer
-    export TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${gff3_plain}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
     # a shared genome_annotation dir elsewhere under /bigdata); bind their real
     # parent dirs too, or apptainer won't see the symlink targets inside the

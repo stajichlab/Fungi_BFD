@@ -21,7 +21,7 @@ process RUN_TCDB {
     """
     ${gzInflate(proteins)}
     module load apptainer
-    export TMPDIR=\${SCRATCH:-/tmp}
+    export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${proteins_plain} and the tcdb_fasta/tcdb_blastdb inputs (SETUP_TCDB_DB's
     # storeDir-cached output, params.tcdb_dbdir) may be symlinks Nextflow
     # staged from outside \$PWD; bind both real parent dirs too, or apptainer

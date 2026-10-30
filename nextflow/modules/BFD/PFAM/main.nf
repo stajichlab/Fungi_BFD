@@ -43,7 +43,7 @@ process RUN_PFAM {
         # even though the path is valid and readable on the host.
         module load apptainer
         PFAM_SIF=${params.pfam_sif}
-        export TMPDIR=\${SCRATCH:-/tmp}
+        export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
         # ${proteins_plain} may be a symlink Nextflow staged from outside \$PWD (e.g.
         # a shared genome_annotation dir elsewhere under /bigdata); bind its
         # real parent dir too, or apptainer won't see the symlink target
