@@ -579,6 +579,13 @@ def toManifest(ch, String name) {
       .collectFile(name: name, newLine: true)
 }
 
+// Glob alternation that matches exactly the given names: "{a,b,c}", or the bare
+// name when there is only one. Nextflow's output matching finds nothing for a
+// one-item "{a}" (checked 2026-10-30 against BATCH_AA_FREQ), so it is not used.
+def globAnyOf(List names) {
+    names.size() == 1 ? names[0] : "{${names.join(',')}}"
+}
+
 // ── genome_stats/function hash-bucket fan-out ───────────────────────────────
 //
 // genome_stats/function outputs are stored one file per genome (or one file

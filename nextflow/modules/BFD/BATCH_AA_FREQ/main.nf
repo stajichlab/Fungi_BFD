@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; globAnyOf } from '../../common/utils.nf'
 
 // A single task processes a freq_batch_size-sized batch of genomes (amortises
 // SLURM startup, see BFD_GENOME_STATS.nf), each hashing to a potentially
@@ -23,7 +23,12 @@ process BATCH_AA_FREQ {
     tuple val(metas), path(prots)
 
     output:
-    path "*/*.aa_freq.csv.gz", emit: csv
+    // Name this batch's LOCUSTAGs in the pattern. storeDir treats a task as
+    // already done when its output pattern matches anything in the store, so a
+    // bare "*/*.aa_freq.csv.gz" matched other genomes' files and every batch
+    // after the first was skipped without running (2026-10-30: 469 of 469
+    // batches skipped in BFD_function; 60 aa_freq files for ~19.5k genomes).
+    path "*/${globAnyOf(metas.collect { m -> m.locustag })}.aa_freq.csv.gz", emit: csv
 
     script:
     def locustagList = (metas instanceof List ? metas : [metas]).collect { m -> m.locustag }
