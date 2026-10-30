@@ -1,4 +1,5 @@
-# setup_fcs_shm.sh — stage the NCBI FCS-GX database into node-local /dev/shm.
+# setup_fcs_shm.sh — stage the NCBI FCS-GX database into FCS_GX_SHM_DIR (default node-local /dev/shm/gxdb;
+# the GENOME_CLEAN processes set it to a per-task dir under params.fcsgx_stage_dir, default $SCRATCH).
 #
 # SOURCED (not executed) by the GENOME_CLEAN process before AAFTF fcs_gx_purge,
 # which expects the GX database under  /dev/shm/gxdb/all{.gxi,.gxs,...}.
@@ -37,6 +38,14 @@ else
     fi
     echo "[setup_fcs_shm] Syncing FCS-GX db ${FCS_GX_DB_SRC} -> ${FCS_GX_SHM_DIR}" >&2
     mkdir -p "${FCS_GX_SHM_DIR}"
+    # Fail before the copy if the target has too little free space (SLURM TmpDisk is 0 on all nodes,
+    # so --tmp cannot select nodes by scratch space).
+    need_kb=$(du -sk --apparent-size "${FCS_GX_DB_SRC}" | cut -f1)
+    have_kb=$(df -k --output=avail "${FCS_GX_SHM_DIR}" | tail -1 | tr -d ' ')
+    if [ "${have_kb}" -lt "${need_kb}" ]; then
+        echo "[setup_fcs_shm] ERROR: ${FCS_GX_SHM_DIR} has ${have_kb} KB free; the FCS-GX DB needs ${need_kb} KB. Set fcsgx_stage_dir to a larger filesystem." >&2
+        return 1 2>/dev/null || exit 1
+    fi
     # gxdb is a flat directory dominated by two huge files (all.gxi ~300GB,
     # all.gxs ~165GB); a single rsync stream can't saturate the IB fabric /
     # parallel filesystem, so fan out one rsync per file (-P4 matches typical

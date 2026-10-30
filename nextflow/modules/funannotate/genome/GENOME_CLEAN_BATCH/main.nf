@@ -1,6 +1,6 @@
 // Batched variant of GENOME_CLEAN. Receives a LIST of per-genome tuples and stages
-// the FCS-GX database into /dev/shm ONCE (~30 min), then cleans every genome in the
-// batch sequentially against that in-memory DB. This amortizes the expensive staging
+// the FCS-GX database into params.fcsgx_stage_dir (default $SCRATCH) ONCE (about 15 min on
+// NVMe), then cleans every genome in the batch sequentially against that staged DB. This amortizes the expensive staging
 // step over ~clean_batch_size genomes instead of paying it per genome.
 //
 // Outputs are written directly to ${launchDir}/input_clean_genomes/<asmid>.fa (the same
@@ -34,14 +34,23 @@ process GENOME_CLEAN_BATCH {
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     # AAFTF comes from the AAFTF SIF (replaces `module load AAFTF`); taxonkit
     # comes from params.taxonkit_container via \$TSING. fcs_gx_purge takes its DB via an explicit
-    # --db /dev/shm/gxdb/all flag (not the image's AAFTF_DB env default), so
-    # only /dev/shm needs binding for that -- no separate AAFTF_DB bind.
+    # --db <stage dir>/gxdb/all flag (not the image's AAFTF_DB env default), so
+    # only the stage dir needs binding for that (\$SCRATCH is bound below) -- no separate AAFTF_DB bind.
     # \$SCRATCH (node-local, NOT under /bigdata) also needs an explicit bind --
     # fcs_gx_purge reads/writes \$SCRATCH/\${asmid}.*.fa[sta] directly per-genome
     # in the loop below, and manually-built \$SING commands get none of
     # Nextflow's automatic task-workdir binding (same missing-bind bug class as
     # GENEMARK_RUN, confirmed 2026-08-24).
-    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm"
+    # FCS-GX DB stage dir = params.fcsgx_stage_dir ('\$SCRATCH' = node-local NVMe; it expands on the task node).
+    # Each task gets its own mktemp dir, so tasks on one node never share or delete each other's copy.
+    FCS_GX_STAGE_ROOT="${params.fcsgx_stage_dir}"
+    mkdir -p "\$FCS_GX_STAGE_ROOT"
+    FCS_GX_STAGE="\$(mktemp -d "\$FCS_GX_STAGE_ROOT/fcsgx_XXXXXX")" || { echo "[ERROR] cannot create a stage dir under \$FCS_GX_STAGE_ROOT" >&2; exit 1; }
+    trap 'rm -rf "\$FCS_GX_STAGE"' EXIT
+    export FCS_GX_SHM_DIR="\$FCS_GX_STAGE/gxdb"
+    STAGE_BIND=""
+    [ "\$FCS_GX_STAGE_ROOT" != "\$SCRATCH" ] && STAGE_BIND=",\$FCS_GX_STAGE_ROOT:\$FCS_GX_STAGE_ROOT"
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm\${STAGE_BIND}"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
     # taxonkit is not in the AAFTF >= 0.7 image; it runs from params.taxonkit_container.
     TSING="apptainer exec --bind ${taxondb}:${taxondb}:ro ${params.taxonkit_container}"
@@ -81,15 +90,14 @@ BATCH_EOF
     n_total=\$(grep -c . batch.tsv || true)
     echo "[INFO] batch ${task.index}: \$n_total genomes to consider"
 
-    # Stage the FCS-GX DB into /dev/shm ONCE for the whole batch (~30 min). Keep it
-    # across the loop; remove the RAM copy ourselves when the batch finishes.
+    # Stage the FCS-GX DB into \$FCS_GX_STAGE ONCE for the whole batch. Keep it across the loop;
+    # the EXIT trap above removes the copy when the batch finishes or fails.
     export FCS_GX_KEEP_SHM=1
-    # Persist per-task FCS-GX /dev/shm sync timing outside work/ (cleanup=true).
+    # Persist per-task FCS-GX sync timing outside work/ (cleanup=true).
     export FCS_GX_TIMING_LOG="${launchDir}/logs/nextflow/fcs_gx_shm_timing.tsv"
-    source ${projectDir}/bin/setup_fcs_shm.sh
-    trap 'rm -rf /dev/shm/gxdb 2>/dev/null || true' EXIT
-    if [ ! -f /dev/shm/gxdb/all.gxi ]; then
-        echo "[ERROR] FCS-GX DB not staged into /dev/shm/gxdb; aborting batch" >&2
+    source ${projectDir}/bin/setup_fcs_shm.sh || { echo "[ERROR] FCS-GX DB staging failed; aborting batch" >&2; exit 1; }
+    if [ ! -f "\$FCS_GX_SHM_DIR/all.gxi" ]; then
+        echo "[ERROR] FCS-GX DB not staged into \$FCS_GX_SHM_DIR; aborting batch" >&2
         exit 1
     fi
 
@@ -146,7 +154,7 @@ BATCH_EOF
         FCS_OUT=\$SCRATCH/\${asmid}.fcs_out
         PURGED=\$FCS_OUT/\${asmid}.raw.fcsgx_cleaned.fasta
         mkdir -p \$FCS_OUT
-        if \$SING AAFTF fcs_gx_purge -d /dev/shm/gxdb/all \
+        if \$SING AAFTF fcs_gx_purge -d "\$FCS_GX_SHM_DIR/all" \
             -i \$SCRATCH/\${asmid}.raw.fa -c ${task.cpus} \
             -o \$FCS_OUT \
             -t "\$phylum" -w \$SCRATCH/\${asmid}.fcs_report \
