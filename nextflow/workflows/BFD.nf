@@ -1,8 +1,10 @@
 //
 // BFD Functional Annotation Pipeline — main workflow definition.
 //
-// Runs Pfam, CAZy, MEROPS, SignalP, TMHMM, TargetP, IDP (AIUPred), WoLF PSORT and
-// predGPI over every species in samples.csv, computes per-genome sequence and
+// Runs the functional-annotation tools (Pfam, CAZy, MEROPS, SwissProt, SignalP,
+// TMHMM, TargetP, IDP, WoLF PSORT, predGPI, eggNOG, Phobius, DeepTMHMM, TCDB,
+// antiSMASH, tRNAscan-SE, Infernal, dbCAN CGC; each gated by params.run_<tool>)
+// over every species in samples.csv, computes per-genome sequence and
 // annotation statistics, and consolidates each into a DuckDB-loadable table.
 //
 // This file builds the input channels and delegates; the work lives in
@@ -37,7 +39,7 @@ workflow BFD {
     // params.singularity_cache is resolved from the env chain in nextflow.config;
     // this pipeline needs it for every *_sif param + the apptainer cacheDir.
     if (params.singularity_cache == null) {
-        throw new Exception("params.singularity_cache is not set. Export one of NXF_APPTAINER_CACHEDIR / NXF_SINGULARITY_CACHEDIR / APPTAINER_CACHEDIR / SINGULARITY_CACHEDIR pointing at the shared container cache (launch via run_unified.sh / run_funannotate.sh to get it set for you). See HOWTO_singularity.md.")
+        error "params.singularity_cache is not set. Export one of NXF_APPTAINER_CACHEDIR / NXF_SINGULARITY_CACHEDIR / APPTAINER_CACHEDIR / SINGULARITY_CACHEDIR pointing at the shared container cache (launch via run_unified.sh / run_funannotate.sh to get it set for you). See HOWTO_singularity.md."
     }
 
     // ── Validate params and samples.csv structure (fail fast) ────────────────
@@ -64,6 +66,7 @@ workflow BFD {
             [
                 id      : makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: ''),
                 locustag: row.LOCUSTAG?.replaceAll(/[\r\n]/, '')?.trim(),
+                asmid   : row.ASMID?.trim() ?: '',
                 species : row.SPECIES?.trim() ?: '',
                 strain  : cleanStrain(row.STRAIN?.trim() ?: ''),
             ]
@@ -80,138 +83,60 @@ workflow BFD {
     }
 
     // ── Per-tool input channels ──────────────────────────────────────────────
-    // Each drops genomes whose input file is absent, so a missing file skips that
-    // genome for that analysis instead of failing the run.
+    // Each genome's input files are looked up once, in inputs_ch. Each tool
+    // channel then keeps only the genomes that have the files it needs, so a
+    // missing file skips that genome for that analysis instead of failing the run.
     //
-    // Every channel below resolves its file(s) against one of these indexes
-    // instead of a per-genome .exists() call. Same fix as ANI_SAMPLES.nf's
-    // genomeIndex (see dirIndex() in modules/common/utils.nf): pep_dir alone
-    // was being checked per-genome by three separate channels here
-    // (proteins_ch, aa_freq_ch, busco_pep_ch) for the literal same file, and
-    // genome_dir was resolved twice identically (asm_stats_ch,
-    // busco_genome_ch) via resolveGenomeFile(). Cheap on today's local
-    // pep/cds/gff/genome dirs, but genome_dir already shares input_clean_genomes'
-    // S3 convention with the ANI k8s profile, so this is latent, not
-    // hypothetical -- and the redundant lookups were pure waste either way.
-    // The indexes are built lazily, on first use inside a channel closure. With
-    // run_setup=true, SETUP_SYMLINKS creates the input/ links during this run.
-    // An index built here, at workflow definition, is a snapshot from before the
-    // links exist, so only the links already on disk at launch would be found
-    // (2026-10-21: 99 of ~23,500 genomes ran). The first element reaches a
-    // closure only after SETUP_SYMLINKS has finished, so the listing is complete.
+    // Lookups go through one directory listing per input dir (dirIndex() in
+    // modules/common/utils.nf), not a per-genome .exists() call. The listings are
+    // built lazily, on first use inside a channel closure: with run_setup=true,
+    // SETUP_SYMLINKS creates the input/ links during this run, and a listing taken
+    // at workflow definition would miss them (2026-10-21: 99 of ~23,500 genomes
+    // ran). The first element reaches a closure only after SETUP_SYMLINKS ends.
     def indexCache = new java.util.concurrent.ConcurrentHashMap()
     def lazyIndex  = { String d -> indexCache.computeIfAbsent(d, { k -> dirIndex(k) }) }
-    // Optional second source for asm_stats/telomeres/BUSCO genome: genomes predict
-    // skipped have no predict_results scaffolds, so input/dna holds no usable file
-    // for them. Lazy for the same reason as the indexes above.
+    // Second source for the assembly-level steps: genomes that predict skipped have
+    // no predict_results scaffolds, so input/dna holds no usable file for them.
     def cleanIndex = { params.clean_genome_dir ? lazyIndex.call(params.clean_genome_dir as String) : [:] }
 
     def bfd_debug = params.bfd_debug.toBoolean()
-    def proteins_ch = ready_ch
-        .map { meta ->
-            def prot = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
-            if (!prot) {
-                if (bfd_debug) log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
-                return null
-            }
-            return tuple(meta, prot)
+    def inputs_ch = ready_ch.map { meta ->
+        def f = [
+            pep: lookupFile(lazyIndex.call(params.pep_dir),    "${meta.id}.proteins.fa"),
+            cds: lookupFile(lazyIndex.call(params.cds_dir),    "${meta.id}.cds-transcripts.fa"),
+            gff: lookupFile(lazyIndex.call(params.gff_dir),    "${meta.id}.gff3"),
+            dna: lookupFile(lazyIndex.call(params.genome_dir), "${meta.id}.scaffolds.fa"),
+        ]
+        if (!f.pep && bfd_debug) log.warn "Skipping ${meta.id} (${meta.locustag}): protein file not found"
+        tuple(meta, f)
+    }
+
+    def proteins_ch   = inputs_ch.filter { _m, f -> f.pep != null }.map { m, f -> tuple(m, f.pep) }
+    def codon_freq_ch = inputs_ch.filter { _m, f -> f.cds != null }.map { m, f -> tuple(m, f.cds) }
+    def intergenic_ch = inputs_ch.filter { _m, f -> f.gff != null }.map { m, f -> tuple(m, f.gff) }
+    // (meta, gff3, genome): gene stats, and antiSMASH / tRNAscan-SE / Infernal.
+    def gene_stats_ch = inputs_ch.filter { _m, f -> f.gff != null && f.dna != null }.map { m, f -> tuple(m, f.gff, f.dna) }
+    // (meta, gff3, proteins): dbCAN CGC/PUL.
+    def cgc_ch        = inputs_ch.filter { _m, f -> f.gff != null && f.pep != null }.map { m, f -> tuple(m, f.gff, f.pep) }
+    def busco_pep_ch  = proteins_ch.map { m, p -> tuple(m + [lineage: params.busco_lineage], p) }
+
+    // Assembly-level input (asm_stats, telomeres, BUSCO genome). These steps name
+    // their outputs by ASMID, so rows without one are skipped. resolveGenomeFile()
+    // tries <id>.scaffolds.fa, then <asmid>.fa.gz / <asmid>.masked.fasta.gz, in
+    // genome_dir; failing that, the same names in clean_genome_dir, and the genome
+    // is marked annotated=false.
+    def assembly_ch = inputs_ch
+        .filter { m, _f -> m.asmid }
+        .map { m, _f ->
+            def g = resolveGenomeFile(lazyIndex.call(params.genome_dir), m.id, m.asmid)
+            def annotated = g != null
+            g = g ?: resolveGenomeFile(cleanIndex.call(), m.id, m.asmid)
+            if (!g) { log.warn "Skipping ${m.id} (asm_stats/telomeres/BUSCO genome): no ${m.id}.scaffolds.fa or ${m.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
+            g ? tuple(m + [annotated: annotated], g) : null
         }
         .filter { it != null }
-
-    def aa_freq_ch = ready_ch.map { meta ->
-        def f = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
-        f ? tuple(meta, f) : null
-    }.filter { it != null }
-
-    def codon_freq_ch = ready_ch.map { meta ->
-        def f = lookupFile(lazyIndex.call(params.cds_dir), "${meta.id}.cds-transcripts.fa")
-        f ? tuple(meta, f) : null
-    }.filter { it != null }
-
-    def intergenic_ch = ready_ch.map { meta ->
-        def f = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
-        f ? tuple(meta, f) : null
-    }.filter { it != null }
-
-    def gene_stats_ch = ready_ch.map { meta ->
-        def gff = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
-        def dna = lookupFile(lazyIndex.call(params.genome_dir), "${meta.id}.scaffolds.fa")
-        (gff && dna) ? tuple(meta, gff, dna) : null
-    }.filter { it != null }
-
-    // Assembly-stats input: AAFTF assess reads the genome FASTA and the merged
-    // table joins to species on ASMID, so we attach ASMID (absent from ready_ch)
-    // by joining a basename→ASMID lookup built from samples.csv. Every genome
-    // channel below needs ASMID too: resolveGenomeFile() falls back to
-    // <asmid>.fa.gz / <asmid>.masked.fasta.gz when genome_dir holds raw/clean
-    // assemblies (e.g. input_clean_genomes/) rather than SETUP_SYMLINKS' output.
-    def asmid_by_basename_ch = Channel
-        .fromPath(params.samples)
-        .splitCsv(header: true)
-        .filter(taxonFilter)
-        .filter(asmidFilter)
-        .filter(suppressFilter)
-        .map { row ->
-            def basename = makeSampleTag(row.SPECIES?.trim() ?: '', row.STRAIN?.trim() ?: '')
-            tuple(basename, row.ASMID?.trim() ?: '')
-        }
-        .filter { basename, asmid -> asmid }
-
-    def ready_with_asmid_ch = ready_ch
-        .map { meta -> tuple(meta.id, meta) }
-        .join(asmid_by_basename_ch)            // inner join: drops rows with no ASMID
-        .map { _id, meta, asmid -> meta + [asmid: asmid] }
-
-    def asm_stats_ch = ready_with_asmid_ch
-        .map { meta ->
-            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid)
-            def annotated = true
-            if (!f) {
-                // No annotated scaffolds: use the original assembly and mark it.
-                f = resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
-                annotated = false
-            }
-            if (!f) { log.warn "Skipping ${meta.id} (asm_stats): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
-            f ? tuple(meta + [annotated: annotated], f) : null
-        }
-        .filter { it != null }
-
-    // Telomere finder reuses the same assembly input as asm_stats.
-    def telomeres_ch = ready_with_asmid_ch
-        .map { meta ->
-            def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid) ?: resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
-            if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (telomeres): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
-            f ? tuple(meta, f) : null
-        }
-        .filter { it != null }
-
-    // BUSCO lineage: params.busco_lineage (default fungi_odb12) globally. The
-    // val(lineage) slot is kept explicit so per-clade overrides can be wired in
-    // here later (e.g. from row.BUSCO_LINEAGE).
-    def busco_genome_ch = ready_with_asmid_ch.map { meta ->
-        def f = resolveGenomeFile(lazyIndex.call(params.genome_dir), meta.id, meta.asmid) ?: resolveGenomeFile(cleanIndex.call(), meta.id, meta.asmid)
-        if (!f) { if (bfd_debug) log.warn "Skipping ${meta.id} (busco_genome): no ${meta.id}.scaffolds.fa or ${meta.asmid}.fa.gz/.masked.fasta.gz in ${params.genome_dir} or ${params.clean_genome_dir}" }
-        f ? tuple(meta + [lineage: params.busco_lineage], f) : null
-    }.filter { it != null }
-
-    def busco_pep_ch = ready_ch.map { meta ->
-        def f = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
-        f ? tuple(meta + [lineage: params.busco_lineage], f) : null
-    }.filter { it != null }
-
-    // Genome-level functional-annotation input (antiSMASH, tRNAscan-SE,
-    // Infernal): same (meta, gff3, genome) shape gene_stats_ch already builds,
-    // reused as-is rather than re-resolving the same two indexes again.
-    def genome_func_ch = gene_stats_ch
-
-    // dbCAN CGC/PUL input: needs both the gene models (gff3) and the protein
-    // FASTA (not the genome DNA), so it's its own small channel rather than
-    // reusing gene_stats_ch or proteins_ch alone.
-    def cgc_ch = ready_ch.map { meta ->
-        def gff  = lookupFile(lazyIndex.call(params.gff_dir), "${meta.id}.gff3")
-        def prot = lookupFile(lazyIndex.call(params.pep_dir), "${meta.id}.proteins.fa")
-        (gff && prot) ? tuple(meta, gff, prot) : null
-    }.filter { it != null }
+    // BUSCO lineage is params.busco_lineage (default fungi_odb12) for every genome.
+    def busco_genome_ch = assembly_ch.map { m, g -> tuple(m + [lineage: params.busco_lineage], g) }
 
     // ── Run ──────────────────────────────────────────────────────────────────
     // merge_all globs the whole results dir (every genome ever processed). Under
@@ -220,11 +145,11 @@ workflow BFD {
     def use_glob   = params.merge_all.toBoolean() && !params.taxon
     def skip_merge = params.skip_merge.toBoolean()
 
-    BFD_FUNCTIONAL(proteins_ch, genome_func_ch, cgc_ch, use_glob, skip_merge)
+    BFD_FUNCTIONAL(proteins_ch, gene_stats_ch, cgc_ch, use_glob, skip_merge)
 
     BFD_GENOME_STATS(
-        aa_freq_ch, codon_freq_ch, intergenic_ch, gene_stats_ch,
-        asm_stats_ch, telomeres_ch, busco_genome_ch, busco_pep_ch
+        proteins_ch, codon_freq_ch, intergenic_ch, gene_stats_ch,
+        assembly_ch, assembly_ch, busco_genome_ch, busco_pep_ch
     )
 
     if (!skip_merge) {

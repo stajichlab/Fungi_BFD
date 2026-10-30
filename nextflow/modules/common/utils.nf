@@ -652,3 +652,23 @@ def clearIfStale(inputFile, List storedOutputs) {
         }
     }
 }
+
+// Paths a hash-bucketed storeDir step writes for one genome:
+// <baseDir>/<type>/<bucket of key>/<key><suffix>, one per suffix. Must match the
+// module's storeDir + output names, or clearIfStale() and storeDir's own
+// existence check look in the wrong place and every genome recomputes.
+def bucketedOutputs(String baseDir, String type, String key, List suffixes) {
+    def bucket = hashBucketForType(type, key)
+    suffixes.collect { s -> file("${baseDir}/${type}/${bucket}/${key}${s}") }
+}
+
+// Pass-through map for a (meta, file, file...) channel feeding a storeDir step.
+// outsFor(meta) gives that step's cached output paths; they are deleted when any
+// input file in the tuple is newer, so a re-annotated genome forces a re-run.
+def staleGuard(ch, Closure outsFor) {
+    ch.map { item ->
+        def outs = outsFor.call(item[0])
+        item.drop(1).each { f -> clearIfStale(f, outs) }
+        item
+    }
+}

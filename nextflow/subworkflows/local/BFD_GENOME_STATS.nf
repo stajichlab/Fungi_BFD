@@ -3,8 +3,8 @@
 //
 // Every process here is storeDir-cached per genome (BUSCO additionally per
 // lineage, so switching to a finer-grained lineage produces a distinct file
-// without invalidating the coarser one). clearIfStale() deletes any cached
-// output older than its input first, so a re-annotated genome recomputes.
+// without invalidating the coarser one). staleGuard() deletes any cached
+// output older than any of its inputs first, so a re-annotated genome recomputes.
 //
 // The two frequency steps are batched rather than one-job-per-genome to amortise
 // SLURM startup: planFreq() decides once, before anything runs, which genomes
@@ -21,7 +21,7 @@ include { FIND_TELOMERES   } from '../../modules/BFD/FIND_TELOMERES/main.nf'
 include { BUSCO_GENOME     } from '../../modules/BFD/BUSCO_GENOME/main.nf'
 include { BUSCO_PEP        } from '../../modules/BFD/BUSCO_PEP/main.nf'
 
-include { clearIfStale; hashBucketForType } from '../../modules/common/utils.nf'
+include { clearIfStale; staleGuard; bucketedOutputs } from '../../modules/common/utils.nf'
 
 // Split a per-genome frequency channel into genomes whose output already exists
 // and genomes that still need computing.
@@ -40,8 +40,7 @@ include { clearIfStale; hashBucketForType } from '../../modules/common/utils.nf'
 // already on disk.
 def planFreq(ch, String subdir, String suffix) {
     ch.map { meta, input ->
-        def bucket = hashBucketForType(subdir, meta.locustag)
-        def out = file("${params.genome_stats_outdir}/${subdir}/${bucket}/${meta.locustag}.${suffix}")
+        def out = bucketedOutputs(params.genome_stats_outdir as String, subdir, meta.locustag as String, [".${suffix}"])[0]
         clearIfStale(input, [out])
         tuple(meta, input, out, out.exists())
     }
@@ -71,7 +70,7 @@ workflow BFD_GENOME_STATS {
     busco_pep_ch     // tuple(meta, proteins)  (meta.lineage set)
 
     main:
-    def stats = "${params.genome_stats_outdir}"
+    def stats = params.genome_stats_outdir as String
 
     def aa_plan    = null
     def codon_plan = null
@@ -86,53 +85,36 @@ workflow BFD_GENOME_STATS {
     }
 
     if (params.run_intergenic.toBoolean())
-        CALC_INTERGENIC(intergenic_ch.map { meta, gff ->
-            def bucket = hashBucketForType('intergenic_stats', meta.locustag)
-            clearIfStale(gff, [file("${stats}/intergenic_stats/${bucket}/${meta.locustag}.gene_intergenic_distances.csv.gz")])
-            tuple(meta, gff)
-        })
+        CALC_INTERGENIC(staleGuard(intergenic_ch, { m ->
+            bucketedOutputs(stats, 'intergenic_stats', m.locustag as String, ['.gene_intergenic_distances.csv.gz'])
+        }))
 
     if (params.run_gene_stats.toBoolean())
-        CALC_GENE_STATS(gene_stats_ch.map { meta, gff, dna ->
-            def bucket = hashBucketForType('gene_stats', meta.locustag)
-            def outs = ['gene_info', 'gene_exons', 'gene_CDS', 'gene_introns',
-                        'gene_transcripts', 'gene_trnas', 'gene_proteins'].collect {
-                file("${stats}/gene_stats/${bucket}/${meta.locustag}.${it}.csv.gz")
-            }
-            // GFF3 (re-annotation) and genome FASTA are both inputs; either being
-            // newer than the cached outputs should force a re-run.
-            clearIfStale(gff, outs)
-            clearIfStale(dna, outs)
-            tuple(meta, gff, dna)
-        })
+        CALC_GENE_STATS(staleGuard(gene_stats_ch, { m ->
+            bucketedOutputs(stats, 'gene_stats', m.locustag as String,
+                ['gene_info', 'gene_exons', 'gene_CDS', 'gene_introns',
+                 'gene_transcripts', 'gene_trnas', 'gene_proteins'].collect { t -> ".${t}.csv.gz" })
+        }))
 
     if (params.run_asm_stats.toBoolean())
-        CALC_ASM_STATS(asm_stats_ch.map { meta, genome ->
-            def bucket = hashBucketForType('asm_stats', meta.asmid)
-            clearIfStale(genome, [file("${stats}/asm_stats/${bucket}/${meta.asmid}.stats.txt")])
-            tuple(meta, genome)
-        })
+        CALC_ASM_STATS(staleGuard(asm_stats_ch, { m ->
+            bucketedOutputs(stats, 'asm_stats', m.asmid as String, ['.stats.txt'])
+        }))
 
     if (params.run_telomeres.toBoolean())
-        FIND_TELOMERES(telomeres_ch.map { meta, genome ->
-            def bucket = hashBucketForType('telomeres', meta.asmid)
-            clearIfStale(genome, [file("${stats}/telomeres/${bucket}/${meta.asmid}.telomeres.tsv.gz")])
-            tuple(meta, genome)
-        })
+        FIND_TELOMERES(staleGuard(telomeres_ch, { m ->
+            bucketedOutputs(stats, 'telomeres', m.asmid as String, ['.telomeres.tsv.gz'])
+        }))
 
     if (params.run_busco_genome.toBoolean())
-        BUSCO_GENOME(busco_genome_ch.map { meta, genome ->
-            def bucket = hashBucketForType('BUSCO_genome', meta.asmid)
-            clearIfStale(genome, [file("${stats}/BUSCO_genome/${bucket}/${meta.asmid}.BUSCO_summary.${meta.lineage}.txt")])
-            tuple(meta, genome)
-        })
+        BUSCO_GENOME(staleGuard(busco_genome_ch, { m ->
+            bucketedOutputs(stats, 'BUSCO_genome', m.asmid as String, [".BUSCO_summary.${m.lineage}.txt"])
+        }))
 
     if (params.run_busco_pep.toBoolean())
-        BUSCO_PEP(busco_pep_ch.map { meta, prot ->
-            def bucket = hashBucketForType('BUSCO_protein', meta.locustag)
-            clearIfStale(prot, [file("${stats}/BUSCO_protein/${bucket}/${meta.locustag}.BUSCO_summary.${meta.lineage}.txt")])
-            tuple(meta, prot)
-        })
+        BUSCO_PEP(staleGuard(busco_pep_ch, { m ->
+            bucketedOutputs(stats, 'BUSCO_protein', m.locustag as String, [".BUSCO_summary.${m.lineage}.txt"])
+        }))
 
     emit:
     // Emitted for BFD_MERGE. The *_plan channels carry the genomes that were

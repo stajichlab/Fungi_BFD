@@ -1,10 +1,10 @@
 //
-// BFD_FUNCTIONAL — the nine per-protein functional-annotation tools and their merges.
+// BFD_FUNCTIONAL — the per-protein and per-genome functional-annotation tools and their merges.
 //
 // Each tool is independently gated by params.run_<tool>. Every RUN_* process is
 // storeDir-cached, so a genome whose outputs already exist is skipped without
-// -resume; clearIfStale() first deletes any cached output older than the input
-// proteins file, so a re-annotated genome forces a re-run of every tool.
+// -resume; staleGuard() first deletes any cached output older than one of the
+// tool's input files, so a re-annotated genome forces a re-run of every tool.
 //
 // Merge scope (see MERGE_MODE below):
 //   glob mode  — merge every result file in the output dir, including genomes from
@@ -59,66 +59,22 @@ include { MERGE_TRNASCAN  } from '../../modules/BFD/MERGE_TRNASCAN/main.nf'
 include { MERGE_INFERNAL  } from '../../modules/BFD/MERGE_INFERNAL/main.nf'
 include { MERGE_CAZY_CGC  } from '../../modules/BFD/MERGE_CAZY_CGC/main.nf'
 
-include { clearIfStale; gatedGlobIn; hashBucketForType } from '../../modules/common/utils.nf'
+include { gatedGlobIn; staleGuard; bucketedOutputs } from '../../modules/common/utils.nf'
 
-// Attach a staleness check to the protein channel for CAZY specifically -- CAZY
-// uses a different pre-existing layout (one subdirectory per genome, not
-// hash-bucketed) and is out of scope for the genome_stats/function hash-bucket
-// reorg (see KNOWN_SUBDIRECTORY_LAYOUT_TYPES in
-// scripts/one-off/reorg_genome_stats_hash_buckets.py). Left exactly as before.
-def staleGuard(ch, List relOuts) {
-    ch.map { meta, prot ->
-        clearIfStale(prot, relOuts.collect { rel ->
-            file("${params.outdir}/${rel.replace('@', meta.id)}")
-        })
-        tuple(meta, prot)
-    }
+// Cached-output paths for staleGuard(). Protein-level tools name their outputs
+// by LOCUSTAG, genome-level tools (antiSMASH, tRNAscan-SE, Infernal, dbCAN CGC)
+// by meta.id; both are hash-bucketed under params.outdir/<type>/.
+def byLocustag(String type, List suffixes) {
+    return { m -> bucketedOutputs(params.outdir as String, type, m.locustag as String, suffixes) }
 }
-
-// Same idea, but for the hash-bucketed function/* tools (everything except
-// CAZY): relOuts templates are filename-only (no type prefix, no bucket) --
-// both are computed here from `type` and meta.locustag, and must match exactly
-// what the real RUN_* module actually writes (see the corresponding module
-// under nextflow/modules/BFD/), or clearIfStale()'s check -- and therefore
-// storeDir's own existence check -- looks in the wrong place and every genome
-// gets needlessly recomputed.
-def staleGuardBucketed(ch, String type, List relOuts) {
-    ch.map { meta, prot ->
-        def bucket = hashBucketForType(type, meta.locustag)
-        clearIfStale(prot, relOuts.collect { rel ->
-            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.locustag)}")
-        })
-        tuple(meta, prot)
-    }
+def byId(String type, List suffixes) {
+    return { m -> bucketedOutputs(params.outdir as String, type, m.id as String, suffixes) }
 }
-
-// Same idea as staleGuardBucketed, but for the genome-level tools (antiSMASH,
-// tRNAscan-SE) whose channel carries (meta, gff3, genome) instead of a single
-// protein file, and whose output/bucket keys off meta.id (species+strain, the
-// primary key those tools name outputs after) rather than meta.locustag.
-def staleGuardBucketedGenome(ch, String type, List relOuts) {
-    ch.map { meta, gff, dna ->
-        def bucket = hashBucketForType(type, meta.id)
-        clearIfStale(dna, relOuts.collect { rel ->
-            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.id)}")
-        })
-        tuple(meta, gff, dna)
-    }
-}
-
-// Same as staleGuardBucketed, but keyed on meta.id (not meta.locustag) for
-// genome-level tools whose channel is (meta, file) -- RUN_INFERNAL names its
-// storeDir/output after meta.id like the other genome-level tools above, not
-// meta.locustag (the protein-tool convention), so it needs its own bucket key
-// to match, or clearIfStale()/storeDir would silently look in the wrong path.
-def staleGuardBucketedById(ch, String type, List relOuts) {
-    ch.map { meta, f ->
-        def bucket = hashBucketForType(type, meta.id)
-        clearIfStale(f, relOuts.collect { rel ->
-            file("${params.outdir}/${type}/${bucket}/${rel.replace('@', meta.id)}")
-        })
-        tuple(meta, f)
-    }
+// CAZY keeps its older layout, one subdirectory per genome and no hash bucket
+// (see KNOWN_SUBDIRECTORY_LAYOUT_TYPES in
+// scripts/one-off/reorg_genome_stats_hash_buckets.py).
+def cazyOutputs(m) {
+    ['overview', 'cazymes', 'substrates'].collect { t -> file("${params.outdir}/cazy/${m.id}/${m.id}.${t}.tsv.gz") }
 }
 
 // Root a gated glob in params.outdir. Globs for the hash-bucketed tools use
@@ -181,46 +137,46 @@ workflow BFD_FUNCTIONAL {
 
     // ── Per-species RUN steps ────────────────────────────────────────────────
     if (run_pfam)
-        RUN_PFAM(staleGuardBucketed(proteins_ch, 'pfam_hmmscan', ['@.domtblout.gz', '@.tblout.gz']))
+        RUN_PFAM(staleGuard(proteins_ch, byLocustag('pfam_hmmscan', ['.domtblout.gz', '.tblout.gz'])))
     if (run_cazy)
-        RUN_CAZY(staleGuard(proteins_ch, ['cazy/@/@.overview.tsv.gz', 'cazy/@/@.cazymes.tsv.gz', 'cazy/@/@.substrates.tsv.gz']))
+        RUN_CAZY(staleGuard(proteins_ch, { m -> cazyOutputs(m) }))
     if (run_merops)
-        RUN_MEROPS(staleGuardBucketed(proteins_ch, 'merops', ['@.blasttab.gz']))
+        RUN_MEROPS(staleGuard(proteins_ch, byLocustag('merops', ['.blasttab.gz'])))
     if (run_swissprot)
-        RUN_SWISSPROT(staleGuardBucketed(proteins_ch, 'swissprot', ['@.blasttab.gz']))
+        RUN_SWISSPROT(staleGuard(proteins_ch, byLocustag('swissprot', ['.blasttab.gz'])))
     if (run_signalp)
-        RUN_SIGNALP(staleGuardBucketed(proteins_ch, 'signalp', ['@.signalp.gff3.gz', '@.signalp.results.txt.gz']))
+        RUN_SIGNALP(staleGuard(proteins_ch, byLocustag('signalp', ['.signalp.gff3.gz', '.signalp.results.txt.gz'])))
     if (run_tmhmm)
-        RUN_TMHMM(staleGuardBucketed(proteins_ch, 'tmhmm', ['@.tmhmm_short.tsv.gz', '@.tmhmm_results.tsv.gz']))
+        RUN_TMHMM(staleGuard(proteins_ch, byLocustag('tmhmm', ['.tmhmm_short.tsv.gz', '.tmhmm_results.tsv.gz'])))
     if (run_targetp)
-        RUN_TARGETP(staleGuardBucketed(proteins_ch, 'targetP', ['@_summary.targetp2.gz']))
+        RUN_TARGETP(staleGuard(proteins_ch, byLocustag('targetP', ['_summary.targetp2.gz'])))
     if (run_idp)
-        RUN_IDP(staleGuardBucketed(proteins_ch, 'aiupred', ['@.aiupred.txt.gz', '@.idp.csv.gz', '@.idp_summary.csv.gz']))
+        RUN_IDP(staleGuard(proteins_ch, byLocustag('aiupred', ['.aiupred.txt.gz', '.idp.csv.gz', '.idp_summary.csv.gz'])))
     if (run_wolfpsort)
-        RUN_WOLFPSORT(staleGuardBucketed(proteins_ch, 'wolfpsort', ['@.wolfpsort.results.txt.gz']))
+        RUN_WOLFPSORT(staleGuard(proteins_ch, byLocustag('wolfpsort', ['.wolfpsort.results.txt.gz'])))
     if (run_predgpi)
-        RUN_PREDGPI(staleGuardBucketed(proteins_ch, 'predgpi', ['@.predgpi.gff3.gz']))
+        RUN_PREDGPI(staleGuard(proteins_ch, byLocustag('predgpi', ['.predgpi.gff3.gz'])))
 
     // ── New per-species RUN steps (2026-08-20 followup) ─────────────────────
     if (run_eggnog)
-        RUN_EGGNOG(staleGuardBucketed(proteins_ch, 'eggnog', ['@.emapper.annotations.gz']))
+        RUN_EGGNOG(staleGuard(proteins_ch, byLocustag('eggnog', ['.emapper.annotations.gz'])))
     if (run_phobius)
-        RUN_PHOBIUS(staleGuardBucketed(proteins_ch, 'phobius', ['@.phobius.short.txt.gz']))
+        RUN_PHOBIUS(staleGuard(proteins_ch, byLocustag('phobius', ['.phobius.short.txt.gz'])))
     if (run_deeptmhmm)
-        RUN_DEEPTMHMM(staleGuardBucketed(proteins_ch, 'deeptmhmm', ['@.deeptmhmm.gff3.gz']))
+        RUN_DEEPTMHMM(staleGuard(proteins_ch, byLocustag('deeptmhmm', ['.deeptmhmm.gff3.gz'])))
     if (run_tcdb) {
         SETUP_TCDB_DB()
-        RUN_TCDB(staleGuardBucketed(proteins_ch, 'tcdb', ['@.blasttab.gz']), SETUP_TCDB_DB.out.fasta, SETUP_TCDB_DB.out.blastdb)
+        RUN_TCDB(staleGuard(proteins_ch, byLocustag('tcdb', ['.blasttab.gz'])), SETUP_TCDB_DB.out.fasta, SETUP_TCDB_DB.out.blastdb)
     }
     if (run_antismash)
-        RUN_ANTISMASH(staleGuardBucketedGenome(genome_ch, 'antismash', ['@.antismash.json.gz']))
+        RUN_ANTISMASH(staleGuard(genome_ch, byId('antismash', ['.antismash.json.gz'])))
     if (run_trnascan)
-        RUN_TRNASCAN(staleGuardBucketedGenome(genome_ch, 'trnascan', ['@.trnascan.no-overlaps.gff3.gz']))
+        RUN_TRNASCAN(staleGuard(genome_ch, byId('trnascan', ['.trnascan.no-overlaps.gff3.gz'])))
     if (run_infernal)
-        RUN_INFERNAL(staleGuardBucketedById(genome_ch.map { meta, gff, dna -> tuple(meta, dna) }, 'infernal', ['@.rfam.tblout.gz']))
+        RUN_INFERNAL(staleGuard(genome_ch.map { meta, _gff, dna -> tuple(meta, dna) }, byId('infernal', ['.rfam.tblout.gz'])))
     if (run_cazy_cgc) {
         SETUP_DBCAN_DB()
-        RUN_CAZY_CGC(cgc_ch, SETUP_DBCAN_DB.out.db)
+        RUN_CAZY_CGC(staleGuard(cgc_ch, byId('cazy_cgc', ['.cgc.tsv.gz'])), SETUP_DBCAN_DB.out.db)
     }
 
     // ── MERGE steps ──────────────────────────────────────────────────────────
