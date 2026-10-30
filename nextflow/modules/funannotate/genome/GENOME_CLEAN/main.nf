@@ -4,7 +4,7 @@ process GENOME_CLEAN {
     // AAFTF is invoked inside the script via
     // `apptainer exec ${params.aaftf_sif} ...` (see SING_BINDS/SING below), not
     // as a Nextflow `process.container` -- this process also needs host-side tools
-    // (pigz, Rscript/conda) and the host-staged FCS-GX /dev/shm db.
+    // (pigz, Rscript/conda) and the FCS-GX db staged under params.fcsgx_stage_dir.
 
     // Nextflow skips this task when input_clean_genomes/<asmid>.fa.gz already exists.
     storeDir "${launchDir}/input_clean_genomes"
@@ -39,21 +39,31 @@ process GENOME_CLEAN {
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     # AAFTF comes from the AAFTF SIF (replaces `module load AAFTF`); taxonkit
     # comes from params.taxonkit_container via \$TSING. fcs_gx_purge takes its DB via an explicit
-    # --db /dev/shm/gxdb/all flag (not the image's AAFTF_DB env default), so
-    # only /dev/shm needs binding for that -- no separate AAFTF_DB bind.
+    # --db <stage dir>/gxdb/all flag (not the image's AAFTF_DB env default), so
+    # only the stage dir needs binding for that (\$SCRATCH is bound below) -- no separate AAFTF_DB bind.
     # \$SCRATCH (node-local, NOT under /bigdata) also needs an explicit bind --
     # fcs_gx_purge reads/writes \$SCRATCH/${asmid}.*.fa[sta] directly, and
     # manually-built \$SING commands get none of Nextflow's automatic
     # task-workdir binding (same missing-bind bug class as GENEMARK_RUN/
     # FUNANNOTATE_PREDICT, confirmed 2026-08-24).
-    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm"
+    # FCS-GX DB stage dir = params.fcsgx_stage_dir ('\$SCRATCH' = node-local NVMe; it expands on the task node).
+    # Each task gets its own mktemp dir, so tasks on one node never share or delete each other's copy.
+    FCS_GX_STAGE_ROOT="${params.fcsgx_stage_dir}"
+    mkdir -p "\$FCS_GX_STAGE_ROOT"
+    FCS_GX_STAGE="\$(mktemp -d "\$FCS_GX_STAGE_ROOT/fcsgx_XXXXXX")" || { echo "[ERROR] cannot create a stage dir under \$FCS_GX_STAGE_ROOT" >&2; exit 1; }
+    trap 'rm -rf "\$FCS_GX_STAGE"' EXIT
+    export FCS_GX_SHM_DIR="\$FCS_GX_STAGE/gxdb"
+    STAGE_BIND=""
+    [ "\$FCS_GX_STAGE_ROOT" != "\$SCRATCH" ] && STAGE_BIND=",\$FCS_GX_STAGE_ROOT:\$FCS_GX_STAGE_ROOT"
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm\${STAGE_BIND}"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
     # taxonkit is not in the AAFTF >= 0.7 image; it runs from params.taxonkit_container.
     TSING="apptainer exec --bind ${taxondb}:${taxondb}:ro ${params.taxonkit_container}"
-    # Ensure /dev/shm/gxdb is present on this node; register for cleanup when done.
-    # Persist per-task FCS-GX /dev/shm sync timing outside work/ (cleanup=true).
+    # Stage the FCS-GX DB into \$FCS_GX_STAGE (this job's own copy; the EXIT trap above removes it).
+    # Persist per-task FCS-GX sync timing outside work/ (cleanup=true).
+    export FCS_GX_KEEP_SHM=1
     export FCS_GX_TIMING_LOG="${launchDir}/logs/nextflow/fcs_gx_shm_timing.tsv"
-    source ${projectDir}/bin/setup_fcs_shm.sh
+    source ${projectDir}/bin/setup_fcs_shm.sh || { echo "[ERROR] FCS-GX DB staging failed" >&2; exit 1; }
     TAXONKIT_DB=${taxondb}
     phylum=\$(echo ${taxonid} | \$TSING taxonkit --data-dir \$TAXONKIT_DB lineage | \$TSING taxonkit --data-dir \$TAXONKIT_DB reformat -f "{p}" --output-ambiguous-result | cut -f3 | \$TSING taxonkit --data-dir \$TAXONKIT_DB name2taxid | cut -f2 | uniq | head -n 1)
     if [ -z "\$phylum" ]; then
@@ -77,7 +87,7 @@ process GENOME_CLEAN {
     # <input prefix>.fcs_gx_report.txt; the input prefix here is ${asmid}.raw.
     FCS_OUT=\$SCRATCH/${asmid}.fcs_out
     mkdir -p \$FCS_OUT
-    \$SING AAFTF fcs_gx_purge -d /dev/shm/gxdb/all \
+    \$SING AAFTF fcs_gx_purge -d "\$FCS_GX_SHM_DIR/all" \
         -i \$SCRATCH/${asmid}.raw.fa -c ${task.cpus} \
         -o \$FCS_OUT \
         -t "\$phylum" -w \$SCRATCH/${asmid}.fcs_report
