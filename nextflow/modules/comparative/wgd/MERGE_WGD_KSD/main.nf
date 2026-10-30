@@ -14,6 +14,12 @@
 //                            analysis columns, keyed by species_prefix (LOCUSTAG)
 //                            + genome (sampletag). NULLs for pairs with no valid
 //                            Ka/Ks estimate (~43% of rows).
+//                            Pairs with dS > params.wgd_max_ds (saturated) and, with
+//                            params.wgd_drop_null_ds, pairs with no dS are dropped here;
+//                            Pairs with fewer than params.wgd_min_codons codons left after
+//                            wgd's family-wide gap stripping are dropped too (dS from 1-2
+//                            codons is unreliable). alignmentcoverage, alignmentidentity and
+//                            strippedalignmentlength are kept. The raw ks.tsv is not changed.
 //   wgd.ks.summary.parquet— per-genome counts: n_pairs, n_pairs_with_ds, n_families
 include { tablesDir } from '../../../common/utils.nf'
 
@@ -32,11 +38,15 @@ process MERGE_WGD_KSD {
     path("wgd.ks.summary.parquet"), emit: ks_summary
 
     script:
+    def max_ds   = params.wgd_max_ds   ? "--max-ds ${params.wgd_max_ds}" : ''
+    def min_cod  = params.wgd_min_codons ? "--min-codons ${params.wgd_min_codons}" : ''
+    def drop_nul = params.wgd_drop_null_ds.toString().toBoolean() ? '--drop-null-ds' : ''
     """
     python3 ${projectDir}/bin/merge_wgd_ks.py \
         --glob '${outdir}/wgd_ksd/*/*.ks.tsv' \
         -o wgd.ks.parquet \
-        -s wgd.ks.summary.parquet
+        -s wgd.ks.summary.parquet \
+        ${max_ds} ${min_cod} ${drop_nul}
     """
 
     stub:

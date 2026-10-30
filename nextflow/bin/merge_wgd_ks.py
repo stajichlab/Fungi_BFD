@@ -33,7 +33,11 @@ KS_SUFFIX = ".tsv.ks.tsv"
 # kept as string); wgd mix/peak node-average pairs by (family, node), so the
 # peak-summary framework (build_wgd_ksd_summary.py) needs it.
 STR_COLS = ["pair", "family", "g1", "g2", "gene1", "gene2", "node"]
-FLOAT_COLS = ["N", "S", "dN", "dN/dS", "dS", "alignmentlength", "t"]
+# alignmentcoverage/alignmentidentity/strippedalignmentlength are kept: dS is only
+# reliable when enough codons survive wgd's family-wide gap stripping
+# (strippedalignmentlength is in nucleotides; codons = value / 3).
+FLOAT_COLS = ["N", "S", "dN", "dN/dS", "dS", "alignmentlength",
+              "strippedalignmentlength", "alignmentcoverage", "alignmentidentity", "t"]
 
 
 def species_prefix_of(gene):
@@ -57,6 +61,15 @@ def main():
                     help="output merged pairs parquet")
     ap.add_argument("-s", "--summary", default="wgd.ks.summary.parquet",
                     help="output per-genome summary parquet")
+    ap.add_argument("--max-ds", type=float, default=None,
+                    help="drop pairs with dS above this value (saturated; wgd "
+                         "plots 0-5). Default: keep all")
+    ap.add_argument("--min-codons", type=int, default=None,
+                    help="drop pairs with fewer than this many codons left after "
+                         "wgd's gap stripping (strippedalignmentlength/3). Pairs "
+                         "with a missing value are dropped. Default: keep all")
+    ap.add_argument("--drop-null-ds", action="store_true",
+                    help="drop pairs with no valid dS estimate")
     args = ap.parse_args()
 
     files = []
@@ -77,7 +90,7 @@ def main():
         [(c, float_type) for c in FLOAT_COLS]
     )
 
-    summaries = []  # (genome, species_prefix, n_pairs, n_pairs_with_ds, n_families)
+    summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families)
     n_rows = 0
     with pq.ParquetWriter(args.out, schema, compression="zstd",
                           use_dictionary=True, version="2.6", data_page_version="2.0") as w:
@@ -88,6 +101,23 @@ def main():
                                  na_values=["NaN", "nan", ""])
             except pd.errors.EmptyDataError:
                 df = pd.DataFrame(columns=STR_COLS + FLOAT_COLS)
+            n_raw = len(df)
+            prefix0 = species_prefix_of(df["gene1"].iloc[0]) if n_raw and "gene1" in df.columns else ""
+            if not df.empty and (args.max_ds is not None or args.drop_null_ds
+                                 or args.min_codons is not None):
+                ds = pd.to_numeric(df["dS"], errors="coerce") if "dS" in df.columns \
+                    else pd.Series(float("nan"), index=df.index)
+                keep = pd.Series(True, index=df.index)
+                if args.drop_null_ds:
+                    keep &= ds.notna()
+                if args.max_ds is not None:
+                    keep &= ~(ds > args.max_ds)  # NaN is kept unless --drop-null-ds
+                if args.min_codons is not None:
+                    sl = pd.to_numeric(df["strippedalignmentlength"], errors="coerce") \
+                        if "strippedalignmentlength" in df.columns \
+                        else pd.Series(float("nan"), index=df.index)
+                    keep &= (sl / 3) >= args.min_codons  # NaN -> False
+                df = df[keep].copy()
             if df.empty:
                 # keep schema stable; write an empty row group
                 table = schema.empty_table()
@@ -106,21 +136,23 @@ def main():
                                              preserve_index=False)
             w.write_table(table)
             n_rows += table.num_rows
-            if not df.empty:
+            if n_raw:
                 summaries.append((
                     genome,
-                    str(df["species_prefix"].iloc[0]) if len(df) else "",
+                    prefix0,
+                    n_raw,
                     len(df),
-                    int(df["dS"].notna().sum()),
-                    int(df["family"].nunique()),
+                    int(df["dS"].notna().sum()) if len(df) else 0,
+                    int(df["family"].nunique()) if len(df) else 0,
                 ))
-            print(f"  {genome}: {len(df):,} rows", file=sys.stderr)
+            print(f"  {genome}: {n_raw:,} raw -> {len(df):,} rows", file=sys.stderr)
 
     # per-genome summary
     sum_schema = pa.schema([
         ("genome", string_type),
         ("species_prefix", string_type),
-        ("n_pairs", pa.int64()),
+        ("n_pairs_raw", pa.int64()),   # pairs in ks.tsv before filtering
+        ("n_pairs", pa.int64()),       # pairs kept in wgd.ks.parquet
         ("n_pairs_with_ds", pa.int64()),
         ("n_families", pa.int64()),
     ])
