@@ -30,9 +30,23 @@ include { BUILD_DUCKDB     } from '../../modules/BFD/BUILD_DUCKDB/main.nf'
 
 include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
 
-// Root a gated glob in params.genome_stats_outdir.
-def gatedGlobStats(sync_ch, String glob) {
-    gatedGlobIn(sync_ch, params.genome_stats_outdir, glob)
+// Merge input for one stats table, as a manifest (see toManifest()).
+//   glob mode: every file under params.genome_stats_outdir matching `glob`,
+//              listed once `live` (this run's outputs) has finished, or at once
+//              when the producer did not run this session. Globs are "**/*.ext"
+//              because the directories are hash-bucketed one level deep (T-014);
+//              a flat glob would match nothing.
+//   run mode:  the files in `runFiles`; null when the producer did not run, so
+//              the caller skips that merge.
+// `live` emits nothing when every genome was already cached and the producer
+// had no tasks (BATCH_*_FREQ); the glob then never fires and that merge is
+// skipped, the same as before this helper.
+def statsManifest(boolean useGlob, boolean ran, live, runFiles, String glob, String name) {
+    if (useGlob) {
+        def sync = ran ? live.collect() : Channel.of(true)
+        return toManifest(gatedGlobIn(sync, params.genome_stats_outdir, glob), name)
+    }
+    return ran ? toManifest(runFiles, name) : null
 }
 
 workflow BFD_MERGE {
@@ -70,86 +84,61 @@ workflow BFD_MERGE {
     // -- without it BUILD_DUCKDB's cache key never depends on those tables.
     def merge_outs = [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species, functional_sync]
 
-    if (use_glob) {
-        // In glob mode a table is rebuilt even when its producer did not run this
-        // session, so genomes computed earlier still reach the table. Globs are
-        // "**/*.ext", not "*.ext" -- these directories are hash-bucketed one level
-        // deep (T-014); a flat glob would silently match nothing for any bucketed
-        // genome, the same silent-loss failure class already documented for
-        // gated-glob-vs-live-channel elsewhere in this repo (.living/learnings.md).
-        MERGE_AA_FREQ(toManifest(gatedGlobStats(
-            params.run_aa_freq.toBoolean() ? aa_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
-            "aa_freq/**/*.aa_freq.csv.gz"), 'aa_freq.manifest.txt'))
+    // In glob mode a table is rebuilt even when its producer did not run this
+    // session, so genomes computed earlier still reach the table. The frequency
+    // tables in run mode take the union of genomes cached before the run and
+    // genomes this run computed (BFD_GENOME_STATS.planFreq), so neither list
+    // races an in-flight write.
+    def run_aa    = params.run_aa_freq.toBoolean()
+    def run_codon = params.run_codon_freq.toBoolean()
+
+    def aa_in = statsManifest(use_glob, run_aa, aa_csv, aa_cached.mix(aa_csv.flatten()),
+        "aa_freq/**/*.aa_freq.csv.gz", 'aa_freq.manifest.txt')
+    if (aa_in) {
+        MERGE_AA_FREQ(aa_in)
         merge_outs << MERGE_AA_FREQ.out.parquet
+    }
 
-        MERGE_CODON_FREQ(toManifest(gatedGlobStats(
-            params.run_codon_freq.toBoolean() ? codon_csv.flatten().collect().ifEmpty([]) : Channel.of(true),
-            "codon_freq/**/*.codon_freq.csv.gz"), 'codon_freq.manifest.txt'))
+    def codon_in = statsManifest(use_glob, run_codon, codon_csv, codon_cached.mix(codon_csv.flatten()),
+        "codon_freq/**/*.codon_freq.csv.gz", 'codon_freq.manifest.txt')
+    if (codon_in) {
+        MERGE_CODON_FREQ(codon_in)
         merge_outs << MERGE_CODON_FREQ.out.parquet
+    }
 
-        MERGE_INTERGENIC(toManifest(gatedGlobStats(
-            params.run_intergenic.toBoolean() ? intergenic_csv.collect() : Channel.of(true),
-            "intergenic_stats/**/*.gene_intergenic_distances.csv.gz"), 'intergenic.manifest.txt'))
+    def intergenic_in = statsManifest(use_glob, params.run_intergenic.toBoolean(), intergenic_csv, intergenic_csv,
+        "intergenic_stats/**/*.gene_intergenic_distances.csv.gz", 'intergenic.manifest.txt')
+    if (intergenic_in) {
+        MERGE_INTERGENIC(intergenic_in)
         merge_outs << MERGE_INTERGENIC.out.parquet
+    }
 
-        MERGE_GENE_STATS(toManifest(gatedGlobStats(
-            params.run_gene_stats.toBoolean() ? gene_stats.collect() : Channel.of(true),
-            "gene_stats/**/*.csv.gz"), 'gene_stats.manifest.txt'))
+    def gene_stats_in = statsManifest(use_glob, params.run_gene_stats.toBoolean(), gene_stats, gene_stats,
+        "gene_stats/**/*.csv.gz", 'gene_stats.manifest.txt')
+    if (gene_stats_in) {
+        MERGE_GENE_STATS(gene_stats_in)
         merge_outs << MERGE_GENE_STATS.out.gene_info
+    }
 
-        MERGE_ASM_STATS(toManifest(gatedGlobStats(
-            params.run_asm_stats.toBoolean() ? asm_stats.collect() : Channel.of(true),
-            "asm_stats/**/*.stats.txt"), 'asm_stats.manifest.txt'), file(params.samples))
+    def asm_in = statsManifest(use_glob, params.run_asm_stats.toBoolean(), asm_stats, asm_stats,
+        "asm_stats/**/*.stats.txt", 'asm_stats.manifest.txt')
+    if (asm_in) {
+        MERGE_ASM_STATS(asm_in, file(params.samples))
         merge_outs << MERGE_ASM_STATS.out.parquet
+    }
 
-        MERGE_TELOMERES(toManifest(gatedGlobStats(
-            params.run_telomeres.toBoolean() ? telomeres.collect() : Channel.of(true),
-            "telomeres/**/*.telomeres.tsv.gz"), 'telomeres.manifest.txt'), file(params.samples))
+    def telomeres_in = statsManifest(use_glob, params.run_telomeres.toBoolean(), telomeres, telomeres,
+        "telomeres/**/*.telomeres.tsv.gz", 'telomeres.manifest.txt')
+    if (telomeres_in) {
+        MERGE_TELOMERES(telomeres_in, file(params.samples))
         merge_outs << MERGE_TELOMERES.out.summary_parquet
+    }
 
-        MERGE_BUSCO_GENOME(toManifest(gatedGlobStats(
-            params.run_busco_genome.toBoolean() ? busco_genome.collect() : Channel.of(true),
-            "BUSCO_genome/**/*.BUSCO_summary.*.txt"), 'busco_genome.manifest.txt'))
+    def busco_in = statsManifest(use_glob, params.run_busco_genome.toBoolean(), busco_genome, busco_genome,
+        "BUSCO_genome/**/*.BUSCO_summary.*.txt", 'busco_genome.manifest.txt')
+    if (busco_in) {
+        MERGE_BUSCO_GENOME(busco_in)
         merge_outs << MERGE_BUSCO_GENOME.out.parquet
-
-    } else {
-        // Run mode: the frequency merges take the union of genomes already cached
-        // before the run and genomes this run produced — both resolved without any
-        // existence test racing an in-flight write (plan item 13).
-        if (params.run_aa_freq.toBoolean()) {
-            MERGE_AA_FREQ(toManifest(aa_cached.mix(aa_csv.flatten()), 'aa_freq.manifest.txt'))
-            merge_outs << MERGE_AA_FREQ.out.parquet
-        }
-
-        if (params.run_codon_freq.toBoolean()) {
-            MERGE_CODON_FREQ(toManifest(codon_cached.mix(codon_csv.flatten()), 'codon_freq.manifest.txt'))
-            merge_outs << MERGE_CODON_FREQ.out.parquet
-        }
-
-        if (params.run_intergenic.toBoolean()) {
-            MERGE_INTERGENIC(toManifest(intergenic_csv, 'intergenic.manifest.txt'))
-            merge_outs << MERGE_INTERGENIC.out.parquet
-        }
-
-        if (params.run_gene_stats.toBoolean()) {
-            MERGE_GENE_STATS(toManifest(gene_stats, 'gene_stats.manifest.txt'))
-            merge_outs << MERGE_GENE_STATS.out.gene_info
-        }
-
-        if (params.run_asm_stats.toBoolean()) {
-            MERGE_ASM_STATS(toManifest(asm_stats, 'asm_stats.manifest.txt'), file(params.samples))
-            merge_outs << MERGE_ASM_STATS.out.parquet
-        }
-
-        if (params.run_telomeres.toBoolean()) {
-            MERGE_TELOMERES(toManifest(telomeres, 'telomeres.manifest.txt'), file(params.samples))
-            merge_outs << MERGE_TELOMERES.out.summary_parquet
-        }
-
-        if (params.run_busco_genome.toBoolean()) {
-            MERGE_BUSCO_GENOME(toManifest(busco_genome, 'busco_genome.manifest.txt'))
-            merge_outs << MERGE_BUSCO_GENOME.out.parquet
-        }
     }
 
     if (params.run_build_duckdb.toBoolean()) {
