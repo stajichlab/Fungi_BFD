@@ -102,17 +102,69 @@ def load_busco_by_asmid(tables_dir: Path) -> dict:
     con = duckdb.connect()
     rows = con.execute(
         """
-        SELECT b.ASMID,
-               CAST(b.complete_pct AS DOUBLE) AS complete_pct,
-               CAST(COALESCE(a.N50_bp, 0) AS BIGINT) AS n50_bp
+        SELECT COALESCE(b.ASMID, a.ASMID) AS ASMID,
+               CAST(COALESCE(b.complete_pct, -1.0) AS DOUBLE) AS complete_pct,
+               CASE WHEN b.ASMID IS NULL THEN CAST(-1 AS BIGINT)
+                    ELSE CAST(COALESCE(a.N50_bp, 0) AS BIGINT) END AS n50_bp,
+               CAST(a.N50_bp AS BIGINT) AS asm_n50,
+               CAST(a.total_length_bp AS BIGINT) AS total_bp,
+               CAST(a.contig_count AS BIGINT) AS contigs,
+               CAST(a.max_contig_bp AS BIGINT) AS max_contig_bp
         FROM read_parquet(?) AS b
-        LEFT JOIN read_parquet(?) AS a USING (ASMID)
+        FULL OUTER JOIN read_parquet(?) AS a USING (ASMID)
         """,
         [str(busco_path), str(asm_stats_path)],
     ).fetchall()
     con.close()
-    return {asmid: {"complete_pct": complete_pct, "n50_bp": n50_bp}
-            for asmid, complete_pct, n50_bp in rows}
+    # complete_pct/n50_bp keep their old meaning (ranking key; a genome with no
+    # BUSCO row ranks at the -1/-1 default, same as when it was absent from this
+    # dict). asm_n50/total_bp/contigs/max_contig_bp are the raw assembly stats,
+    # present even without a BUSCO row, for passes_preflight().
+    return {asmid: {"complete_pct": complete_pct, "n50_bp": n50_bp,
+                    "asm_n50": asm_n50, "total_bp": total_bp, "contigs": contigs,
+                    "max_contig_bp": max_contig_bp}
+            for asmid, complete_pct, n50_bp, asm_n50, total_bp, contigs, max_contig_bp
+            in rows}
+
+
+# Fallback values for running this script by hand. The pipeline
+# (PICK_REPRESENTATIVE_STRAIN) always passes the predict_* params from
+# nextflow.config, which FUNANNOTATE_PREDICT's pre-flight also reads.
+DEFAULT_PREFLIGHT = {"min_bp": 9_000_000, "max_n50": 15_000, "max_contigs": 1000,
+                     "min_contig_len": 10_000, "min_training_contigs": 1,
+                     "abs_min_bp": 100_000}
+
+
+def passes_preflight(stats: dict, preflight: dict) -> bool:
+    """True if a genome would not be skipped by bin/asm_preflight_stats.py.
+
+    Applies that script's three skip verdicts (too_small, no_training_contigs,
+    small_fragmented) to asm_stats.parquet values; a 0 threshold disables its
+    gate, as there. asm_stats has only the longest contig, so the
+    no_training_contigs gate is exact for min_training_contigs == 1 and only a
+    necessary condition above that. Fails open: a genome with no asm_stats row
+    is treated as passing, so missing data never removes a candidate.
+    preflight=None disables the check.
+    """
+    if not preflight or stats is None or stats.get("total_bp") is None:
+        return True
+    total, contigs = stats["total_bp"], stats.get("contigs")
+    n50 = stats.get("asm_n50", stats.get("n50_bp"))
+    if preflight["abs_min_bp"] > 0 and total < preflight["abs_min_bp"]:
+        return False
+    max_ctg = stats.get("max_contig_bp")
+    if (preflight["min_contig_len"] > 0
+            and preflight.get("min_training_contigs", 1) > 0
+            and max_ctg is not None and max_ctg < preflight["min_contig_len"]):
+        return False
+    if preflight["min_bp"] > 0 and total < preflight["min_bp"]:
+        fragmented = ((preflight["max_n50"] > 0 and n50 is not None
+                       and n50 < preflight["max_n50"])
+                      or (preflight["max_contigs"] > 0 and contigs is not None
+                          and contigs > preflight["max_contigs"]))
+        if fragmented:
+            return False
+    return True
 
 
 def load_predict_input(path: Path) -> dict:
@@ -177,13 +229,21 @@ def _sparse_ani_warning(species: str, asmids: list, ani_pairs: dict,
 
 
 def pick_representative(asmids: list, busco_by_asmid: dict, samples: dict,
-                         ani_pairs: dict) -> str:
+                         ani_pairs: dict, preflight: dict = None) -> str:
     asmid_set = set(asmids)
     ani_covered = [
         a for a in asmids
         if any((a, other) in ani_pairs for other in asmid_set if other != a)
     ]
     candidates = ani_covered if ani_covered else asmids
+    # A representative that predict's pre-flight skips never produces the shared
+    # ab-initio store, which blocks every sibling (allow_independent_fallback=false).
+    # Prefer candidates that pass; if none do, keep the old behaviour.
+    if preflight:
+        predictable = [a for a in candidates
+                       if passes_preflight(busco_by_asmid.get(a), preflight)]
+        if predictable:
+            candidates = predictable
 
     def sort_key(asmid):
         out = samples.get(asmid, {}).get("out", "")
@@ -194,7 +254,8 @@ def pick_representative(asmids: list, busco_by_asmid: dict, samples: dict,
 
 
 def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
-                         busco_by_asmid: dict, threshold: float) -> list:
+                         busco_by_asmid: dict, threshold: float,
+                         preflight: dict = None) -> list:
     by_species = defaultdict(list)
     for asmid, row in predict_input.items():
         sp = row.get("species", "").strip()
@@ -205,7 +266,8 @@ def compute_assignments(predict_input: dict, samples: dict, ani_pairs: dict,
     for species, asmids in sorted(by_species.items()):
         if len(asmids) < 2:
             continue
-        rep_asmid = pick_representative(asmids, busco_by_asmid, samples, ani_pairs)
+        rep_asmid = pick_representative(asmids, busco_by_asmid, samples, ani_pairs,
+                                        preflight)
         rep_out = samples.get(rep_asmid, {}).get("out", "")
         _sparse_ani_warning(species, asmids, ani_pairs, rep_asmid)
 
@@ -339,6 +401,23 @@ def main():
     ap.add_argument("--target", default="")
     ap.add_argument("--augustus-config", default="")
     ap.add_argument("--dry-run", action="store_true")
+    # Pre-flight thresholds: same names and meaning as bin/asm_preflight_stats.py
+    # (params.predict_* in nextflow.config). 0 disables a gate.
+    ap.add_argument("--min-asm-bp", type=int, default=DEFAULT_PREFLIGHT["min_bp"],
+                    help="predict_min_asm_bp (small_fragmented gate)")
+    ap.add_argument("--frag-max-n50", type=int, default=DEFAULT_PREFLIGHT["max_n50"],
+                    help="predict_frag_max_n50")
+    ap.add_argument("--frag-max-contigs", type=int,
+                    default=DEFAULT_PREFLIGHT["max_contigs"],
+                    help="predict_frag_max_contigs")
+    ap.add_argument("--min-contig-len", type=int,
+                    default=DEFAULT_PREFLIGHT["min_contig_len"],
+                    help="predict_min_training_contig_len")
+    ap.add_argument("--min-training-contigs", type=int,
+                    default=DEFAULT_PREFLIGHT["min_training_contigs"],
+                    help="predict_min_training_contigs")
+    ap.add_argument("--abs-min-bp", type=int, default=DEFAULT_PREFLIGHT["abs_min_bp"],
+                    help="predict_abs_min_asm_bp (too_small gate)")
     ap.add_argument("--allow-missing-busco", action="store_true",
                     help="Proceed even if busco_genome.parquet/asm_stats.parquet are "
                          "missing or empty (representative picking then falls back to "
@@ -370,8 +449,13 @@ def main():
     print(f"[INFO] BUSCO summaries: {len(busco_by_asmid)}", file=sys.stderr)
     print(f"[INFO] ANI pairs: {len(ani_pairs)//2} unique pairs", file=sys.stderr)
 
+    preflight = {"min_bp": args.min_asm_bp, "max_n50": args.frag_max_n50,
+                 "max_contigs": args.frag_max_contigs,
+                 "min_contig_len": args.min_contig_len,
+                 "min_training_contigs": args.min_training_contigs,
+                 "abs_min_bp": args.abs_min_bp}
     assignments = compute_assignments(predict_input, samples, ani_pairs,
-                                       busco_by_asmid, args.ani_threshold)
+                                       busco_by_asmid, args.ani_threshold, preflight)
 
     out_dir = Path(args.out_dir)
     write_assignments(assignments, out_dir)

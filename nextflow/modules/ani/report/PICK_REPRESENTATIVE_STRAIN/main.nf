@@ -22,6 +22,9 @@
 //     out final tiebreak, but ONLY among candidates with ANI coverage in ani_tsv
 //     (prevents a top-BUSCO strain added after ANI ran from orphaning every other
 //     strain's reuse eligibility)
+//   - among those, prefer strains that pass FUNANNOTATE_PREDICT's assembly
+//     pre-flight (params.predict_* in nextflow.config), so a representative that
+//     predict skips cannot block its siblings; if none pass, keep them all
 //   - each non-representative strain: reuse_eligible if ANI to rep >= threshold
 //   - fail-closed: no ANI row → not eligible (sparse ANI methods omit low-identity)
 //   - write abinitio_reuse_assignments.csv
@@ -64,6 +67,12 @@ process PICK_REPRESENTATIVE_STRAIN {
         --tables-dir "${tables_dir}" \
         --out-dir "_reuse_assignments" \
         --ani-threshold "${threshold}" \
+        --min-asm-bp ${params.predict_min_asm_bp} \
+        --frag-max-n50 ${params.predict_frag_max_n50} \
+        --frag-max-contigs ${params.predict_frag_max_contigs} \
+        --min-contig-len ${params.predict_min_training_contig_len} \
+        --min-training-contigs ${params.predict_min_training_contigs} \
+        --abs-min-bp ${params.predict_abs_min_asm_bp} \
         ${shared_root ? "--shared-root ${shared_root}" : ''} \
         ${target ? "--target ${target}" : ''} \
         ${aug_cfg ? "--augustus-config ${aug_cfg}" : ''}
