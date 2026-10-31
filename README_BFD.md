@@ -331,6 +331,7 @@ PROTEIN_DB_PATH=/path/to/Malassezia.duckdb python MCP/BFD_mcp_server.py
 | `--run_busco_genome` / `--run_busco_pep` | `false` / `false` | BUSCO steps (assembly / protein set) |
 | `--run_telomeres` | `false` | Telomere finder |
 | `--freq_batch_size` | `50` | Genomes per SLURM job for AA/codon frequency batching |
+| `--busco_lineages_dir` | `/srv/projects/db/BUSCO/v12/` (BFD profile) | BUSCO lineage datasets (`BUSCO_LINEAGES`) for `BUSCO_GENOME` / `BUSCO_PEP` |
 | `--merge_all` | `false` | MERGE from all files in results/ (not just current run) |
 | `--skip_merge` | `true` | Skip all MERGE steps |
 | `--run_build_duckdb` | `false` | Rebuild `db/BFD.duckdb` from `tables/*.parquet` after MERGE completes |
@@ -358,23 +359,34 @@ used for `results/function/` output paths. Assembly- and annotation-level storeD
 Per-species RUN processes use `storeDir`, so Nextflow skips a species automatically if all
 declared output files already exist on disk — even on a fresh run without `-resume`.
 
-### Automatic re-run when proteins are updated
+### Automatic re-run when inputs are updated
 
-Before dispatching each protein-consuming process (`RUN_*`, `BATCH_AA_FREQ`,
-`BATCH_CODON_FREQ`), the pipeline compares the modification time of the input proteins/CDS
-FASTA against the genome's cached output file. If the output is **strictly older** than the
-input, it is deleted so the genome is included in the next batch job. This means re-running
-`funannotate.nf` for a genome automatically triggers re-annotation by every BFD functional tool
-the next time `BFD.nf` is submitted — no manual cache-busting required.
+Before each per-genome storeDir step runs, `staleGuard()` (`modules/common/utils.nf`)
+compares the modification time of **every** input file of that step with the genome's
+cached outputs. If an output is **strictly older** than any input, the outputs are deleted
+and the step runs again for that genome. Re-running `funannotate.nf` for a genome therefore
+re-runs every BFD step that reads the changed files the next time `BFD.nf` is submitted.
 
-Processes whose inputs are not proteins (`CALC_INTERGENIC`, `CALC_GENE_STATS`) are not affected
-by this check; delete their storeDir outputs manually if a re-run is needed. To force
-re-running a species for a specific tool regardless of timestamps, delete its output file(s)
-from `results/function/<tool>/` before re-submitting.
+| Step | Inputs checked |
+|---|---|
+| `RUN_*` protein tools, `BUSCO_PEP` | proteins |
+| `BATCH_AA_FREQ` / `BATCH_CODON_FREQ` | proteins / CDS |
+| `CALC_INTERGENIC` | GFF3 |
+| `CALC_GENE_STATS`, `RUN_ANTISMASH`, `RUN_TRNASCAN` | GFF3 and genome FASTA |
+| `RUN_INFERNAL`, `CALC_ASM_STATS`, `FIND_TELOMERES`, `BUSCO_GENOME` | genome FASTA |
+| `RUN_CAZY_CGC` | GFF3 and proteins |
 
-> **Note on `-stub-run`:** the staleness check and deletions happen at workflow initialisation
-> time (inside channel operators), so they execute even under `-stub-run`. To dry-test without
-> deletions, disable the relevant tool flags (e.g. `run_pfam: false` in the params file).
+The DB setup steps (`SETUP_TCDB_DB`, `SETUP_DBCAN_DB`) are not checked. To force a re-run
+of one tool for a genome regardless of timestamps, delete its output file(s) under
+`results/function/<tool>/` or `results/genome_stats/<type>/` before re-submitting.
+
+> **Note on `-stub-run`:** `clearIfStale()` returns without deleting anything under
+> `-stub-run`, so a stub run never removes real cached outputs.
+
+### All jobs need `$SCRATCH`
+
+Modules that stage temporary files use `${SCRATCH:?...}`. A job that runs without
+`$SCRATCH` set (for example outside SLURM) fails at once instead of writing to `/tmp`.
 
 ---
 

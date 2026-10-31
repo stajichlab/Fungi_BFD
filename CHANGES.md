@@ -401,3 +401,79 @@ uniform logic for a one-time cost on 59 species.
 - `nextflow config -profile funannotate` resolves both new `withName` blocks.
 - Not yet run live on SLURM — pending the next full pipeline pass.
 
+
+---
+
+# `main` — 2026-10-30: BFD fixes (frequency batches, staleness checks) and cleanup
+
+Commits `a6e6111`..`28a4938` (branch `fix/bfd-staleness-and-channels`, fast-forwarded
+into `main`). 26 files, +259/−419 lines.
+
+## Bug fixes
+
+- **`BATCH_AA_FREQ` / `BATCH_CODON_FREQ` skipped almost every batch** (`a6e6111`).
+  The storeDir output pattern was `*/*.aa_freq.csv.gz`. storeDir treats a task as done
+  when its output pattern matches any file in the store, so after the first genome was
+  written every later batch was skipped as "Stored". In the `BFD_function` run that
+  started 2026-10-28, 469 of 469 aa batches and 468 of 468 codon batches were logged as
+  `[skipping] Stored`, and none were submitted. `genome_stats` held 60 `aa_freq` and 110
+  `codon_freq` files, against about 19,500 genomes for the other per-genome stats. The
+  pattern now names only the batch's own LOCUSTAGs. `globAnyOf()` handles a one-genome
+  batch, because Nextflow matches nothing for a one-item `{X}` glob.
+  **Impact:** the next BFD run computes aa/codon frequencies for the missing genomes
+  (about 19,000). The run that was active at merge time uses the old code and still
+  skips them.
+- **antiSMASH and tRNAscan-SE checked only the genome FASTA for staleness** (`4e8855c`).
+  A newer GFF3 left old output in place. They now check GFF3 and FASTA.
+- **dbCAN CGC had no staleness check** (`4e8855c`). It now checks GFF3 and proteins.
+- **`-profile test` failed** with a null `.toBoolean()` (`28a4938`), because the
+  `run_eggnog` group of switches was defined only in `profile_BFD.config`. `test.config`
+  now defines all tool switches and the TCDB/dbCAN DB dirs.
+
+None of antiSMASH, tRNAscan-SE or CGC is enabled in production, and none of their
+output directories exist, so the staleness fixes delete nothing there.
+
+## Cleanup
+
+- `staleGuard()` and `bucketedOutputs()` in `modules/common/utils.nf` replace four guard
+  helpers in `BFD_FUNCTIONAL.nf` and the inline copies in `BFD_GENOME_STATS.nf`.
+- `workflows/BFD.nf` looks up each genome's pep/cds/gff/dna files once (`inputs_ch`) and
+  derives each tool's channel from it. ASMID comes from the samples row, not from a
+  separate join. A genome with no assembly file logs one warning, not three.
+- `BFD_MERGE.nf`: one `statsManifest()` helper builds the input for the seven
+  genome-stats merges in both glob and run mode. The `gatedGlobStats` helper is removed.
+- `utils.nf`: removed about 90 lines of commented-out copies of `cleanStrain` /
+  `makeSampleTag`.
+- 15 modules changed `${SCRATCH:-/tmp}` to `${SCRATCH:?...}`, so a job without `$SCRATCH`
+  fails instead of writing to `/tmp`.
+- New param `busco_lineages_dir` (default `/srv/projects/db/BUSCO/v12/`, the path that was
+  hard-coded in `BUSCO_GENOME` / `BUSCO_PEP`). Added to `nextflow_schema.json`.
+- `infernal_sif` pinned to `rnacentral/infernal:1.1.5`. It has the same digest as the
+  `:latest` tag used before.
+- `nextflow.config` now sets the `telomere_terminal_tolerance = 10` default.
+- `BFD.nf` uses `error` instead of `throw new Exception`.
+
+## Recompute impact
+
+Every changed process that takes `meta` is storeDir-cached, so script or hash changes do
+not re-run finished results. Only the frequency batches that the bug skipped run again.
+In glob mode the aa/codon merges now run only when a batch ran in that run.
+
+## Not done
+
+- Manifest input for the `BFD_FUNCTIONAL` merges, and one generic `MERGE_TABLE` process.
+  Any `MERGE_*` script change re-runs that merge once (merges are not storeDir-cached).
+  The argument length is estimated at about 600 KB at full scale, under the 2 MB limit.
+- Nextflow-managed containers (`container` directive) instead of hand-run `apptainer exec`.
+- One combined BUSCO module (the two processes use different labels and resources).
+
+## Test status
+
+- `-stub-run` of the old and new code: identical task lists and output file lists in
+  4 variants (`merge_all` true/false × two genome directories; 69 and 81 tasks).
+- `-profile test -stub-run` alone: 69 tasks, 0 failed.
+- Staleness probe with real files: stale antiSMASH and CGC outputs deleted, current
+  output kept.
+- Frequency fix: 3 consecutive stub runs on one store (1 genome, then 2, then rerun)
+  computed 1, then only the new genome, then nothing.
+- Not yet run with the real tools.
