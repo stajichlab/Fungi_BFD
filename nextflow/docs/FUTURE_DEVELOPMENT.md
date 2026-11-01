@@ -43,3 +43,16 @@ Entry format: date, area, what to consider, why, and status.
 - **Open:** `resolveGenomeFile()` in `modules/common/utils.nf` has no `.gz` fallback for `<id>.scaffolds.fa`. That is fine while scaffolds stay uncompressed.
 - **Consider:** other scripts that strip file-name suffixes with `replace()` or `removesuffix()` may have the same bug. I only checked the ones that read GFF files.
 - **Status:** mostly done.
+
+## 2026-11-01 — Move `BUSCO_GENOME` from the `busco` module to a pinned container
+
+- **Context:** `BUSCO_GENOME` failed for two genomes (`GCA_051941305.1_KEW_Xawe201`, strain `LIQ201XMSP`; `GCA_051941665.1_KEW_Poca`, strain `LIQ167XMSP`). BBTools 39.8x+ (`javasetup.sh`, `parseJavaArgs`) treats any `stats.sh` argument that contains `xms` or `xmx` (case-insensitive, anywhere in the string) as a Java heap flag. BUSCO passes the absolute input path to `stats.sh`, so the strain ID in the file name broke the JVM launch (`Invalid maximum heap size: -Xmxin=/bigdata/`).
+- **Fixed 2026-11-01:** `modules/BFD/BUSCO_GENOME/main.nf` symlinks the staged genome to `genome.fa` (or `genome.fa.gz` when the input is compressed) and passes that name to `busco`. The work-dir hash is hex, so the rest of the path cannot contain `xms`/`xmx`. Verified by hand on the Gallowayella assembly: the bbtools step passed and miniprot started. Keep this rename after any container switch; every BUSCO 6.1.0 build tested has the bug.
+- **Containers tested (same bug in all):** module `busco/6.1.0` (bbmap 39.81), `ezlabgva-busco-v6.1.0_cv3` (bbmap 40.02), biocontainers `busco:6.1.0--pyhdfd78af_1` (bbmap 39.81). Modules `busco/6.0.0` (bbmap 39.37) and `busco/5.8.0` (bbmap 39.10) use the old parser and are not affected. Report upstream to BBTools and BUSCO.
+- **Plan (next wave boundary, never under a live run):**
+  - Pin an image by digest and pre-pull it into `params.singularity_cache` as a `.sif`, the same way `aaftf_sif` is handled. Do not let Nextflow convert OCI to SIF on demand; that race corrupted the shared cache before (see `nextflow.config`). Candidate: `docker://ezlabgva/busco:v6.1.0_cv3` or the biocontainers build; both are already in the cache as `.img`.
+  - Add a `busco_sif` param and switch `BUSCO_GENOME` (and `BUSCO_PEP`) to `apptainer exec` with the `SING_BINDS` pattern used in `modules/comparative/wgd/*`.
+  - **Bind `/srv/projects/db/BUSCO` into the container.** The current bind list covers `/bigdata`, `/rhome`, `$PWD` and `$TMPDIR` only. Check that `/srv/projects/db` is mounted on every node class the `preempt` and `stajichlab` queues can land on.
+  - Before adopting: run module vs container on about 20 genomes from `samples_test20.csv`. Compare wall time and the short-summary scores, not just exit codes. The official image carries a newer bbmap, so `stats.sh` output may differ.
+- **Why:** reproducibility (pinned digest, citable), portability (NRP and other clusters), and no exposure to module-env changes mid-wave (the 6.0.0 to 6.1.0 bbmap jump is what introduced this bug).
+- **Status:** open. No timing or score comparison has been run.

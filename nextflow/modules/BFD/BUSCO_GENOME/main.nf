@@ -12,13 +12,20 @@ process BUSCO_GENOME {
         path("${meta.asmid}.BUSCO_summary.${meta.lineage}.txt"), emit: summary
 
     script:
+    // BBTools 39.x (bundled in busco/6.1.0) treats any stats.sh argument that
+    // contains "xms"/"xmx" (case-insensitive, anywhere in the string) as a Java
+    // heap flag. BUSCO passes the absolute input path to stats.sh, so a strain ID
+    // such as LIQ201XMSP breaks the JVM launch. Stage the genome under a fixed
+    // name that keeps the compression suffix.
+    def safe_genome = genome.name.endsWith('.gz') ? 'genome.fa.gz' : 'genome.fa'
     """
     module load busco
+    ln -sf ${genome} ${safe_genome}
     export BUSCO_LINEAGES=${params.busco_lineages_dir}
     SCRATCH=\$(printf '%s' "\${SCRATCH}" | tr -d '\\n\\r')
     : \${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     RUNDIR="${meta.asmid}_busco_genome"
-    busco -i ${genome} \\
+    busco -i ${safe_genome} \\
           -l ${meta.lineage} \\
           -m genome \\
           -o \$RUNDIR \\
