@@ -18,7 +18,7 @@ process RUN_SIGNALP {
     ${gzInflate(proteins)}
     module load signalp/6-gpu
     OUTD=\$(mktemp -d)
-    signalp6 -od \$OUTD -org euk --mode fast -format txt \\
+    signalp6 -od \$OUTD -org euk --mode fast -format none \\
         -fasta ${proteins_plain} --write_procs ${task.cpus} -bs 100
     pigz -c \$OUTD/output.gff3             > ${meta.locustag}.signalp.gff3.gz
     pigz -c \$OUTD/prediction_results.txt  > ${meta.locustag}.signalp.results.txt.gz

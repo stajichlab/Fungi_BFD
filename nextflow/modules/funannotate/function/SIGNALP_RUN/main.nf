@@ -30,7 +30,7 @@ process SIGNALP_RUN {
     module load signalp/6-gpu
     TMPDIR=\${SCRATCH:-/tmp}
     signalp6 -od \$TMPDIR/${out}_signalp \\
-        -org euk --mode fast -format txt \\
+        -org euk --mode fast -format none \\
         -fasta \$PROTEINS \\
         --write_procs ${task.cpus} -bs 16
     mkdir -p ${out}/annotate_misc
