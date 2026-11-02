@@ -13,7 +13,7 @@ n_test: 0
 # Two-step run: run_BFD_setup.sh creates the input/ links first (pipeline setup_symlinks),
 # then this run reads them. Set true to let BFD create them inside the run (untested at full size).
 run_setup: false
-run_pfam: false
+run_pfam: true
 run_cazy: true
 run_merops: true
 run_swissprot: true
