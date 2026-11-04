@@ -20,6 +20,7 @@ include { RUN_MEROPS    } from '../../modules/BFD/MEROPS/main.nf'
 include { RUN_SIGNALP   } from '../../modules/BFD/SIGNALP/main.nf'
 include { RUN_TMHMM     } from '../../modules/BFD/TMHMM/main.nf'
 include { RUN_TARGETP   } from '../../modules/BFD/TARGETP/main.nf'
+include { RUN_DEEPLOC   } from '../../modules/BFD/DEEPLOC/main.nf'
 include { RUN_IDP       } from '../../modules/BFD/IDP/main.nf'
 include { RUN_WOLFPSORT } from '../../modules/BFD/WOLFPSORT/main.nf'
 include { RUN_PREDGPI   } from '../../modules/BFD/PREDGPI/main.nf'
@@ -45,6 +46,7 @@ include { BUILD_SWISSPROT_ANNOT } from '../../modules/BFD/BUILD_SWISSPROT_ANNOT/
 include { MERGE_SIGNALP   } from '../../modules/BFD/MERGE_SIGNALP/main.nf'
 include { MERGE_TMHMM     } from '../../modules/BFD/MERGE_TMHMM/main.nf'
 include { MERGE_TARGETP   } from '../../modules/BFD/MERGE_TARGETP/main.nf'
+include { MERGE_DEEPLOC   } from '../../modules/BFD/MERGE_DEEPLOC/main.nf'
 include { MERGE_IDP       } from '../../modules/BFD/MERGE_IDP/main.nf'
 include { MERGE_WOLFPSORT } from '../../modules/BFD/MERGE_WOLFPSORT/main.nf'
 include { MERGE_PREDGPI   } from '../../modules/BFD/MERGE_PREDGPI/main.nf'
@@ -120,6 +122,10 @@ workflow BFD_FUNCTIONAL {
     def run_signalp   = params.run_signalp.toBoolean()
     def run_tmhmm     = params.run_tmhmm.toBoolean()
     def run_targetp   = params.run_targetp.toBoolean()
+    def run_deeploc   = params.run_deeploc.toBoolean()
+    def deeploc_model = params.deeploc_model.toString().toLowerCase()
+    if (!(deeploc_model in ['fast', 'accurate']))
+        error "deeploc_model must be Fast or Accurate, got '${params.deeploc_model}'"
     def run_idp       = params.run_idp.toBoolean()
     def run_wolfpsort = params.run_wolfpsort.toBoolean()
     def run_predgpi   = params.run_predgpi.toBoolean()
@@ -150,6 +156,8 @@ workflow BFD_FUNCTIONAL {
         RUN_TMHMM(staleGuard(proteins_ch, byLocustag('tmhmm', ['.tmhmm_short.tsv.gz', '.tmhmm_results.tsv.gz'])))
     if (run_targetp)
         RUN_TARGETP(staleGuard(proteins_ch, byLocustag('targetP', ['_summary.targetp2.gz'])))
+    if (run_deeploc)
+        RUN_DEEPLOC(staleGuard(proteins_ch, byLocustag('deeploc', [".deeploc_${deeploc_model}.csv.gz"])))
     if (run_idp)
         RUN_IDP(staleGuard(proteins_ch, byLocustag('aiupred', ['.aiupred.txt.gz', '.idp.csv.gz', '.idp_summary.csv.gz'])))
     if (run_wolfpsort)
@@ -243,6 +251,13 @@ workflow BFD_FUNCTIONAL {
         if (targetp_in) {
             MERGE_TARGETP(targetp_in)
             merge_outs << MERGE_TARGETP.out.parquet
+        }
+
+        // Only the selected model's files are merged (Fast and Accurate never mix).
+        def deeploc_in = mergeInput(use_glob, run_deeploc, run_deeploc ? RUN_DEEPLOC.out.results : null, "deeploc/**/*.deeploc_${deeploc_model}.csv.gz")
+        if (deeploc_in) {
+            MERGE_DEEPLOC(deeploc_in)
+            merge_outs << MERGE_DEEPLOC.out.parquet
         }
 
         if (use_glob || run_idp) {

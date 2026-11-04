@@ -20,6 +20,7 @@ run_swissprot_annot: true
 run_signalp: true
 run_tmhmm: true
 run_targetp: true
+run_deeploc: true
 run_idp: true
 run_wolfpsort: true
 run_predgpi: true
