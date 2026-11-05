@@ -66,6 +66,7 @@ workflow PARALOGOSCOPE_RUN {
                 locustag: lt,
                 species : row['SPECIES']?.trim() ?: '',
                 strain  : cleanStrain(row['STRAIN']?.trim() ?: ''),
+                transl_table: (row['TRANSL_TABLE']?.trim() ?: '1'),
             ]
             def cds = lookupFile(cdsIndex, "${meta.id}.cds-transcripts.fa")
             if (!cds) {
@@ -93,6 +94,7 @@ workflow PARALOGOSCOPE_RUN {
                 locustag: lt,
                 species : row['SPECIES']?.trim() ?: '',
                 strain  : cleanStrain(row['STRAIN']?.trim() ?: ''),
+                transl_table: (row['TRANSL_TABLE']?.trim() ?: '1'),
             ]
             def gff = lookupFile(gffIndex, "${meta.id}.gff3")
             if (!gff) {
