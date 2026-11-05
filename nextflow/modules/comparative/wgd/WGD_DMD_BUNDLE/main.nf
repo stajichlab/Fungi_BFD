@@ -35,16 +35,19 @@ process WGD_DMD_BUNDLE {
     nok=0
     for i in \${!FILES[@]}; do
         f=\${FILES[\$i]}; id=\${IDS[\$i]}; b=\$(basename \$f); plain=\${b%.gz}
-        if [ "\$b" != "\$plain" ]; then pigz -dc \$f > \$plain || { echo "\$id: cannot inflate" >> \$FAILED; continue; }; else cp \$f \$plain; fi
+        # wgd dmd joins the input file name to itself for temporary files, so a name over about 120
+        # characters fails (File name too long). It runs on a short alias; the families file gets its real name.
+        alias=g\$i.cds.fa
+        if [ "\$b" != "\$plain" ]; then pigz -dc \$f > \$alias || { echo "\$id: cannot inflate" >> \$FAILED; continue; }; else cp \$f \$alias; fi
         rm -rf dmd_out
         if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_sif} wgd dmd \\
               --outdir dmd_out --eval ${params.wgd_mcl_evalue} --inflation ${params.wgd_mcl_inflation} \\
-              \$plain < /dev/null && [ -s dmd_out/\$plain.tsv ]; then
-            mv dmd_out/\$plain.tsv .; nok=\$((nok+1))
+              \$alias < /dev/null && [ -s dmd_out/\$alias.tsv ]; then
+            mv dmd_out/\$alias.tsv \$plain.tsv; nok=\$((nok+1))
         else
             echo "\$id: wgd dmd failed" >> \$FAILED
         fi
-        rm -rf dmd_out \$plain
+        rm -rf dmd_out \$alias
     done
     echo "genomes ok: \$nok of \${#FILES[@]}" >&2
     [ \$nok -gt 0 ] || { echo "ERROR: every genome in the bundle failed" >&2; exit 1; }
