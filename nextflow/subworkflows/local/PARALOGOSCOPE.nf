@@ -22,7 +22,7 @@ def estimateCost(fam) {
         nodes += n - 1
     }
     def ns = (params.wgd_speedups.toString().toBoolean() ? (params.wgd_node_sample as int) : 0)
-    double codeml = ns > 0 ? Math.min(pairs * 0.65, ns * (double) nodes) : pairs * 0.65
+    double codeml = ns > 0 ? Math.min(pairs * 0.65, ns * (nodes as double)) : pairs * 0.65
     return 0.009 * pairs + 0.15 * codeml + 60.0
 }
 
