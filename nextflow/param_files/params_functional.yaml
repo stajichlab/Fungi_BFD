@@ -19,10 +19,10 @@ run_merops: true
 run_swissprot: true
 run_infernal: false
 run_deeptmhmm: false
-run_signalp: false
+run_signalp: true
 run_tmhmm: true
 run_targetp: false
-run_idp: false
+run_idp: true
 run_wolfpsort: true
 run_predgpi: true
 run_busco_genome: true
@@ -46,11 +46,11 @@ run_gene_stats: true
 # New functional-annotation tools, opt-in (see profile_BFD.config)
 run_eggnog: false
 run_phobius: false
-run_tcdb: false
-run_tf: false
+run_tcdb: true
+run_tf: true
 run_antismash: false
 run_trnascan: false
 run_cazy_cgc: false
 
 # Merge into DuckDB
-run_build_duckdb: false
+run_build_duckdb: true
