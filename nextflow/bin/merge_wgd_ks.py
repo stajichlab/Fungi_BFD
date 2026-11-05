@@ -47,6 +47,36 @@ FLOAT_COLS = ["N", "S", "dN", "dN/dS", "dS", "alignmentlength",
 # per-pair alignment-length measure.
 
 
+NODE_INT = ["node_pairs", "node_rep_pairs", "node_pass", "node_sampled", "node_gated", "n_valid"]
+NODE_FLOAT = ["dS_mean", "dS_min", "dS_max", "identity_mean"]
+
+
+def node_table(path, df, genome, prefix):
+    """One row per (family, node): counts from <path>.nodes.tsv.gz plus dS statistics of the kept sampled pairs.
+    dS statistics cover the rows that passed the merge filters (--max-ds, --min-pair-codons, ...).
+    Identical-copy nodes (kind = identical) have dS = 0."""
+    npath = path + ".nodes.tsv.gz"
+    if not os.path.exists(npath):
+        return None
+    nd = pd.read_csv(npath, sep="\t", dtype={"family": str, "node": str, "kind": str})
+    if "node_gated" not in nd.columns:
+        nd["node_gated"] = 0
+    if len(df):
+        d = df[["family", "node", "dS", "alignmentidentity"]].copy()
+        d = d[d["dS"].notna()]
+        g = d.groupby(["family", "node"]).agg(
+            n_valid=("dS", "size"), dS_mean=("dS", "mean"), dS_min=("dS", "min"),
+            dS_max=("dS", "max"), identity_mean=("alignmentidentity", "mean")).reset_index()
+        nd = nd.merge(g, on=["family", "node"], how="left")
+    else:
+        for c in ["n_valid"] + NODE_FLOAT:
+            nd[c] = float("nan")
+    nd["n_valid"] = nd["n_valid"].fillna(0)
+    nd.insert(0, "species_prefix", prefix)
+    nd.insert(0, "genome", genome)
+    return nd
+
+
 def species_prefix_of(gene):
     s = str(gene).split("_", 1)
     return s[0] if s else ""
@@ -85,6 +115,9 @@ def main():
     ap.add_argument("--failed-glob", default=None,
                     help="glob of *.failed.txt files written by WGD_PAIR_KS; the merge is written, "
                          "then the script exits 3 when any exist")
+    ap.add_argument("--nodes-out", default=None,
+                    help="write the per-node table (one row per genome, family, node) to this parquet; "
+                         "needs the <ks table>.nodes.tsv.gz files from wgd_pair_ks.py --node-sample")
     ap.add_argument("--check-out", default=None,
                     help="write the problem list (or OK) to this file and exit 0 even when problems "
                          "exist, so a Nextflow process still publishes the tables; the workflow "
@@ -99,7 +132,8 @@ def main():
     files = []
     for pat in args.glob:
         files.extend(glob.glob(pat))
-    files.sort()
+    # side files of wgd_pair_ks.py live in the same folder and match *.ks.tsv*
+    files = sorted(f for f in files if not f.endswith((".nodes.tsv.gz", ".groups.tsv.gz", ".status.txt", ".failed.txt")))
     if not files:
         print(f"ERROR: no *.tsv.ks.tsv files matched {args.glob}; "
               f"refusing to write an empty merged table", file=sys.stderr)
@@ -114,8 +148,16 @@ def main():
         [(c, float_type) for c in FLOAT_COLS]
     )
 
-    summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families)
+    summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families, n_nodes, n_nodes_with_ds, hybrid)
     n_rows = 0
+    node_schema = pa.schema(
+        [("genome", string_type), ("species_prefix", string_type), ("family", string_type), ("node", string_type),
+         ("kind", string_type)] + [(c, pa.int64()) for c in NODE_INT[:5]] + [("n_valid", pa.int64())] +
+        [(c, float_type) for c in NODE_FLOAT])
+    nodes_writer = (pq.ParquetWriter(args.nodes_out, node_schema, compression="zstd", use_dictionary=True,
+                                     version="2.6", data_page_version="2.0") if args.nodes_out else None)
+    n_nodes_total = 0
+    no_nodes_file = 0
     with pq.ParquetWriter(args.out, schema, compression="zstd",
                           use_dictionary=True, version="2.6", data_page_version="2.0") as w:
         for path in files:
@@ -173,6 +215,21 @@ def main():
                                              preserve_index=False)
             w.write_table(table)
             n_rows += table.num_rows
+            n_nodes = n_nodes_ds = 0
+            if nodes_writer is not None:
+                nt = node_table(path, df, genome, prefix0)
+                if nt is None:
+                    no_nodes_file += 1
+                else:
+                    n_nodes = len(nt)
+                    n_nodes_ds = int((nt["n_valid"] > 0).sum())
+                    n_nodes_total += n_nodes
+                    for c in NODE_INT[:5] + ["n_valid"]:
+                        nt[c] = pd.to_numeric(nt[c], errors="coerce").fillna(0).astype("int64")
+                    for c in NODE_FLOAT:
+                        nt[c] = pd.to_numeric(nt[c], errors="coerce")
+                    nodes_writer.write_table(pa.Table.from_pandas(nt[node_schema.names], schema=node_schema,
+                                                                  preserve_index=False))
             if n_raw:
                 summaries.append((
                     genome,
@@ -181,6 +238,9 @@ def main():
                     len(df),
                     int(df["dS"].notna().sum()) if len(df) else 0,
                     int(df["family"].nunique()) if len(df) else 0,
+                    n_nodes,
+                    n_nodes_ds,
+                    int(" x " in genome.replace("_", " ")),
                 ))
             print(f"  {genome}: {n_raw:,} raw -> {len(df):,} rows", file=sys.stderr)
 
@@ -192,6 +252,9 @@ def main():
         ("n_pairs", pa.int64()),       # pairs kept in wgd.ks.parquet
         ("n_pairs_with_ds", pa.int64()),
         ("n_families", pa.int64()),
+        ("n_nodes", pa.int64()),          # nodes of the family trees (0 when there is no nodes file)
+        ("n_nodes_with_ds", pa.int64()),  # nodes with at least one kept dS
+        ("hybrid", pa.int64()),           # 1 when the genome name has " x " (interspecific hybrid)
     ])
     if summaries:
         sum_df = pd.DataFrame(summaries, columns=[f.name for f in sum_schema])
@@ -200,6 +263,10 @@ def main():
         sum_tbl = sum_schema.empty_table()
     pq.write_table(sum_tbl, args.summary, compression="zstd",
                    use_dictionary=True, version="2.6")
+    if nodes_writer is not None:
+        nodes_writer.close()
+        print(f"Nodes: {args.nodes_out} ({n_nodes_total:,} nodes; {no_nodes_file} genomes without a nodes file)",
+              file=sys.stderr)
 
     print(f"Done: {args.out} ({n_rows:,} merged rows), {args.summary} "
           f"({sum_tbl.num_rows} genomes)", file=sys.stderr)
@@ -223,6 +290,10 @@ def main():
         print(f"ERROR: {len(files)} ks tables found, {args.expected_genomes} genomes expected; "
               f"genomes are missing (dropped tasks, or no CDS file)", file=sys.stderr)
         problems.append(f"missing genomes: {len(files)} tables, {args.expected_genomes} expected")
+    if args.nodes_out and no_nodes_file:
+        rc = 3
+        print(f"ERROR: {no_nodes_file} genomes have no nodes file", file=sys.stderr)
+        problems.append(f"genomes without a nodes file: {no_nodes_file}")
     if args.check_out:
         with open(args.check_out, "w") as fh:
             fh.write("\n".join(problems) + "\n" if problems else "OK\n")

@@ -29,6 +29,18 @@ computation; npairs = n(n-1)/2). The mapping from representative to member genes
 <out>.groups.tsv.gz. Without --no-collapse the output has one row per sequence pair, not per
 gene pair; the sum of npairs equals the number of gene pairs.
 
+Node sampling (--node-sample K, K > 0): wgd mix style statistics average dS per (family, node),
+so every pair of a node measures the same duplication event. Here every pair is aligned and
+scored for identity (cheap), the NJ tree gives every pair its node, and pairs of each node
+(among the pairs that pass the pre-filter, in a seeded random order, so a rerun gives the same
+pairs) go to codeml in rounds until the node has K gated pairs (dS <= --gate-max-ds and at least
+--gate-min-codons codons) or --node-max-draws pairs were run or no pair is left. Without the
+rounds a node whose first K pairs all fall outside the gate would lose its value (Glomus: 2%
+of the nodes and a 3% lower median; with up to 20 draws: 0.5% and 1%). The sampled pairs are written as rows with node, node_pairs (gene pairs in
+the node) and node_sampled; all nodes are written to <out>.nodes.tsv.gz. Unsampled pairs have
+no row. K = 0 (default) keeps the all-pairs output. Tested offline on Glomus: K = 5 reproduces
+the node-mean distribution closely (eval/sampling_test/offline_k_glomus.txt).
+
 Exit codes: 0 ok; 2 empty/invalid families file; 3 more than 1% of pairs have missing genes;
 4 more than 5% of attempted codeml runs failed (timeout/no_out/no_estimate).
 
@@ -57,6 +69,11 @@ ap.add_argument("--min-ng-codons", type=int, default=30, help="pre-filter: align
 ap.add_argument("--table", type=int, default=1, help="NCBI genetic code for translation / NG86")
 ap.add_argument("--icode", default="0", help="codeml icode")
 ap.add_argument("--tmpdir", default=os.environ.get("TMPDIR", "/tmp"))
+ap.add_argument("--node-sample", type=int, default=0, help="pairs per node sent to codeml (0 = all pairs)")
+ap.add_argument("--gate-max-ds", type=float, default=2.5, help="node sampling: a pair counts as gated when dS <= this (0 = no limit)")
+ap.add_argument("--gate-min-codons", type=int, default=30, help="node sampling: a pair counts as gated with at least this many codons used by codeml")
+ap.add_argument("--node-max-draws", type=int, default=20, help="node sampling: at most this many pairs per node go to codeml")
+ap.add_argument("--seed", type=int, default=1, help="seed for node sampling")
 ap.add_argument("--no-collapse", action="store_true", help="do not collapse identical CDS")
 ap.add_argument("--max-pairs", type=int, default=0, help="debug: stop after this many pairs")
 A = ap.parse_args()
@@ -172,7 +189,7 @@ cleandata = 1
 RX = re.compile(r"t=\s*([\d.]+)\s+S=\s*([\d.]+)\s+N=\s*([\d.]+)\s+dN/dS=\s*([\d.]+)\s+dN =\s*([\d.]+)\s+dS =\s*([\d.]+)")
 HDR = ["pair", "family", "g1", "g2", "gene1", "gene2", "N", "S", "dN", "dS", "dN/dS", "t",
        "alignmentlength", "strippedalignmentlength", "alignmentcoverage", "alignmentidentity",
-       "ng_dS", "ng_codons", "status", "node", "copies1", "copies2", "npairs"]
+       "ng_dS", "ng_codons", "status", "node", "copies1", "copies2", "npairs", "node_pairs", "node_sampled"]
 
 
 def fmt(x):
@@ -189,7 +206,7 @@ def work(job):
     fam, g1, g2, n1, n2, kind = job
     pair = f"{g1}__{g2}"
     row = {"pair": pair, "family": fam, "g1": g1, "g2": g2, "gene1": g1, "gene2": g2,
-           "copies1": float(n1), "copies2": float(n2),
+           "copies1": float(n1), "copies2": float(n2), "node_pairs": float("nan"), "node_sampled": float("nan"),
            "npairs": float(n1 * (n1 - 1) // 2) if kind == "ident" else float(n1 * n2)}
     nan = float("nan")
     for k in ("N", "S", "dN", "dS", "dN/dS", "t", "alignmentlength", "strippedalignmentlength",
@@ -463,20 +480,331 @@ def flush(rows, w):
         w.write("\t".join(fmt(r[k]) for k in HDR) + "\n")
 
 
-oopen = gzip.open if A.out.endswith(".gz") else open
-counts = {}
-gp = {}  # gene pairs represented, by status
-cur, buf = None, []
-with Pool(A.threads) as pool, oopen(A.out, "wt") as out:
-    out.write("\t".join(HDR) + "\n")
-    for r in pool.imap(work, jobs(), chunksize=50):
-        counts[r["status"]] = counts.get(r["status"], 0) + 1
-        gp[r["status"]] = gp.get(r["status"], 0) + int(r["npairs"])
-        if r["family"] != cur:
-            flush(buf, out)
-            cur, buf = r["family"], []
-        buf.append(r)
-    flush(buf, out)
+
+def phase1(pair):
+    """Cheap pass for node sampling: protein identity and the number of usable codon columns."""
+    g1, g2 = pair
+    s1, s2 = cds[g1], cds[g2]
+    p1 = str(Seq(s1).translate(table=A.table))
+    p2 = str(Seq(s2).translate(table=A.table))
+    if p1.endswith("*"):
+        p1 = p1[:-1]
+    if p2.endswith("*"):
+        p2 = p2[:-1]
+    p1 = p1.replace("*", "X")
+    p2 = p2.replace("*", "X")
+    if not p1 or not p2:
+        return float("nan"), 0
+    aln = aligner.align(p1, p2)[0]
+    ncols = nident = nc = 0
+    for (a0, a1), (b0, b1) in zip(*aln.aligned):
+        for k in range(a1 - a0):
+            i, j = a0 + k, b0 + k
+            ncols += 1
+            if p1[i] == p2[j]:
+                nident += 1
+            x = s1[3 * i: 3 * i + 3]
+            y = s2[3 * j: 3 * j + 3]
+            if len(x) == 3 == len(y) and set(x) <= set(NT) and set(y) <= set(NT) and x not in STOPS and y not in STOPS:
+                nc += 1
+    return (nident / ncols if ncols else float("nan")), nc
+
+
+def nj_label_matrix(D):
+    """Neighbour-joining tree from the distance matrix D (numpy, n x n), midpoint-rooted.
+    Returns an n x n int32 matrix: entry (i, j) is the id (0..n-2) of the last common ancestor of tips
+    i and j (diagonal -1). Vectorised with numpy, so a family of 3,000 genes takes seconds."""
+    import numpy as np
+    n = D.shape[0]
+    lab = np.full((n, n), -1, dtype=np.int32)
+    if n < 2:
+        return lab
+    if n == 2:
+        lab[0, 1] = lab[1, 0] = 0
+        return lab
+    M = np.array(D, dtype=np.float64)
+    ids = list(range(n))
+    adj = {i: {} for i in range(n)}
+    nxt = n
+    while len(ids) > 3:
+        m = len(ids)
+        r = M.sum(axis=1)
+        Q = (m - 2) * M - r[:, None] - r[None, :]
+        np.fill_diagonal(Q, np.inf)
+        i, j = divmod(int(np.argmin(Q)), m)
+        dij = M[i, j]
+        li = 0.5 * dij + (r[i] - r[j]) / (2.0 * (m - 2))
+        lj = dij - li
+        u = nxt
+        nxt += 1
+        adj[u] = {ids[i]: li, ids[j]: lj}
+        adj[ids[i]][u] = li
+        adj[ids[j]][u] = lj
+        newrow = 0.5 * (M[i] + M[j] - dij)
+        keep = np.ones(m, dtype=bool)
+        keep[[i, j]] = False
+        M2 = np.zeros((m - 1, m - 1))
+        M2[:-1, :-1] = M[np.ix_(keep, keep)]
+        M2[-1, :-1] = newrow[keep]
+        M2[:-1, -1] = newrow[keep]
+        M = M2
+        ids = [ids[x] for x in range(m) if keep[x]] + [u]
+    a, b, c = ids
+    la = 0.5 * (M[0, 1] + M[0, 2] - M[1, 2])
+    lb = 0.5 * (M[0, 1] + M[1, 2] - M[0, 2])
+    lc = 0.5 * (M[0, 2] + M[1, 2] - M[0, 1])
+    center = nxt
+    adj[center] = {a: la, b: lb, c: lc}
+    adj[a][center] = la
+    adj[b][center] = lb
+    adj[c][center] = lc
+
+    def far(src):
+        dd, prev, st = {src: 0.0}, {src: None}, [src]
+        while st:
+            x = st.pop()
+            for y, w in adj[x].items():
+                if y not in dd:
+                    dd[y] = dd[x] + w
+                    prev[y] = x
+                    st.append(y)
+        t = max((i for i in range(n) if i != src), key=lambda i: dd[i])
+        return t, dd[t], prev
+
+    t1, _, _ = far(0)
+    t2, total, prev = far(t1)
+    path = [t2]
+    while prev[path[-1]] is not None:
+        path.append(prev[path[-1]])
+    path.reverse()
+    half, acc, root_edge = total / 2.0, 0.0, None
+    for x, y in zip(path, path[1:]):
+        w = adj[x][y]
+        if acc + w >= half:
+            root_edge = (x, y)
+            break
+        acc += w
+    if root_edge is None:
+        root_edge = (path[0], path[1])
+    rx, ry = root_edge
+    root = center + 1
+    wxy = adj[rx].pop(ry)
+    adj[ry].pop(rx)
+    adj[root] = {rx: half - acc, ry: wxy - (half - acc)}
+    adj[rx][root] = half - acc
+    adj[ry][root] = wxy - (half - acc)
+    order, st, parent = [], [root], {root: None}
+    while st:
+        x = st.pop()
+        order.append(x)
+        for y in adj[x]:
+            if y != parent[x]:
+                parent[y] = x
+                st.append(y)
+    tips, nid = {}, 0
+    for x in reversed(order):
+        if x < n:
+            tips[x] = np.array([x], dtype=np.int64)
+            continue
+        kids = [y for y in adj[x] if y != parent[x]]
+        sets = [tips.pop(k) for k in kids]
+        for p in range(len(sets)):
+            for q in range(p + 1, len(sets)):
+                lab[np.ix_(sets[p], sets[q])] = nid
+                lab[np.ix_(sets[q], sets[p])] = nid
+        tips[x] = np.concatenate(sets)
+        nid += 1
+    return lab
+
+
+def group_genes(genes):
+    """Collapse genes with an identical CDS. Returns a list of member lists (first = representative)."""
+    if A.no_collapse:
+        return [[g] for g in genes]
+    by, groups = {}, []
+    for g in genes:
+        key = cds.get(g)
+        if key is None:
+            groups.append([g])  # missing gene: its own group
+        elif key in by:
+            by[key].append(g)
+        else:
+            by[key] = [g]
+            groups.append(by[key])
+    return groups
+
+
+BLOCK_PAIRS = 200000  # families are processed in blocks of about this many pairs so the pool stays busy
+
+
+def run_sampled():
+    import numpy as np, zlib
+    K = A.node_sample
+    if A.max_ngds > 0:
+        print("ERROR: --node-sample does not support --max-ngds", file=sys.stderr)
+        sys.exit(2)
+    oopen = gzip.open if A.out.endswith(".gz") else open
+    counts, gp = {}, {}
+    nodes_hdr = ["family", "node", "kind", "node_pairs", "node_rep_pairs", "node_pass", "node_sampled", "node_gated"]
+
+    def bump(status, rows, pairs):
+        counts[status] = counts.get(status, 0) + rows
+        gp[status] = gp.get(status, 0) + pairs
+
+    def families(fh):
+        for line in fh:
+            line = line.rstrip("\n")
+            if "\t" not in line:
+                continue
+            fam, glist = line.split("\t", 1)
+            genes = [g.strip() for g in glist.split(",") if g.strip()]
+            groups = group_genes(genes)
+            for grp in groups:
+                if len(grp) > 1:
+                    GROUPS.append((fam, grp))
+                    r = work((fam, grp[0], grp[1], len(grp), len(grp), "ident"))
+                    r["node"] = "i_" + grp[0]
+                    r["node_pairs"] = r["npairs"]
+                    r["node_sampled"] = 0.0
+                    bump("identical", 1, int(r["npairs"]))
+                    out.write("\t".join(fmt(r[k]) for k in HDR) + "\n")
+                    nout.write(f"{fam}\ti_{grp[0]}\tidentical\t{int(r['npairs'])}\t0\t0\t0\t0\n")
+            reps = [g[0] for g in groups]
+            copies = np.array([len(g) for g in groups], dtype=np.int64)
+            have = np.array([x in cds for x in reps])
+            if (~have).any():
+                mp = int(sum(copies[a_] * copies[b_] for a_ in range(len(reps)) for b_ in range(a_ + 1, len(reps))
+                             if not (have[a_] and have[b_])))
+                bump("missing", mp, mp)
+            sel = np.nonzero(have)[0]
+            if len(sel) >= 2:
+                yield fam, [reps[i] for i in sel], copies[sel]
+
+    def process_block(block):
+        # 1. cheap pass over every pair of the block (identity, usable codons)
+        def gen():
+            for fam, R, C in block:
+                n = len(R)
+                for a_ in range(n):
+                    for b_ in range(a_ + 1, n):
+                        yield R[a_], R[b_]
+        res = pool.imap(phase1, gen(), chunksize=500)
+        states = []
+        for fam, R, C in block:
+            n = len(R)
+            ia, ib = np.triu_indices(n, 1)
+            P = len(ia)
+            ident = np.empty(P)
+            ncod = np.empty(P, dtype=np.int32)
+            for t in range(P):
+                ident[t], ncod[t] = next(res)
+            passed = (ident >= A.min_identity) & (ncod >= A.min_ng_codons)
+            # 2. identity-distance NJ tree -> node of every pair
+            D = np.zeros((n, n))
+            dist = 1.0 - ident
+            fill = np.nanmax(dist) if np.isfinite(dist).any() else 1.0
+            dist = np.where(np.isnan(dist), fill, dist)
+            D[ia, ib] = dist
+            D[ib, ia] = dist
+            lab = nj_label_matrix(D)
+            nid = lab[ia, ib].astype(np.int64)
+            nnode = int(nid.max()) + 1
+            w = C[ia] * C[ib]
+            # 3. pass-pairs of every node in a seeded random order; rank = position within the node
+            pidx = np.nonzero(passed)[0]
+            rng = np.random.default_rng((A.seed * 1000003 + zlib.crc32(fam.encode())) & 0xFFFFFFFF)
+            order = np.lexsort((rng.random(len(pidx)), nid[pidx]))
+            cand = pidx[order]
+            cn = nid[cand]
+            start = np.r_[True, cn[1:] != cn[:-1]] if len(cn) else np.zeros(0, dtype=bool)
+            first = np.maximum.accumulate(np.where(start, np.arange(len(cn)), 0)) if len(cn) else np.zeros(0, dtype=np.int64)
+            rank = np.arange(len(cn)) - first
+            states.append({"fam": fam, "R": R, "C": C, "ia": ia, "ib": ib, "nid": nid, "nnode": nnode, "w": w,
+                           "passed": passed, "cand": cand, "cn": cn, "rank": rank,
+                           "npass": np.bincount(nid[passed], minlength=nnode),
+                           "nrep": np.bincount(nid, minlength=nnode),
+                           "npairs": np.bincount(nid, weights=w, minlength=nnode).astype(np.int64),
+                           "drawn": np.zeros(nnode, dtype=np.int64), "gated": np.zeros(nnode, dtype=np.int64),
+                           "rows": []})
+        # 4. codeml in rounds: every node draws pairs until it has K gated pairs or MAXD draws
+        MAXD = max(A.node_max_draws, K)
+        while True:
+            jobs_r, where = [], []
+            for st in states:
+                need = np.clip(K - st["gated"], 0, None)
+                take = np.minimum(np.minimum(need, MAXD - st["drawn"]), st["npass"] - st["drawn"])
+                take = np.clip(take, 0, None)
+                if len(st["cand"]) == 0 or take.max() == 0:
+                    continue
+                sel = (st["rank"] >= st["drawn"][st["cn"]]) & (st["rank"] < (st["drawn"] + take)[st["cn"]])
+                for t in st["cand"][sel].tolist():
+                    jobs_r.append((st["fam"], st["R"][st["ia"][t]], st["R"][st["ib"][t]],
+                                   int(st["C"][st["ia"][t]]), int(st["C"][st["ib"][t]]), "pair"))
+                    where.append((st, t))
+                st["drawn"] = st["drawn"] + take
+            if not jobs_r:
+                break
+            for r, (st, t) in zip(pool.imap(work, jobs_r, chunksize=2), where):
+                k_ = int(st["nid"][t])
+                r["node"] = f"n{k_}"
+                st["rows"].append((r, k_))
+                ok_gate = (r["status"] == "ok" and r["dS"] > 0 and (A.gate_max_ds <= 0 or r["dS"] <= A.gate_max_ds)
+                           and (r["N"] + r["S"]) / 3.0 >= A.gate_min_codons)
+                if ok_gate:
+                    st["gated"][k_] += 1
+        # 5. write rows and the node table
+        for st in states:
+            fam = st["fam"]
+            for r, k_ in st["rows"]:
+                r["node_pairs"] = float(st["npairs"][k_])
+                r["node_sampled"] = float(st["drawn"][k_])
+                bump(r["status"], 1, int(r["npairs"]))
+                out.write("\t".join(fmt(r[k]) for k in HDR) + "\n")
+            sw = int(sum(r["npairs"] for r, _ in st["rows"]))
+            bump("prefiltered", int((~st["passed"]).sum()), int(st["w"][~st["passed"]].sum()))
+            bump("not_sampled", int(st["passed"].sum()) - len(st["rows"]), int(st["w"][st["passed"]].sum()) - sw)
+            for k_ in range(st["nnode"]):
+                nout.write(f"{fam}\tn{k_}\ttree\t{int(st['npairs'][k_])}\t{int(st['nrep'][k_])}\t{int(st['npass'][k_])}\t{int(st['drawn'][k_])}\t{int(st['gated'][k_])}\n")
+
+    with open(A.families) as fh, Pool(A.threads) as pool, oopen(A.out, "wt") as out, \
+            gzip.open(A.out + ".nodes.tsv.gz", "wt") as nout:
+        hdr = next(fh, None)
+        if hdr is None:
+            print("ERROR: families file is empty: " + A.families, file=sys.stderr)
+            sys.exit(2)
+        out.write("\t".join(HDR) + "\n")
+        nout.write("\t".join(nodes_hdr) + "\n")
+        block, bp = [], 0
+        for item in families(fh):
+            n = len(item[1])
+            block.append(item)
+            bp += n * (n - 1) // 2
+            if bp >= BLOCK_PAIRS:
+                process_block(block)
+                block, bp = [], 0
+        if block:
+            process_block(block)
+    return counts, gp
+
+
+def run_all_pairs():
+    oopen = gzip.open if A.out.endswith(".gz") else open
+    counts, gp = {}, {}
+    cur, buf = None, []
+    with Pool(A.threads) as pool, oopen(A.out, "wt") as out:
+        out.write("\t".join(HDR) + "\n")
+        for r in pool.imap(work, jobs(), chunksize=50):
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+            gp[r["status"]] = gp.get(r["status"], 0) + int(r["npairs"])
+            if r["family"] != cur:
+                flush(buf, out)
+                cur, buf = r["family"], []
+            buf.append(r)
+        flush(buf, out)
+    return counts, gp
+
+
+counts, gp = run_sampled() if A.node_sample > 0 else run_all_pairs()
 total = sum(counts.values())
 print("rows by status:", counts, file=sys.stderr)
 print("gene pairs represented, by status:", gp, "total", sum(gp.values()), file=sys.stderr)

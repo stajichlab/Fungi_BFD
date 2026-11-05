@@ -26,6 +26,7 @@ process WGD_PAIR_KS {
 
     output:
     path({ metas.collect { "${it.id}.cds-transcripts.fa.tsv.ks.tsv.gz" } }), emit: ks, optional: true
+    path({ metas.collect { "${it.id}.cds-transcripts.fa.tsv.ks.tsv.gz.nodes.tsv.gz" } }), emit: nodes, optional: true
     path("bundle_${metas[0].locustag}.failed.txt"), emit: failed, optional: true
 
     script:
@@ -35,6 +36,10 @@ process WGD_PAIR_KS {
     def maxngds = (fast && params.wgd_prefilter_ngds) ? "--max-ngds ${params.wgd_prefilter_ngds}" : ''
     // identical-CDS collapse is a speed-up: off when wgd_speedups=false or wgd_collapse_identical=false
     def nocoll  = (fast && params.wgd_collapse_identical.toString().toBoolean()) ? '' : '--no-collapse'
+    // node sampling: K pairs per node go to codeml (0 = all pairs). A speed-up: off when wgd_speedups=false.
+    def ns      = fast ? (params.wgd_node_sample as int) : 0
+    // a node draws pairs in rounds until it has ns pairs inside the gate (dS cut, minimum codons) or wgd_node_max_draws were run
+    def nsflag  = ns > 0 ? "--node-sample ${ns} --node-max-draws ${params.wgd_node_max_draws} --gate-max-ds ${params.wgd_max_ds ?: 0} --gate-min-codons ${params.wgd_min_pair_codons ?: 0}" : ''
     def allow   = params.wgd_allow_untested_table.toString().toBoolean() ? '1' : '0'
     def ids     = metas.collect { it.id }.join(' ')
     def tabs    = metas.collect { (it.transl_table ?: '1').toString() }.join(' ')
@@ -61,7 +66,7 @@ process WGD_PAIR_KS {
         if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_sif} \\
             python3 ${projectDir}/bin/wgd_pair_ks.py --cds \$cds --families \$fam --out \$out \\
             --threads ${task.cpus} --min-identity ${ident} --min-ng-codons ${ngcod} ${maxngds} \\
-            ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
+            ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
             && [ -s \$out ]; then
             nok=\$((nok+1)); cp \$out.status.txt \${id}.pair_status.txt 2>/dev/null || true
         else

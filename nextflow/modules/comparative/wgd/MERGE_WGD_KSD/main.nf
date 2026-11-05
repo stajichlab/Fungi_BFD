@@ -41,6 +41,7 @@ process MERGE_WGD_KSD {
     path("wgd.ks.parquet"),         emit: ks_table
     path("wgd.ks.summary.parquet"), emit: ks_summary
     path("wgd.ks.check.txt"),       emit: check
+    path("wgd.ks.nodes.parquet"),   emit: nodes_table, optional: true
 
     script:
     // params.wgd_speedups = false: no dS cut, no pair-codon gate, no dS-null drop (all pairs kept).
@@ -49,6 +50,8 @@ process MERGE_WGD_KSD {
     def min_cod  = params.wgd_min_codons ? "--min-codons ${params.wgd_min_codons}" : ''
     def min_pcod = (fast && params.wgd_min_pair_codons) ? "--min-pair-codons ${params.wgd_min_pair_codons}" : ''
     def sub      = [pair: (fast ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'), ksd_pairwise: 'wgd_ksd_pw', ksd: 'wgd_ksd'][params.wgd_ks_method]
+    // per-node table: only for the pair method with node sampling (wgd_pair_ks.py writes the nodes files)
+    def nodes    = (params.wgd_ks_method == 'pair' && fast && (params.wgd_node_sample as int) > 0) ? '--nodes-out wgd.ks.nodes.parquet' : ''
     def drop_nul = (fast && params.wgd_drop_null_ds.toString().toBoolean()) ? '--drop-null-ds' : ''
     """
     python3 ${projectDir}/bin/merge_wgd_ks.py \
@@ -56,6 +59,7 @@ process MERGE_WGD_KSD {
         --failed-glob '${outdir}/${sub}/*.failed.txt' \
         --expected-genomes ${n_expected} \
         --check-out wgd.ks.check.txt \
+        ${nodes} \
         -o wgd.ks.parquet \
         -s wgd.ks.summary.parquet \
         ${max_ds} ${min_cod} ${min_pcod} ${drop_nul}
