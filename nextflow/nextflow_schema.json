@@ -841,6 +841,11 @@
                     "format": "directory-path",
                     "description": "SETUP_DBCAN_DB's storeDir for the full run_dbcan reference set."
                 },
+                "dbcan_cazy_src": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Local CAZyDB release dir (e.g. /srv/projects/db/CAZY/CAZyDB/v14.0). SETUP_DBCAN_DB links its CAZy.dmnd, dbCAN.hmm, dbCAN_sub.hmm and substrate map into dbcan_dbdir and downloads only the rest. Empty = download all."
+                },
                 "pfam_nodes": {
                     "type": "integer",
                     "minimum": 1,

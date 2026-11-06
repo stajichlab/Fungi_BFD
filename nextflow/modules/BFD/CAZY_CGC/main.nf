@@ -43,7 +43,13 @@ process RUN_CAZY_CGC {
     # inside the container.
     GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
     PROT_REAL_DIR=\$(dirname \$(readlink -f ${proteins_plain}))
-    SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
+    # SETUP_DBCAN_DB links the CAZy files in dbcan_dbdir to a local CAZyDB
+    # release (params.dbcan_cazy_src). Bind the parent of the real release dir:
+    # it holds both v14.0 and the v13.0 files that v14.0 links to. With no
+    # source set, the dbcan_dbdir bind already covers everything.
+    CAZY_SRC="${params.dbcan_cazy_src ?: ''}"
+    if [ -n "\$CAZY_SRC" ]; then CAZY_REAL_DIR=\$(dirname \$(readlink -f "\$CAZY_SRC")); else CAZY_REAL_DIR=${params.dbcan_dbdir}; fi
+    SING_BINDS="--bind \${PWD}:\${PWD},${params.dbcan_dbdir}:${params.dbcan_dbdir},\${CAZY_REAL_DIR}:\${CAZY_REAL_DIR},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${PROT_REAL_DIR}:\${PROT_REAL_DIR},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
     apptainer exec \${SING_BINDS} ${params.dbcan_cgc_sif} run_dbcan easy_CGC \\
         --input_raw_data ${proteins_plain} \\
