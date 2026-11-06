@@ -78,6 +78,10 @@ ap.add_argument("--no-collapse", action="store_true", help="do not collapse iden
 ap.add_argument("--max-pairs", type=int, default=0, help="debug: stop after this many pairs")
 A = ap.parse_args()
 
+# Ambiguity codes in a CDS (R, Y, N ...) translate to B, Z, J or X, and stops to *; the BLOSUM62 aligner rejects letters it
+# does not know (a genome failed with "sequence contains letters not in the alphabet"). Everything but the 20 amino acids becomes X.
+NOT_AA = re.compile(r"[^ACDEFGHIKLMNPQRSTVWY]")
+
 TABLE = CodonTable.unambiguous_dna_by_id[A.table]
 FWD = dict(TABLE.forward_table)
 STOPS = set(TABLE.stop_codons)
@@ -228,8 +232,8 @@ def work(job):
         p1 = p1[:-1]
     if p2.endswith("*"):
         p2 = p2[:-1]
-    p1 = p1.replace("*", "X")
-    p2 = p2.replace("*", "X")
+    p1 = NOT_AA.sub("X", p1)
+    p2 = NOT_AA.sub("X", p2)
     if not p1 or not p2:
         row["status"] = "empty"
         return row
@@ -491,8 +495,8 @@ def phase1(pair):
         p1 = p1[:-1]
     if p2.endswith("*"):
         p2 = p2[:-1]
-    p1 = p1.replace("*", "X")
-    p2 = p2.replace("*", "X")
+    p1 = NOT_AA.sub("X", p1)
+    p2 = NOT_AA.sub("X", p2)
     if not p1 or not p2:
         return float("nan"), 0
     aln = aligner.align(p1, p2)[0]
