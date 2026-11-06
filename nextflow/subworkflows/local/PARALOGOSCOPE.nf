@@ -6,9 +6,10 @@ include { WGD_SYN } from '../../modules/comparative/wgd/WGD_SYN/main.nf'
 include { MERGE_WGD_KSD } from '../../modules/comparative/wgd/MERGE_WGD_KSD/main.nf'
 
 // Expected CPU-seconds of the pair stage for one genome, from its wgd dmd families file.
-// Constants are measured: about 9 ms per pair for the first pass (alignment + identity) and about 0.15 s per
-// codeml run (Boletaceae: 1.88 M pairs, 6 k codeml runs, 17.7 k CPU-s at K = 5; Glomus: 119 codeml runs/s on 32 CPUs).
-// With node sampling the codeml runs are at most 5 per node; without it, about 65% of the pairs.
+// Measured on an isolated node (eval/phase_timing): the first pass costs 5.4 ms per pair (Mycena) to 13.5 ms (Allomyces
+// macrogynus), depending on protein length; 7 ms is a compromise. One estimator run costs about 10 ms with yn00 (kaks) and
+// about 200 ms with codeml. The number of estimator runs is about 2.2 per node (predicted 66 k and 23 k, measured 82 k and 20 k).
+// Predicted cost is within 0.8x-1.6x of the measured cost on those two genomes.
 def estimateCost(fam) {
     long pairs = 0
     long nodes = 0
@@ -22,8 +23,9 @@ def estimateCost(fam) {
         nodes += n - 1
     }
     def ns = (params.wgd_speedups.toString().toBoolean() ? (params.wgd_node_sample as int) : 0)
-    double codeml = ns > 0 ? Math.min(pairs * 0.65, ns * (nodes as double)) : pairs * 0.65
-    return 0.009 * pairs + 0.15 * codeml + 60.0
+    double runs = ns > 0 ? Math.min(pairs * 0.65, 2.2 * (nodes as double)) : pairs * 0.65
+    double perRun = params.wgd_dnds_method == 'yn00' ? 0.010 : 0.200
+    return 0.007 * pairs + perRun * runs + 60.0
 }
 
 // First-fit-decreasing: genomes (tuple(meta, families, cds)) into bundles of at most cap expected CPU-seconds.

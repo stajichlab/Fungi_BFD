@@ -41,6 +41,11 @@ the node) and node_sampled; all nodes are written to <out>.nodes.tsv.gz. Unsampl
 no row. K = 0 (default) keeps the all-pairs output. Tested offline on Glomus: K = 5 reproduces
 the node-mean distribution closely (eval/sampling_test/offline_k_glomus.txt).
 
+dN/dS estimator (--dnds-method): codeml (default) or yn00 (Yang & Nielsen 2000 through the kaks tool, run per pair on the gap-free
+codon alignment, 2.8 ms against 86 ms for codeml in the isolated-node benchmark, eval/bench_excl). yn00 reads lower than codeml from dS
+about 0.5 (codeml/yn00 median 1.45 at yn00 dS 0.5-0.8, about 2 above 0.8) and saturates near 2; in simulation it is as good or better
+than codeml above true dS 1.5 and slightly worse below. A second codeml pass for pairs in a yn00 dS range is a separate step.
+
 Exit codes: 0 ok; 2 empty/invalid families file; 3 more than 1% of pairs have missing genes;
 4 more than 5% of attempted codeml runs failed (timeout/no_out/no_estimate).
 
@@ -74,9 +79,14 @@ ap.add_argument("--gate-max-ds", type=float, default=2.5, help="node sampling: a
 ap.add_argument("--gate-min-codons", type=int, default=30, help="node sampling: a pair counts as gated with at least this many codons used by codeml")
 ap.add_argument("--node-max-draws", type=int, default=20, help="node sampling: at most this many pairs per node go to codeml")
 ap.add_argument("--seed", type=int, default=1, help="seed for node sampling")
+ap.add_argument("--dnds-method", choices=["codeml", "yn00"], default="codeml",
+                help="estimator for dN/dS of the pairs that pass the pre-filter: codeml (pairwise ML, runmode -2) or yn00 (Yang & Nielsen 2000 "
+                     "through kaks; about 30x faster per pair, reads lower than codeml above dS about 0.5)")
+ap.add_argument("--kaks", default="kaks", help="kaks executable (subopt-kaks; needed for --dnds-method yn00)")
 ap.add_argument("--no-collapse", action="store_true", help="do not collapse identical CDS")
 ap.add_argument("--max-pairs", type=int, default=0, help="debug: stop after this many pairs")
 A = ap.parse_args()
+KAKS_EXE = shutil.which(A.kaks) or A.kaks  # full path (posix_spawn needs one)
 
 # Ambiguity codes in a CDS (R, Y, N ...) translate to B, Z, J or X, and stops to *; the BLOSUM62 aligner rejects letters it
 # does not know (a genome failed with "sequence contains letters not in the alphabet"). Everything but the 20 amino acids becomes X.
@@ -281,6 +291,31 @@ def _work(job):
     n = len(c1)
     if n < 10:
         row["status"] = "too_short"
+        return row
+    if A.dnds_method == "yn00":
+        # kaks reads the gap-free codon alignment from stdin: no temp directory, no control file
+        _t = time.perf_counter()
+        try:
+            # close_fds=False with a full executable path lets Python use posix_spawn instead of fork: a fork of this large
+            # process cost about 20 ms per call, a spawn about 3 ms
+            rk = subprocess.run([KAKS_EXE, "--prealigned", "--no-header", "--genetic-code", str(A.table), "-"],
+                                input=f">a\n{''.join(c1)}\n>b\n{''.join(c2)}\n", capture_output=True, text=True, timeout=60,
+                                close_fds=False)
+        except subprocess.TimeoutExpired:
+            row["status"] = "timeout"
+            return row
+        TT["codeml"] = time.perf_counter() - _t
+        pk = rk.stdout.rstrip("\n").split("\t")
+        try:
+            dN, dS, w, N, S, t = float(pk[2]), float(pk[3]), float(pk[4]), float(pk[5]), float(pk[6]), float(pk[8])
+        except (IndexError, ValueError):
+            row["status"] = "no_estimate"
+            return row
+        if not (dS == dS):
+            row["status"] = "no_estimate"
+            return row
+        row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS,
+                    "strippedalignmentlength": float(3 * n), "status": "ok"})
         return row
     _t = time.perf_counter()
     d = tempfile.mkdtemp(prefix="pk_", dir=A.tmpdir)
@@ -850,15 +885,15 @@ def timing_report(total_wall):
                  g("p1_wall"), g("pairs_phase1"), g("p1_worker_total"), g("p1_worker_align"),
                  1000 * g("p1_worker_total") / max(g("pairs_phase1"), 1), 1000 * g("p1_wall") / max(g("pairs_phase1"), 1)),
              "tree + sampling setup wall      %9.1f   (serial, main process)" % g("tree_sampling_wall"),
-             "codeml rounds wall              %9.1f   work() calls %d, codeml runs %d" % (g("rounds_wall"), g("work_calls"), g("codeml_runs")),
+             "estimator rounds wall            %9.1f   work() calls %d, estimator runs %d" % (g("rounds_wall"), g("work_calls"), g("codeml_runs")),
              "write rows + node table wall   %9.1f" % g("write_wall"),
              "other (family parse, grouping)   %9.1f" % (total_wall - g("p1_wall") - g("tree_sampling_wall") - g("rounds_wall") - g("write_wall")),
-             "  worker seconds in work():     %9.1f   aligner %.1f, codon loop %.1f, NG86 %.1f, temp dir + files %.1f, codeml process %.1f" % (
+             "  worker seconds in work():     %9.1f   aligner %.1f, codon loop %.1f, NG86 %.1f, temp dir + files %.1f, estimator process %.1f" % (
                  g("w_total"), g("w_align"), g("w_codon_loop"), g("w_ng86"), g("w_io_setup"), g("w_codeml")),
-             "  per codeml run (ms):          total %.1f, codeml process %.1f" % (
+             "  per estimator run (ms):       total %.1f, estimator process %.1f" % (
                  1000 * g("w_total") / max(g("codeml_runs"), 1), 1000 * g("w_codeml") / max(g("codeml_runs"), 1))]
     cpu = g("p1_worker_total") + g("w_total")
-    lines += ["worker CPU-seconds, all phases   %9.1f   of which codeml process %.1f (%.1f%%), first pass %.1f (%.1f%%), rest of work() %.1f (%.1f%%)" % (
+    lines += ["worker CPU-seconds, all phases   %9.1f   of which estimator process %.1f (%.1f%%), first pass %.1f (%.1f%%), rest of work() %.1f (%.1f%%)" % (
                  cpu, g("w_codeml"), 100 * g("w_codeml") / max(cpu, 1e-9), g("p1_worker_total"), 100 * g("p1_worker_total") / max(cpu, 1e-9),
                  g("w_total") - g("w_codeml"), 100 * (g("w_total") - g("w_codeml")) / max(cpu, 1e-9)),
               "worker utilisation              %.0f%% of %d workers x total wall" % (100 * cpu / max(total_wall * nt, 1e-9), nt)]
@@ -884,7 +919,7 @@ def run_all_pairs():
 
 _T0 = time.perf_counter()
 counts, gp = run_sampled() if A.node_sample > 0 else run_all_pairs()
-_report = timing_report(time.perf_counter() - _T0)
+_report = "dnds_method=%s%s\n" % (A.dnds_method, " kaks=" + (subprocess.run([A.kaks, "--version"], capture_output=True, text=True).stdout.strip() or "?") if A.dnds_method == "yn00" else "") + timing_report(time.perf_counter() - _T0)
 print(_report, file=sys.stderr)
 if A.node_sample > 0:
     with open(A.out + ".timing.txt", "w") as _fh:

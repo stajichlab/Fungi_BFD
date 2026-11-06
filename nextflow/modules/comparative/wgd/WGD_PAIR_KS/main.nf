@@ -15,11 +15,14 @@
 // Genetic code: meta.transl_table (samples.csv TRANSL_TABLE) -> --table; codeml icode 8 for
 // table 12; other non-standard tables are NOT validated and the task fails for them unless
 // params.wgd_allow_untested_table = true.
+// dN/dS estimator: params.wgd_dnds_method = yn00 (kaks, Yang & Nielsen 2000; about 30x faster per pair) or codeml. kaks is in the
+// container params.wgd_pair_sif (wgd2_complete with subopt-kaks).
 process WGD_PAIR_KS {
     tag        "${metas.size()} genomes: ${metas[0].id}"
     label      'comparative_wgd_pair'
 
-    storeDir   { "${params.outdir}/${params.wgd_speedups.toString().toBoolean() ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'}" }
+    // results of different estimators never share a folder: wgd_ksd_pp (codeml), wgd_ksd_pp_yn00; _full = wgd_speedups false
+    storeDir   { "${params.outdir}/${params.wgd_speedups.toString().toBoolean() ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'}${params.wgd_dnds_method == 'yn00' ? '_yn00' : ''}" }
 
     input:
     tuple val(metas), path(families, stageAs: 'fam_?/*'), path(cds, stageAs: 'cds_?/*')
@@ -56,7 +59,7 @@ process WGD_PAIR_KS {
     SING_BINDS="--bind \${PWD_REAL}:\${PWD_REAL},${projectDir}:${projectDir},/bigdata:/bigdata,/rhome:/rhome,\$TMPDIR:\$TMPDIR"
     IDS=(${ids}); TABS=(${tabs}); FAMS=(${fams}); CDSS=(${cdss})
     FAILED=bundle_${metas[0].locustag}.failed.txt
-    STORE=${params.outdir}/${params.wgd_speedups.toString().toBoolean() ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'}
+    STORE=${params.outdir}/${params.wgd_speedups.toString().toBoolean() ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'}${params.wgd_dnds_method == 'yn00' ? '_yn00' : ''}
     nok=0
     for i in \${!IDS[@]}; do
         id=\${IDS[\$i]}; tab=\${TABS[\$i]}; fam=\${FAMS[\$i]}; cds=\${CDSS[\$i]}
@@ -70,10 +73,10 @@ process WGD_PAIR_KS {
             *) if [ "${allow}" = 1 ]; then table=\$tab; icode=0; else
                  echo "\$id: genetic code \$tab not validated; skipped" >> \$FAILED; continue; fi ;;
         esac
-        if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_sif} \\
+        if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_pair_sif} \\
             python3 ${projectDir}/bin/wgd_pair_ks.py --cds \$cds --families \$fam --out \$out \\
             --threads ${task.cpus} --min-identity ${ident} --min-ng-codons ${ngcod} ${maxngds} \\
-            ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
+            --dnds-method ${params.wgd_dnds_method} ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
             && [ -s \$out ]; then
             nok=\$((nok+1)); cp \$out.status.txt \${id}.pair_status.txt 2>/dev/null || true
         else
