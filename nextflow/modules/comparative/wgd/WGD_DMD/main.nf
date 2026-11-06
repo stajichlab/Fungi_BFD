@@ -24,7 +24,8 @@ process WGD_DMD {
     tuple val(meta), path(cds)
 
     output:
-    tuple val(meta), path(cds), path("*.tsv"), emit: families
+    // Exact name (not *.tsv): genomes in one hash bucket share the storeDir, and a glob returns all of them.
+    tuple val(meta), path(cds), path("${plainName(cds)}.tsv"), emit: families
 
     script:
     // wgd gets a plain file: a .gz input is inflated under its plain name (so the
@@ -51,7 +52,7 @@ process WGD_DMD {
     stub:
     """
     mkdir -p wgd_dmd
-    printf 'family\\tgene_a\\tgene_b\\n' > wgd_dmd/${cds}.tsv
+    printf 'family\\tgene_a\\tgene_b\\n' > wgd_dmd/${plainName(cds)}.tsv
     mv wgd_dmd/*.tsv .
     """
 }

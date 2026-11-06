@@ -17,20 +17,27 @@ process WGD_KSD {
     tag        "${meta.id}"
     label      'comparative_wgd'
 
-    storeDir   { "${params.outdir}/wgd_ksd/${hashBucketForType('wgd_ksd', meta.locustag)}" }
+    // --pairwise results go to wgd_ksd_pw/ so cached default-mode (family-level
+    // gap stripping) results in wgd_ksd/ are never mixed into the same table.
+    storeDir   { "${params.outdir}/${params.wgd_ks_method == 'ksd_pairwise' ? 'wgd_ksd_pw' : 'wgd_ksd'}/${hashBucketForType('wgd_ksd', meta.locustag)}" }
 
     input:
     tuple val(meta), path(families), path(cds)
 
     output:
-    path("*.ks.tsv"),  emit: ks
-    path("*.ksd.pdf"), emit: ks_plot_pdf
-    path("*.ksd.svg"), emit: ks_plot_svg
+    // Exact names (not *.ks.tsv): genomes in one hash bucket share the storeDir, and a glob returns all of them.
+    path("${families}.ks.tsv"),  emit: ks
+    path("${families}.ksd.pdf"), emit: ks_plot_pdf
+    path("${families}.ksd.svg"), emit: ks_plot_svg
 
     script:
     // wgd gets a plain file: a .gz input is inflated under its plain name (so the
     // output names stay <id>.cds-transcripts.fa.*, which merge_wgd_ks.py parses).
     def cds_plain = plainName(cds)
+    // --pairwise: one codeml per pair after per-pair gap stripping. Default mode strips
+    // every column with a gap in ANY family member, which leaves few codons in large
+    // families (see eval/sim_controls/report.md).
+    def pw = params.wgd_ks_method == 'ksd_pairwise' ? '--pairwise' : ''
     """
     ${gzInflate(cds)}
     module load apptainer squashfuse fuse
@@ -42,6 +49,7 @@ process WGD_KSD {
         ${params.wgd_sif} wgd ksd \\
         --outdir wgd_ksd \\
         --nthreads ${task.cpus} \\
+        ${pw} \\
         ${families} ${cds_plain}
 
     [ -f wgd_ksd/*.ks.tsv ] || { echo "ERROR: wgd ksd produced no ks.tsv output" >&2; exit 1; }
