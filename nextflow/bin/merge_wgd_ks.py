@@ -77,6 +77,22 @@ def node_table(path, df, genome, prefix):
     return nd
 
 
+def identical_stats(path):
+    """Collapsed identical-CDS groups of a genome, from <path>.nodes.tsv.gz (kind = identical).
+    Returns (groups, genes in groups, largest group, identical gene pairs / all gene pairs in the families).
+    A group of n copies stands for n(n-1)/2 gene pairs, so n is recovered from the pair count."""
+    npath = path + ".nodes.tsv.gz"
+    if not os.path.exists(npath):
+        return 0, 0, 0, float("nan")
+    nd = pd.read_csv(npath, sep="\t", usecols=["kind", "node_pairs"])
+    tot = float(nd["node_pairs"].sum())
+    idn = nd[nd["kind"] == "identical"]["node_pairs"].astype("float64")
+    if idn.empty:
+        return 0, 0, 0, 0.0 if tot else float("nan")
+    copies = ((1.0 + (1.0 + 8.0 * idn) ** 0.5) / 2.0).round().astype("int64")
+    return int(len(idn)), int(copies.sum()), int(copies.max()), float(idn.sum() / tot) if tot else float("nan")
+
+
 def species_prefix_of(gene):
     s = str(gene).split("_", 1)
     return s[0] if s else ""
@@ -148,7 +164,7 @@ def main():
         [(c, float_type) for c in FLOAT_COLS]
     )
 
-    summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families, n_nodes, n_nodes_with_ds, hybrid)
+    summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families, n_nodes, n_nodes_with_ds, hybrid, identical stats x4)
     n_rows = 0
     node_schema = pa.schema(
         [("genome", string_type), ("species_prefix", string_type), ("family", string_type), ("node", string_type),
@@ -241,7 +257,7 @@ def main():
                     n_nodes,
                     n_nodes_ds,
                     int(" x " in genome.replace("_", " ")),
-                ))
+                ) + identical_stats(path))
             print(f"  {genome}: {n_raw:,} raw -> {len(df):,} rows", file=sys.stderr)
 
     # per-genome summary
@@ -255,6 +271,10 @@ def main():
         ("n_nodes", pa.int64()),          # nodes of the family trees (0 when there is no nodes file)
         ("n_nodes_with_ds", pa.int64()),  # nodes with at least one kept dS
         ("hybrid", pa.int64()),           # 1 when the genome name has " x " (interspecific hybrid)
+        ("n_identical_groups", pa.int64()),            # groups of genes with an identical CDS inside a family
+        ("n_genes_in_identical_groups", pa.int64()),
+        ("largest_identical_group", pa.int64()),
+        ("identical_pair_share", pa.float64()),        # identical gene pairs / all gene pairs of the families
     ])
     if summaries:
         sum_df = pd.DataFrame(summaries, columns=[f.name for f in sum_schema])
