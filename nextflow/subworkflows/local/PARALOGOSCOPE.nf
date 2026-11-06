@@ -38,6 +38,11 @@ def packBundles(List items, double cap) {
     return bins.collect { it[1] }
 }
 
+// wgd dmd families file of a genome in the storeDir (genomes skipped inside a bundle because an earlier run stored them)
+def storedFamilies(m) {
+    return file("${params.outdir}/wgd_dmd/${m.id}.cds-transcripts.fa.tsv")
+}
+
 workflow PARALOGOSCOPE {
     take:
     species_ch   // channel: tuple(meta, cds) per species
@@ -58,8 +63,9 @@ workflow PARALOGOSCOPE {
             .flatMap { metas, fams ->
                 def fam_by = (fams instanceof List ? fams : [fams]).collectEntries { f ->
                     [(f.name.replaceAll(/\.cds-transcripts\.fa\.tsv$/, '')): f] }
-                metas.findAll { m -> fam_by.containsKey(m.id) }
-                     .collect { m -> tuple(m, fam_by[m.id]) }
+                // genomes already stored by another bundle were skipped inside this one: take them from the storeDir
+                metas.findAll { m -> fam_by.containsKey(m.id) || storedFamilies(m).exists() }
+                     .collect { m -> tuple(m, fam_by.containsKey(m.id) ? fam_by[m.id] : storedFamilies(m)) }
             }
             .join(species_ch)
             .map { meta, families, cds -> tuple(meta, cds, families) }

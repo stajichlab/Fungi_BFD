@@ -10,7 +10,7 @@
 // Bundling: one task runs params.wgd_pair_bundle genomes one after the other (default 20), to
 // reach about 1-1.5 h per task. Output goes flat into wgd_ksd_pp/ (or wgd_ksd_pp_full/ when
 // params.wgd_speedups = false: pre-filter off). A genome that fails is listed in
-// <task>.failed.txt (stored beside the tables); the merge step stops with an error when any
+// bundle_<locustag>.failed.txt (copied into the table folder by the script); the merge step stops with an error when any
 // such file exists. The task itself fails only when every genome in the bundle failed.
 // Genetic code: meta.transl_table (samples.csv TRANSL_TABLE) -> --table; codeml icode 8 for
 // table 12; other non-standard tables are NOT validated and the task fails for them unless
@@ -27,7 +27,11 @@ process WGD_PAIR_KS {
     output:
     path({ metas.collect { "${it.id}.cds-transcripts.fa.tsv.ks.tsv.gz" } }), emit: ks, optional: true
     path({ metas.collect { "${it.id}.cds-transcripts.fa.tsv.ks.tsv.gz.nodes.tsv.gz" } }), emit: nodes, optional: true
-    path("bundle_${metas[0].locustag}.failed.txt"), emit: failed, optional: true
+    // Required marker, named after the exact set of genomes. All other outputs are optional (a genome may fail),
+    // and with only optional outputs Nextflow treats a storeDir as "already done" as soon as one file of the bundle
+    // exists, which silently skipped new genomes of a bundle and every re-run of a failed one. Failure lists are
+    // copied straight into the storeDir by the script (not declared), so they do not count as outputs either.
+    path("bundle_${metas.collect { it.id }.sort().join(',').md5()}.done"), emit: done
 
     script:
     def fast    = params.wgd_speedups.toString().toBoolean()
@@ -52,10 +56,13 @@ process WGD_PAIR_KS {
     SING_BINDS="--bind \${PWD_REAL}:\${PWD_REAL},${projectDir}:${projectDir},/bigdata:/bigdata,/rhome:/rhome,\$TMPDIR:\$TMPDIR"
     IDS=(${ids}); TABS=(${tabs}); FAMS=(${fams}); CDSS=(${cdss})
     FAILED=bundle_${metas[0].locustag}.failed.txt
+    STORE=${params.outdir}/${params.wgd_speedups.toString().toBoolean() ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'}
     nok=0
     for i in \${!IDS[@]}; do
         id=\${IDS[\$i]}; tab=\${TABS[\$i]}; fam=\${FAMS[\$i]}; cds=\${CDSS[\$i]}
         out=\${id}.cds-transcripts.fa.tsv.ks.tsv.gz
+        # already stored by an earlier run (another bundle): do not redo it
+        if [ -s "\$STORE/\$out" ]; then echo "\$id: already stored, skipped" >&2; nok=\$((nok+1)); continue; fi
         icode=0; table=1
         case \$tab in
             1) ;;
@@ -74,11 +81,14 @@ process WGD_PAIR_KS {
         fi
     done
     echo "genomes ok: \$nok of \${#IDS[@]}" >&2
+    if [ -s \$FAILED ]; then mkdir -p "\$STORE" && cp \$FAILED "\$STORE/"; fi
     [ \$nok -gt 0 ] || { echo "ERROR: every genome in the bundle failed" >&2; exit 1; }
+    touch bundle_${metas.collect { it.id }.sort().join(',').md5()}.done
     """
 
     stub:
     """
     for id in ${metas.collect { it.id }.join(' ')}; do printf 'pair\\tdS\\n' | gzip > \${id}.cds-transcripts.fa.tsv.ks.tsv.gz; done
+    touch bundle_${metas.collect { it.id }.sort().join(',').md5()}.done
     """
 }

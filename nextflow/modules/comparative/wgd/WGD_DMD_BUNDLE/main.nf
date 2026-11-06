@@ -20,7 +20,10 @@ process WGD_DMD_BUNDLE {
     output:
     // only the families files are outputs: an input path in the output tuple would put the staged cds_N/ folders into the storeDir
     tuple val(metas), path({ metas.collect { "${it.id}.cds-transcripts.fa.tsv" } }), emit: families, optional: true
-    path("dmd_${metas[0].locustag}.failed.txt"), emit: failed, optional: true
+    // Required marker named after the exact set of genomes (see WGD_PAIR_KS): with only optional outputs a stale
+    // failure list or one stored genome made Nextflow skip the whole bundle. Failure lists are copied into the
+    // storeDir by the script and are not declared.
+    path("dmd_${metas.collect { it.id }.sort().join(',').md5()}.done"), emit: done
 
     script:
     def files = (cds instanceof List ? cds : [cds]).collect { it.toString() }.join(' ')
@@ -32,12 +35,15 @@ process WGD_DMD_BUNDLE {
     SING_BINDS="--bind \${PWD_REAL}:\${PWD_REAL},${projectDir}:${projectDir},/bigdata:/bigdata,/rhome:/rhome,\$TMPDIR:\$TMPDIR"
     FILES=(${files}); IDS=(${ids})
     FAILED=dmd_${metas[0].locustag}.failed.txt
+    STORE=${params.outdir}/wgd_dmd
     nok=0
     for i in \${!FILES[@]}; do
         f=\${FILES[\$i]}; id=\${IDS[\$i]}; b=\$(basename \$f); plain=\${b%.gz}
         # wgd dmd joins the input file name to itself for temporary files, so a name over about 120
         # characters fails (File name too long). It runs on a short alias; the families file gets its real name.
         alias=g\$i.cds.fa
+        # already stored by an earlier run (another bundle): do not redo it
+        if [ -s "\$STORE/\$plain.tsv" ]; then echo "\$id: already stored, skipped" >&2; nok=\$((nok+1)); continue; fi
         if [ "\$b" != "\$plain" ]; then pigz -dc \$f > \$alias || { echo "\$id: cannot inflate" >> \$FAILED; continue; }; else cp \$f \$alias; fi
         rm -rf dmd_out
         if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_sif} wgd dmd \\
@@ -50,11 +56,14 @@ process WGD_DMD_BUNDLE {
         rm -rf dmd_out \$alias
     done
     echo "genomes ok: \$nok of \${#FILES[@]}" >&2
+    if [ -s \$FAILED ]; then mkdir -p "\$STORE" && cp \$FAILED "\$STORE/"; fi
     [ \$nok -gt 0 ] || { echo "ERROR: every genome in the bundle failed" >&2; exit 1; }
+    touch dmd_${metas.collect { it.id }.sort().join(',').md5()}.done
     """
 
     stub:
     """
     for f in ${(cds instanceof List ? cds : [cds]).collect { plainName(it) }.join(' ')}; do printf 'family\\tgene_a\\tgene_b\\n' > \${f}.tsv; done
+    touch dmd_${metas.collect { it.id }.sort().join(',').md5()}.done
     """
 }
