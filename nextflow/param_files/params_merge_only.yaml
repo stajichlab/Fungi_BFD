@@ -1,0 +1,56 @@
+# BFD merge-only run. No tool or stats step runs. Each MERGE_* step runs only
+# when a result file under results/ is newer than its table in tables/, or the
+# table is missing (merge_if_stale; mergeWanted() in modules/common/utils.nf).
+# BUILD_DUCKDB runs only when at least one merge ran.
+#
+# Limitation: removing a genome's result files does not trigger a merge.
+# Delete the affected table in tables/ to force it.
+#
+# Launch from BFD_function/:  sbatch run_BFD.sh  with PARAMS_FILE pointing here,
+# or: nextflow run .../main.nf -profile BFD -params-file <this file> -resume
+
+pipeline: BFD
+n_test: 0
+run_setup: false
+
+# Merge control
+skip_merge: false
+merge_all: true
+merge_if_stale: true
+# Tools set aside: TargetP results exist for 125 genomes only (DeepLoc replaces it).
+skip_merges: "MERGE_TARGETP"
+run_build_duckdb: true
+
+# Producers off: merges read existing files under results/
+run_pfam: false
+run_cazy: false
+run_merops: false
+run_swissprot: false
+run_infernal: false
+run_deeptmhmm: false
+run_signalp: false
+run_tmhmm: false
+run_targetp: false
+run_idp: false
+run_wolfpsort: false
+run_predgpi: false
+run_busco_genome: false
+run_busco_pep: false
+run_eggnog: false
+run_phobius: false
+run_tcdb: false
+run_antismash: false
+run_trnascan: false
+run_cazy_cgc: false
+run_asm_stats: false
+run_telomeres: false
+run_aa_freq: false
+run_codon_freq: false
+run_intergenic: false
+run_gene_stats: false
+run_chrom_info: false
+
+# MERGE_TF reads the Pfam domtblout files. Set true to build tf_inventory.parquet.
+run_tf: false
+# Built from params.swissprot_dat; gated the same way (dat newer than table).
+run_swissprot_annot: true

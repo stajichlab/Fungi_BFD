@@ -479,10 +479,105 @@ def resolveGenomeFile(Map genomeIndex, String metaId, String asmid) {
 // input "everything ever computed", independent of what one invocation saw.
 // (Found twice independently: BFD's MERGE_* steps, 2026-06-25, and
 // COMBINE_ANI_TABLE's ani.duckdb, 2026-07-23 — see .living/learnings.md.)
+//
+// Files whose genome is not in samples.csv, or is in suppress.txt, are dropped
+// (see mergeFileAllowed()). Set params.merge_filter_samples = false to keep all.
 def gatedGlobIn(sync_ch, String baseDir, String glob) {
+    def keys = params.merge_filter_samples.toBoolean() ? loadMergeAllowedKeys() : null
     sync_ch
         .filter { it }
-        .flatMap { files("${baseDir}/${glob}", type: 'file') }
+        .flatMap { _go ->
+            def all  = files("${baseDir}/${glob}", type: 'file')
+            if (keys == null) return all
+            def kept = all.findAll { f -> mergeFileAllowed(keys, f.name) }
+            if (kept.size() != all.size()) {
+                log.info "merge filter: ${glob} kept ${kept.size()} of ${all.size()} files (${all.size() - kept.size()} not in samples.csv or suppressed)"
+            }
+            kept
+        }
+}
+
+// ── Merge input filter: samples.csv minus suppress.txt ──────────────────────
+//
+// Merges glob every file ever written under results/. Files from genomes that
+// were later suppressed, removed from samples.csv, or written under an older
+// name would otherwise reach the tables (2026-11-05: 7 removed genomes and 2
+// old-name copies; the copies broke BUILD_DUCKDB's unique protein_id index).
+//
+// Allowed keys: for every samples.csv row whose ASMID is not suppressed, its
+// ASMID, LOCUSTAG and `out` tag (makeSampleTag). Files are named by one of the
+// three: LOCUSTAG for protein tools and per-genome stats, ASMID for asm_stats,
+// BUSCO_genome and telomeres, `out` for cazy and infernal. Two assemblies of
+// one strain share an `out` tag; the tag stays allowed while any of them is
+// not suppressed, and the shared folder holds the kept assembly's results.
+//
+// Returns null (no filtering) when samples.csv is missing or lacks a column.
+// Plain comma split, like loadSuppressSet(): samples.csv has no quoted commas
+// (checked 2026-11-06).
+def loadMergeAllowedKeys() {
+    def f = file(params.samples as String)
+    if (!f.exists()) {
+        log.warn "merge filter: ${params.samples} not found; merge inputs are not filtered"
+        return null
+    }
+    def lines  = f.readLines()
+    def header = lines ? lines[0].split(',', -1)*.trim() : []
+    def iA = header.indexOf('ASMID')
+    def iL = header.indexOf('LOCUSTAG')
+    def iSp = header.indexOf('SPECIES')
+    def iSt = header.indexOf('STRAIN')
+    if ([iA, iL, iSp, iSt].any { ix -> ix < 0 }) {
+        log.warn "merge filter: samples.csv lacks ASMID/LOCUSTAG/SPECIES/STRAIN; merge inputs are not filtered"
+        return null
+    }
+    def need = [iA, iL, iSp, iSt].max()
+    def sup  = loadSuppressSet()
+    def keys = [] as Set
+    lines.drop(1).each { line ->
+        def c = line.split(',', -1)
+        if (c.size() <= need) return
+        def asmid = c[iA].trim()
+        if (!asmid || sup.contains(asmid)) return
+        keys << asmid
+        if (c[iL].trim()) keys << c[iL].trim()
+        keys << makeSampleTag(c[iSp].trim(), c[iSt].trim())
+    }
+    return keys
+}
+
+// True when a file name belongs to an allowed genome: some prefix of the name
+// that ends just before a '.' is an allowed key, or (TargetP) the name is
+// <key>_summary.targetp2.gz. A '_' boundary is not enough on purpose: the
+// old-name copy F07B100A_CBS_101.48_substr... must not match LOCUSTAG F07B100A.
+// Python twin: nextflow/bin/merge_filter.py::file_allowed (tests in
+// nextflow/tests/test_merge_filter.py) -- keep them in sync.
+def mergeFileAllowed(Set keys, String name) {
+    def dots = (1..<name.length()).findAll { i -> name[i] == '.' }
+    if (dots.any { i -> keys.contains(name.substring(0, i)) }) return true
+    def tp = '_summary.targetp2.gz'
+    return name.endsWith(tp) && keys.contains(name.substring(0, name.length() - tp.length()))
+}
+
+// Shell line that checks a merged table's genome coverage against the table
+// it replaces (bin/check_table_coverage.py). Only for full merges (merge_all):
+// a current-run-only merge is smaller by design. Off with allow_shrink.
+def coverageCheck(String parquet) {
+    if (!params.merge_all.toBoolean() || params.allow_shrink.toBoolean()) return ''
+    // '|| exit 1': most merge scripts do not run under set -e.
+    "python3 ${projectDir}/bin/check_table_coverage.py --new ${parquet} --old ${tablesDir()}/${parquet} --min-frac ${params.coverage_min_frac} || exit 1"
+}
+
+// params.skip_merges: MERGE_* labels never to run (e.g. a tool set aside whose
+// result files cover only part of the genomes). A list, or a comma-separated
+// string.
+def mergeSkipped(String label) {
+    def s = params.skip_merges
+    def names = (s instanceof List) ? s : (s ? s.toString().split(',')*.trim() : [])
+    if (names.contains(label)) {
+        log.info "skip_merges: ${label} skipped"
+        return true
+    }
+    return false
 }
 
 // Collapse a channel of input files into one sorted manifest, TAB-delimited:
@@ -507,6 +602,83 @@ def toManifest(ch, String name) {
       .toSortedList()
       .flatMap { it }
       .collectFile(name: name, newLine: true)
+}
+
+// ── merge_if_stale: skip a merge whose tables are already current ──────────
+//
+// tablesStale() returns true when a merged table must be rebuilt:
+//   - any of `tables` (file names in tablesDir()) does not exist, or
+//   - any input file is newer than the OLDEST of those tables.
+// Inputs are the files matching each of `globs` under `baseDir`, plus
+// `extraInputs` (e.g. samples.csv). The scan stops at the first newer file.
+//
+// Limitation: deleting a genome's result files does not make a table stale,
+// because deletion leaves no newer file. Delete the table (or run without
+// merge_if_stale) to force a rebuild in that case. Suppress and samples.csv
+// changes are covered: mergeWanted() adds both files as inputs.
+// setInputs (samples.csv, suppress.txt) count only for staleness, never as
+// merge input: a missing table whose tool has no result files stays skipped.
+def tablesStale(String label, String baseDir, List globs, List tables, List extraInputs = [], List setInputs = []) {
+    def outs    = tables.collect { file("${tablesDir()}/${it}", glob: false) }
+    def missing = outs.findAll { !it.exists() }
+    if (missing) {
+        // A missing table with no input files at all (tool never run) has
+        // nothing to merge; the glob would be empty anyway.
+        def anyInput = extraInputs.any { file(it.toString(), glob: false).exists() } ||
+                       globs.any { g -> findFirst(baseDir, g, null) != null }
+        log.info "merge_if_stale: ${label} ${anyInput ? 'will run' : 'skipped (no input files)'} (missing: ${missing*.name.join(', ')})"
+        return anyInput
+    }
+    def oldest = outs.min { it.lastModified() }
+    def newer  = (extraInputs + setInputs).collect { x -> file(x.toString(), glob: false) }
+                            .find { it.exists() && it.lastModified() > oldest.lastModified() }
+    if (newer == null) {
+        newer = globs.findResult { g -> findFirst(baseDir, g, oldest) }
+    }
+    if (newer != null) {
+        log.info "merge_if_stale: ${label} will run (${newer} is newer than ${oldest.name})"
+        return true
+    }
+    log.info "merge_if_stale: ${label} skipped (no input newer than ${oldest.name})"
+    return false
+}
+
+// First file under baseDir matching a merge glob (and newer than `newerThan`
+// when it is not null), or null. Uses GNU find with -print -quit: it stops at
+// the first hit. A Nextflow files() glob over the 23k per-genome cazy/ dirs
+// took >8 min on /bigdata; find took 7 s (2026-11-05).
+// Glob mapping: "**/" is dropped, because find -path's '*' also matches '/'.
+// "tool/**/*.ext" becomes -path "<base>/tool/*.ext" (any depth).
+def findFirst(String baseDir, String glob, newerThan) {
+    def segs = glob.split('/') as List
+    def top  = segs.takeWhile { !(it.contains('*') || it.contains('?') || it.contains('[')) }
+    def root = ([baseDir] + top).join('/')
+    if (!file(root, glob: false).exists()) return null
+    def cmd = ['find', '-H', root, '-type', 'f', '-path', "${baseDir}/${glob.replace('**/', '')}".toString()]
+    if (newerThan != null) cmd += ['-newer', newerThan.toString()]
+    cmd += ['-print', '-quit']
+    def proc = cmd.execute()
+    def out = new StringBuilder()
+    def err = new StringBuilder()
+    proc.waitForProcessOutput(out, err)
+    def hit = out.toString().trim()
+    return hit ? hit : null
+}
+
+// Whether to schedule a merge. Always true unless params.merge_if_stale is
+// set. When the producer ran this session, the merge is kept: its new
+// outputs are not on disk yet at definition time, and -resume caching
+// already decides whether the merge task re-runs.
+// samples.csv and suppress.txt are always inputs: a change to either alters
+// which genomes gatedGlobIn() lets in, so every table built before it is stale.
+// params.skip_merges overrides everything.
+// perGenome = false for tables that do not depend on the genome set
+// (BUILD_SWISSPROT_ANNOT).
+def mergeWanted(boolean ran, String label, String baseDir, List globs, List tables, List extraInputs = [], boolean perGenome = true) {
+    if (mergeSkipped(label)) return false
+    if (!params.merge_if_stale.toBoolean() || ran) return true
+    def setInputs = perGenome ? [params.samples, params.suppress].findAll { x -> x }.collect { x -> x.toString() } : []
+    return tablesStale(label, baseDir, globs, tables, extraInputs, setInputs)
 }
 
 // Glob alternation that matches exactly the given names: "{a,b,c}", or the bare

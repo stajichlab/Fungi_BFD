@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_CAZY_CGC {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_CAZY_CGC {
     python3 ${projectDir}/bin/merge_cazy_cgc.py -o cazy_cgc.csv ${cgc_tsvs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('cazy_cgc.csv', sample_size=-1)) TO 'cazy_cgc.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('cazy_cgc.parquet')}
     rm -f cazy_cgc.csv
     """
 

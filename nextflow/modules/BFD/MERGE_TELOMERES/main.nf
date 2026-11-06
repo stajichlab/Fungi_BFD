@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_TELOMERES {
     label      'merge'
@@ -21,7 +21,9 @@ process MERGE_TELOMERES {
         --tracts-out  telomere_tracts.tsv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('telomere_summary.tsv.gz', delim='\\t', sample_size=-1)) TO 'telomere_summary.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('telomere_summary.parquet')}
     duckdb -c "COPY (SELECT * FROM read_csv_auto('telomere_tracts.tsv.gz',  delim='\\t', sample_size=-1)) TO 'telomere_tracts.parquet'  (FORMAT PARQUET);"
+    ${coverageCheck('telomere_tracts.parquet')}
     rm -f telomere_summary.tsv.gz telomere_tracts.tsv.gz
     """
 

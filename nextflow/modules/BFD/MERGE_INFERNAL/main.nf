@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_INFERNAL {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_INFERNAL {
     python3 ${projectDir}/bin/merge_infernal.py -o infernal_rfam.csv ${tblouts}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('infernal_rfam.csv', sample_size=-1)) TO 'infernal_rfam.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('infernal_rfam.parquet')}
     rm -f infernal_rfam.csv
     """
 

@@ -55,6 +55,31 @@
                     "description": "Skip all MERGE_* steps (e.g. when running only new species).",
                     "default": true
                 },
+                "merge_if_stale": {
+                    "type": "boolean",
+                    "description": "Skip a merge unless a result file is newer than its table (or the table is missing). Applies to merges whose producer did not run this session.",
+                    "default": false
+                },
+                "merge_filter_samples": {
+                    "type": "boolean",
+                    "description": "Drop merge inputs whose genome is not in samples.csv or is listed in suppress.txt.",
+                    "default": true
+                },
+                "skip_merges": {
+                    "type": "string",
+                    "description": "Comma-separated MERGE_* labels never to run (e.g. MERGE_TARGETP).",
+                    "default": ""
+                },
+                "coverage_min_frac": {
+                    "type": "number",
+                    "description": "A full merge fails if the new table covers fewer than this fraction of the distinct genomes in the table it replaces.",
+                    "default": 0.9
+                },
+                "allow_shrink": {
+                    "type": "boolean",
+                    "description": "Allow a deliberate shrink: turns off the coverage check and MERGE_SAMPLES' no-shrink check.",
+                    "default": false
+                },
                 "run_build_duckdb": {
                     "type": "boolean",
                     "description": "Rebuild db/BFD.duckdb from tables/*.parquet after MERGE_* steps complete.",

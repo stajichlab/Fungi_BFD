@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_AA_FREQ {
     label      'merge'
@@ -20,6 +20,7 @@ process MERGE_AA_FREQ {
     done < ${manifest} | gzip > aa_freq.csv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('aa_freq.csv.gz', sample_size=-1)) TO 'aa_freq.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('aa_freq.parquet')}
     rm -f aa_freq.csv.gz
     """
 
