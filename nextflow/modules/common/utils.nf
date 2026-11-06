@@ -509,6 +509,73 @@ def toManifest(ch, String name) {
       .collectFile(name: name, newLine: true)
 }
 
+// ── merge_if_stale: skip a merge whose tables are already current ──────────
+//
+// tablesStale() returns true when a merged table must be rebuilt:
+//   - any of `tables` (file names in tablesDir()) does not exist, or
+//   - any input file is newer than the OLDEST of those tables.
+// Inputs are the files matching each of `globs` under `baseDir`, plus
+// `extraInputs` (e.g. samples.csv). The scan stops at the first newer file.
+//
+// Limitation: a deleted or suppressed genome does not make a table stale,
+// because deletion leaves no newer file. Delete the table (or run without
+// merge_if_stale) to force a rebuild in that case.
+def tablesStale(String label, String baseDir, List globs, List tables, List extraInputs = []) {
+    def outs    = tables.collect { file("${tablesDir()}/${it}", glob: false) }
+    def missing = outs.findAll { !it.exists() }
+    if (missing) {
+        // A missing table with no input files at all (tool never run) has
+        // nothing to merge; the glob would be empty anyway.
+        def anyInput = extraInputs.any { file(it.toString(), glob: false).exists() } ||
+                       globs.any { g -> findFirst(baseDir, g, null) != null }
+        log.info "merge_if_stale: ${label} ${anyInput ? 'will run' : 'skipped (no input files)'} (missing: ${missing*.name.join(', ')})"
+        return anyInput
+    }
+    def oldest = outs.min { it.lastModified() }
+    def newer  = extraInputs.collect { file(it.toString(), glob: false) }
+                            .find { it.exists() && it.lastModified() > oldest.lastModified() }
+    if (newer == null) {
+        newer = globs.findResult { g -> findFirst(baseDir, g, oldest) }
+    }
+    if (newer != null) {
+        log.info "merge_if_stale: ${label} will run (${newer} is newer than ${oldest.name})"
+        return true
+    }
+    log.info "merge_if_stale: ${label} skipped (no input newer than ${oldest.name})"
+    return false
+}
+
+// First file under baseDir matching a merge glob (and newer than `newerThan`
+// when it is not null), or null. Uses GNU find with -print -quit: it stops at
+// the first hit. A Nextflow files() glob over the 23k per-genome cazy/ dirs
+// took >8 min on /bigdata; find took 7 s (2026-11-05).
+// Glob mapping: "**/" is dropped, because find -path's '*' also matches '/'.
+// "tool/**/*.ext" becomes -path "<base>/tool/*.ext" (any depth).
+def findFirst(String baseDir, String glob, newerThan) {
+    def segs = glob.split('/') as List
+    def top  = segs.takeWhile { !(it.contains('*') || it.contains('?') || it.contains('[')) }
+    def root = ([baseDir] + top).join('/')
+    if (!file(root, glob: false).exists()) return null
+    def cmd = ['find', '-H', root, '-type', 'f', '-path', "${baseDir}/${glob.replace('**/', '')}".toString()]
+    if (newerThan != null) cmd += ['-newer', newerThan.toString()]
+    cmd += ['-print', '-quit']
+    def proc = cmd.execute()
+    def out = new StringBuilder()
+    def err = new StringBuilder()
+    proc.waitForProcessOutput(out, err)
+    def hit = out.toString().trim()
+    return hit ? hit : null
+}
+
+// Whether to schedule a merge. Always true unless params.merge_if_stale is
+// set. When the producer ran this session, the merge is kept: its new
+// outputs are not on disk yet at definition time, and -resume caching
+// already decides whether the merge task re-runs.
+def mergeWanted(boolean ran, String label, String baseDir, List globs, List tables, List extraInputs = []) {
+    if (!params.merge_if_stale.toBoolean() || ran) return true
+    return tablesStale(label, baseDir, globs, tables, extraInputs)
+}
+
 // Glob alternation that matches exactly the given names: "{a,b,c}", or the bare
 // name when there is only one. Nextflow's output matching finds nothing for a
 // one-item "{a}" (checked 2026-10-30 against BATCH_AA_FREQ), so it is not used.
