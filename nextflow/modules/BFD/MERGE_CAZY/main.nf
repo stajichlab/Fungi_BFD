@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_CAZY {
     label      'merge'
@@ -14,15 +14,20 @@ process MERGE_CAZY {
 
     script:
     """
-    python3 ${projectDir}/bin/merge_cazy.py \\
-        --overviews ${overviews} \\
-        --cazymes   ${cazymes} \\
+    # ~23k inputs: write them to an argument file with the printf builtin (no
+    # exec, so no ARG_MAX limit) and let argparse read it (@file). Passing them
+    # on the python3 command line failed with "Argument list too long"
+    # (2026-11-05).
+    printf '%s\\n' --overviews ${overviews} --cazymes ${cazymes} > merge_cazy.args
+    python3 ${projectDir}/bin/merge_cazy.py @merge_cazy.args \\
         --out-overview cazy.overview.csv \\
         --out-hmm      cazy.cazymes_hmm.csv
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('cazy.overview.csv', sample_size=-1)) TO 'cazy.overview.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('cazy.overview.parquet')}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('cazy.cazymes_hmm.csv', sample_size=-1)) TO 'cazy.cazymes_hmm.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('cazy.cazymes_hmm.parquet')}
     rm -f cazy.overview.csv cazy.cazymes_hmm.csv
     """
 

@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_ANTISMASH {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_ANTISMASH {
     python3 ${projectDir}/bin/merge_antismash.py -o antismash.csv ${jsons}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('antismash.csv', sample_size=-1)) TO 'antismash.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('antismash.parquet')}
     rm -f antismash.csv
     """
 

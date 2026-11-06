@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_DEEPTMHMM {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_DEEPTMHMM {
     python3 ${projectDir}/bin/merge_deeptmhmm.py -o deeptmhmm.csv ${gff3s}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('deeptmhmm.csv', sample_size=-1)) TO 'deeptmhmm.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('deeptmhmm.parquet')}
     rm -f deeptmhmm.csv
     """
 

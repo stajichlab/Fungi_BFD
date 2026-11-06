@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_TCDB {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_TCDB {
     python3 ${projectDir}/bin/merge_tcdb.py -o tcdb.csv ${blasttabs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('tcdb.csv', sample_size=-1)) TO 'tcdb.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('tcdb.parquet')}
     rm -f tcdb.csv
     """
 

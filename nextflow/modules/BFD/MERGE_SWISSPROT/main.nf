@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_SWISSPROT {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_SWISSPROT {
     python3 ${projectDir}/bin/merge_swissprot.py -o swissprot.csv ${blasttabs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('swissprot.csv', sample_size=-1)) TO 'swissprot.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('swissprot.parquet')}
     rm -f swissprot.csv
     """
 

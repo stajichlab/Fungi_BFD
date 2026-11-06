@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 // Transcription-factor inventory, derived from RUN_PFAM's domtblout hits
 // (same input files as MERGE_PFAM) filtered against a curated list of
@@ -22,6 +22,7 @@ process MERGE_TF {
         ${domtbls}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('tf_inventory.csv', sample_size=-1)) TO 'tf_inventory.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('tf_inventory.parquet')}
     rm -f tf_inventory.csv
     """
 

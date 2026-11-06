@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_MEROPS {
     label      'merge'
@@ -15,6 +15,7 @@ process MERGE_MEROPS {
     python3 ${projectDir}/bin/merge_merops.py -o merops.csv ${blasttabs}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('merops.csv', sample_size=-1)) TO 'merops.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('merops.parquet')}
     rm -f merops.csv
     """
 

@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_IDP {
     label      'merge'
@@ -28,8 +28,10 @@ process MERGE_IDP {
 
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('idp.parquet')}
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('idp_summary.csv.gz', sample_size=-1)) TO 'idp_summary.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('idp_summary.parquet')}
     rm -f idp.csv.gz idp_summary.csv.gz
     """
 

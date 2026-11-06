@@ -10,7 +10,7 @@ Usage:
         --built-by MERGE_BUSCO_GENOME \\
         --merge-run-id <workflow.sessionId> \\
         --schema /abs/path/sql/table_schema.json \\
-        [--enforce-no-shrink] [--allow-shrink]
+        [--enforce-no-shrink] [--allow-shrink] [--expected-rows N]
 
 Writes (in this order, under a per-table flock so two concurrent runs for
 the SAME table can't interleave their read-check-write sequence):
@@ -25,7 +25,9 @@ manifest is known to represent the FULL current dataset (i.e.
 params.merge_all == true), never on a current-run-only partial merge,
 where a smaller table is expected and correct. --allow-shrink overrides
 --enforce-no-shrink for a deliberate, known-smaller republish (e.g. after
-suppress.txt removes genomes).
+suppress.txt removes genomes). --expected-rows N accepts a shrink when the new
+row count equals N: for one-row-per-genome tables (species), a smaller table
+that matches samples.csv is a deliberate removal, not a partial glob.
 """
 import argparse
 import fcntl
@@ -94,6 +96,9 @@ def main():
     p.add_argument("--enforce-no-shrink", action="store_true",
                     help="only pass this on a full/merge_all=true run")
     p.add_argument("--allow-shrink", action="store_true")
+    p.add_argument("--expected-rows", type=int, default=None,
+                    help="a shrink is allowed when the new row count equals this "
+                         "(one row per genome: species = samples.csv rows)")
     args = p.parse_args()
 
     local_parquet = Path(args.local_parquet)
@@ -128,7 +133,10 @@ def main():
                 prev_count = json.loads(final_manifest.read_text()).get("row_count", 0)
             except (json.JSONDecodeError, OSError):
                 prev_count = 0
-            if row_count < prev_count:
+            if row_count < prev_count and args.expected_rows is not None and row_count == args.expected_rows:
+                print(f"{args.table}: row_count {prev_count} -> {row_count}, equal to the "
+                      f"expected {args.expected_rows} (samples.csv); shrink accepted")
+            elif row_count < prev_count:
                 sys.exit(
                     f"ERROR: {args.table} row_count dropped from {prev_count} to {row_count} "
                     f"-- refusing to publish (looks like a partial-glob regression); pass "

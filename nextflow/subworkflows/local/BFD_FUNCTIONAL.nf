@@ -232,7 +232,7 @@ workflow BFD_FUNCTIONAL {
         // One-shot build of the SwissProt accession -> annotation table,
         // independent of the per-genome search engine used above (or of
         // run_swissprot itself, so it can be refreshed standalone).
-        if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet'], [params.swissprot_dat]))
+        if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet'], [params.swissprot_dat], false))
             BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
 
         def signalp_in = !mergeWanted(run_signalp, 'MERGE_SIGNALP', params.outdir as String, ["signalp/**/*.signalp.gff3.gz"], ['signalp.signal_peptide.parquet']) ? null : mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")

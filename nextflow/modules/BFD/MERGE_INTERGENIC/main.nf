@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck } from '../../common/utils.nf'
 
 process MERGE_INTERGENIC {
     label      'merge'
@@ -20,6 +20,7 @@ process MERGE_INTERGENIC {
     done < ${manifest} | gzip > gene_intergenic_distances.csv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('gene_intergenic_distances.csv.gz', sample_size=-1)) TO 'gene_intergenic_distances.parquet' (FORMAT PARQUET);"
+    ${coverageCheck('gene_intergenic_distances.parquet')}
     rm -f gene_intergenic_distances.csv.gz
     """
 
