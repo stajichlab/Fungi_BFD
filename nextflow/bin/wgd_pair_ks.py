@@ -51,7 +51,7 @@ Standard genetic code by default; --table / --icode are the hook for other codes
 
 Usage: wgd_pair_ks.py --cds cds.fa[.gz] --families fam.tsv --out out.ks.tsv.gz --threads 8
 """
-import argparse, gzip, itertools, math, os, re, shutil, subprocess, sys, tempfile
+import argparse, gzip, itertools, math, os, re, shutil, subprocess, sys, tempfile, time
 from multiprocessing import Pool
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -206,7 +206,19 @@ def fmt(x):
     return str(x)
 
 
+TT = {}  # per-call timers of work() (worker side); returned as row["_t"] and summed by the caller
+
+
 def work(job):
+    TT.clear()
+    t_start = time.perf_counter()
+    row = _work(job)
+    TT["total"] = time.perf_counter() - t_start
+    row["_t"] = dict(TT)
+    return row
+
+
+def _work(job):
     fam, g1, g2, n1, n2, kind = job
     pair = f"{g1}__{g2}"
     row = {"pair": pair, "family": fam, "g1": g1, "g2": g2, "gene1": g1, "gene2": g2,
@@ -237,7 +249,10 @@ def work(job):
     if not p1 or not p2:
         row["status"] = "empty"
         return row
+    _t = time.perf_counter()
     aln = aligner.align(p1, p2)[0]
+    TT["align"] = time.perf_counter() - _t
+    _t = time.perf_counter()
     c1, c2, ncols, nident = [], [], 0, 0
     for (a0, a1), (b0, b1) in zip(*aln.aligned):
         for k in range(a1 - a0):
@@ -254,7 +269,10 @@ def work(job):
     row["alignmentcoverage"] = ncols / max(len(p1), len(p2)) if ncols else nan
     ident = nident / ncols if ncols else nan
     row["alignmentidentity"] = ident
+    TT["codon_loop"] = time.perf_counter() - _t
+    _t = time.perf_counter()
     L, ngds = ng86_dS(c1, c2)
+    TT["ng86"] = time.perf_counter() - _t
     row["ng_codons"] = float(L)
     row["ng_dS"] = ngds
     if not (ident >= A.min_identity) or L < A.min_ng_codons or (A.max_ngds > 0 and not (ngds <= A.max_ngds)):
@@ -264,15 +282,19 @@ def work(job):
     if n < 10:
         row["status"] = "too_short"
         return row
+    _t = time.perf_counter()
     d = tempfile.mkdtemp(prefix="pk_", dir=A.tmpdir)
     try:
         with open(f"{d}/aln.phy", "w") as fh:
             fh.write(f" 2 {3 * n}\ns1  {''.join(c1)}\ns2  {''.join(c2)}\n")
         with open(f"{d}/c.ctl", "w") as fh:
             fh.write(CTL.format(icode=A.icode))
+        TT["io_setup"] = time.perf_counter() - _t
         try:
+            _t = time.perf_counter()
             subprocess.run(["codeml", "c.ctl"], cwd=d, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=60)
+            TT["codeml"] = time.perf_counter() - _t
         except subprocess.TimeoutExpired:
             row["status"] = "timeout"
             return row
@@ -486,7 +508,9 @@ def flush(rows, w):
 
 
 def phase1(pair):
-    """Cheap pass for node sampling: protein identity and the number of usable codon columns."""
+    """Cheap pass for node sampling: protein identity and the number of usable codon columns.
+    Returns (identity, usable codons, seconds in the aligner, seconds in total)."""
+    t_start = time.perf_counter()
     g1, g2 = pair
     s1, s2 = cds[g1], cds[g2]
     p1 = str(Seq(s1).translate(table=A.table))
@@ -498,8 +522,10 @@ def phase1(pair):
     p1 = NOT_AA.sub("X", p1)
     p2 = NOT_AA.sub("X", p2)
     if not p1 or not p2:
-        return float("nan"), 0
+        return float("nan"), 0, 0.0, time.perf_counter() - t_start
+    _t = time.perf_counter()
     aln = aligner.align(p1, p2)[0]
+    t_align = time.perf_counter() - _t
     ncols = nident = nc = 0
     for (a0, a1), (b0, b1) in zip(*aln.aligned):
         for k in range(a1 - a0):
@@ -511,7 +537,7 @@ def phase1(pair):
             y = s2[3 * j: 3 * j + 3]
             if len(x) == 3 == len(y) and set(x) <= set(NT) and set(y) <= set(NT) and x not in STOPS and y not in STOPS:
                 nc += 1
-    return (nident / ncols if ncols else float("nan")), nc
+    return (nident / ncols if ncols else float("nan")), nc, t_align, time.perf_counter() - t_start
 
 
 def nj_label_matrix(D):
@@ -641,6 +667,13 @@ def group_genes(genes):
 BLOCK_PAIRS = 200000  # families are processed in blocks of about this many pairs so the pool stays busy
 
 
+ACC = {}  # phase timers: wall seconds of the main process and summed worker seconds
+
+
+def acc(k, v):
+    ACC[k] = ACC.get(k, 0.0) + v
+
+
 def run_sampled():
     import numpy as np, zlib
     K = A.node_sample
@@ -692,6 +725,7 @@ def run_sampled():
                 for a_ in range(n):
                     for b_ in range(a_ + 1, n):
                         yield R[a_], R[b_]
+        _tb = time.perf_counter()
         res = pool.imap(phase1, gen(), chunksize=500)
         states = []
         for fam, R, C in block:
@@ -700,8 +734,14 @@ def run_sampled():
             P = len(ia)
             ident = np.empty(P)
             ncod = np.empty(P, dtype=np.int32)
+            _t = time.perf_counter()
             for t in range(P):
-                ident[t], ncod[t] = next(res)
+                ident[t], ncod[t], ta, tt_ = next(res)
+                ACC["p1_worker_align"] = ACC.get("p1_worker_align", 0.0) + ta
+                ACC["p1_worker_total"] = ACC.get("p1_worker_total", 0.0) + tt_
+            acc("p1_wall", time.perf_counter() - _t)
+            acc("pairs_phase1", P)
+            _t = time.perf_counter()
             passed = (ident >= A.min_identity) & (ncod >= A.min_ng_codons)
             # 2. identity-distance NJ tree -> node of every pair
             D = np.zeros((n, n))
@@ -730,8 +770,10 @@ def run_sampled():
                            "npairs": np.bincount(nid, weights=w, minlength=nnode).astype(np.int64),
                            "drawn": np.zeros(nnode, dtype=np.int64), "gated": np.zeros(nnode, dtype=np.int64),
                            "rows": []})
+            acc("tree_sampling_wall", time.perf_counter() - _t)
         # 4. codeml in rounds: every node draws pairs until it has K gated pairs or MAXD draws
         MAXD = max(A.node_max_draws, K)
+        _t = time.perf_counter()
         while True:
             jobs_r, where = [], []
             for st in states:
@@ -749,6 +791,11 @@ def run_sampled():
             if not jobs_r:
                 break
             for r, (st, t) in zip(pool.imap(work, jobs_r, chunksize=2), where):
+                for k_t, v_t in r.pop("_t", {}).items():
+                    acc("w_" + k_t, v_t)
+                acc("work_calls", 1)
+                if r["status"] in ("ok", "no_out", "no_estimate", "timeout"):
+                    acc("codeml_runs", 1)
                 k_ = int(st["nid"][t])
                 r["node"] = f"n{k_}"
                 st["rows"].append((r, k_))
@@ -756,6 +803,8 @@ def run_sampled():
                            and (r["N"] + r["S"]) / 3.0 >= A.gate_min_codons)
                 if ok_gate:
                     st["gated"][k_] += 1
+        acc("rounds_wall", time.perf_counter() - _t)
+        _t = time.perf_counter()
         # 5. write rows and the node table
         for st in states:
             fam = st["fam"]
@@ -769,6 +818,7 @@ def run_sampled():
             bump("not_sampled", int(st["passed"].sum()) - len(st["rows"]), int(st["w"][st["passed"]].sum()) - sw)
             for k_ in range(st["nnode"]):
                 nout.write(f"{fam}\tn{k_}\ttree\t{int(st['npairs'][k_])}\t{int(st['nrep'][k_])}\t{int(st['npass'][k_])}\t{int(st['drawn'][k_])}\t{int(st['gated'][k_])}\n")
+        acc("write_wall", time.perf_counter() - _t)
 
     with open(A.families) as fh, Pool(A.threads) as pool, oopen(A.out, "wt") as out, \
             gzip.open(A.out + ".nodes.tsv.gz", "wt") as nout:
@@ -791,6 +841,30 @@ def run_sampled():
     return counts, gp
 
 
+def timing_report(total_wall):
+    nt = A.threads
+    g = lambda k: ACC.get(k, 0.0)
+    lines = ["== timing (wall seconds of the main process; worker seconds are summed over %d workers) ==" % nt,
+             "total wall                     %9.1f" % total_wall,
+             "first pass (all pairs) wall     %9.1f   pairs %d   worker total %9.1f (aligner %9.1f) -> %.1f ms/pair worker, %.2f ms/pair wall" % (
+                 g("p1_wall"), g("pairs_phase1"), g("p1_worker_total"), g("p1_worker_align"),
+                 1000 * g("p1_worker_total") / max(g("pairs_phase1"), 1), 1000 * g("p1_wall") / max(g("pairs_phase1"), 1)),
+             "tree + sampling setup wall      %9.1f   (serial, main process)" % g("tree_sampling_wall"),
+             "codeml rounds wall              %9.1f   work() calls %d, codeml runs %d" % (g("rounds_wall"), g("work_calls"), g("codeml_runs")),
+             "write rows + node table wall   %9.1f" % g("write_wall"),
+             "other (family parse, grouping)   %9.1f" % (total_wall - g("p1_wall") - g("tree_sampling_wall") - g("rounds_wall") - g("write_wall")),
+             "  worker seconds in work():     %9.1f   aligner %.1f, codon loop %.1f, NG86 %.1f, temp dir + files %.1f, codeml process %.1f" % (
+                 g("w_total"), g("w_align"), g("w_codon_loop"), g("w_ng86"), g("w_io_setup"), g("w_codeml")),
+             "  per codeml run (ms):          total %.1f, codeml process %.1f" % (
+                 1000 * g("w_total") / max(g("codeml_runs"), 1), 1000 * g("w_codeml") / max(g("codeml_runs"), 1))]
+    cpu = g("p1_worker_total") + g("w_total")
+    lines += ["worker CPU-seconds, all phases   %9.1f   of which codeml process %.1f (%.1f%%), first pass %.1f (%.1f%%), rest of work() %.1f (%.1f%%)" % (
+                 cpu, g("w_codeml"), 100 * g("w_codeml") / max(cpu, 1e-9), g("p1_worker_total"), 100 * g("p1_worker_total") / max(cpu, 1e-9),
+                 g("w_total") - g("w_codeml"), 100 * (g("w_total") - g("w_codeml")) / max(cpu, 1e-9)),
+              "worker utilisation              %.0f%% of %d workers x total wall" % (100 * cpu / max(total_wall * nt, 1e-9), nt)]
+    return "\n".join(lines)
+
+
 def run_all_pairs():
     oopen = gzip.open if A.out.endswith(".gz") else open
     counts, gp = {}, {}
@@ -808,7 +882,13 @@ def run_all_pairs():
     return counts, gp
 
 
+_T0 = time.perf_counter()
 counts, gp = run_sampled() if A.node_sample > 0 else run_all_pairs()
+_report = timing_report(time.perf_counter() - _T0)
+print(_report, file=sys.stderr)
+if A.node_sample > 0:
+    with open(A.out + ".timing.txt", "w") as _fh:
+        _fh.write(_report + "\n")
 total = sum(counts.values())
 print("rows by status:", counts, file=sys.stderr)
 print("gene pairs represented, by status:", gp, "total", sum(gp.values()), file=sys.stderr)
