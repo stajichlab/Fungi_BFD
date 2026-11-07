@@ -51,6 +51,6 @@ run_gene_stats: false
 run_chrom_info: false
 
 # MERGE_TF reads the Pfam domtblout files. Set true to build tf_inventory.parquet.
-run_tf: false
+run_tf: true
 # Built from params.swissprot_dat; gated the same way (dat newer than table).
 run_swissprot_annot: true
