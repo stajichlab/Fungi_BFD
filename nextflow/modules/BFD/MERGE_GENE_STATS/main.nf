@@ -17,23 +17,26 @@ process MERGE_GENE_STATS {
     path "gene_proteins.parquet",    emit: gene_proteins
 
     script:
+    // DuckDB reads the per-genome .csv.gz files listed in the manifest directly
+    // (bin/manifest_to_parquet.py). The former zcat-concatenate loop +
+    // read_csv_auto(sample_size=-1) was 4.5x slower on 1,020 genomes and failed
+    // at ~23k genomes with "Trying to seek a compressed CSV File" (2026-11-05).
     """
     set -euo pipefail
-    TMPD=\${SCRATCH:-\$PWD}
+    module load duckdb 2>/dev/null || true
+    # Sequence text is not stored in the tables (2026-11-06: CDS_sequence 169 GB,
+    # peptide 115 GB). It is served by bgzip + samtools faidx copies keyed by
+    # LOCUSTAG in Fungi_BFD_runs/seqdb/{proteins,cds}/ (bin/seqdb_build.sh).
     for type in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
-        first=1
-        while IFS=\$'\\t' read -r f _mtime _size; do
-            case "\$f" in *.\${type}.csv.gz) ;; *) continue ;; esac
-            if [ "\$first" = "1" ]; then zcat "\$f"; first=0
-            else zcat "\$f" | tail -n +2; fi
-        done < ${manifest} > "\$TMPD/\${type}.csv"
-        # Plain CSV, not .csv.gz: with sample_size=-1 DuckDB re-reads the file
-        # and fails on gzip with "Trying to seek a compressed CSV File"
-        # (2026-11-05, ~23k genomes). The plain copy lives in node-local
-        # \$SCRATCH when the job has one, and is removed right after.
-        module load duckdb 2>/dev/null || true
-        duckdb -c "COPY (SELECT * FROM read_csv_auto('\$TMPD/\${type}.csv', sample_size=-1)) TO '\${type}.parquet' (FORMAT PARQUET);"
-        rm -f "\$TMPD/\${type}.csv"
+        case \$type in
+            gene_transcripts) excl=CDS_sequence ;;
+            gene_proteins)    excl=peptide ;;
+            *)                excl= ;;
+        esac
+        python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} --exclude "\$excl" \\
+            --suffix .\${type}.csv.gz \\
+            --out \${type}.parquet --threads ${task.cpus} \\
+            --memory-limit ${(task.memory.toGiga() * 0.75) as int}GB --temp-dir \${SCRATCH:-\$PWD}
     done
     """
 

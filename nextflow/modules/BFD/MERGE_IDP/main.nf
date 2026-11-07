@@ -13,26 +13,21 @@ process MERGE_IDP {
         path("idp_summary.parquet"), emit: summary
 
     script:
+    // DuckDB reads the staged .csv.gz files directly (bin/manifest_to_parquet.py);
+    // the file lists are written with the printf builtin (no exec, no ARG_MAX
+    // limit). On 1,018 genomes: 98 s -> 8.6 s, identical output (2026-11-06).
+    def m2p = "python3 ${projectDir}/bin/manifest_to_parquet.py --threads ${task.cpus} " +
+              "--memory-limit ${(task.memory.toGiga() * 0.75) as int}GB"
     """
-    first=1
-    for f in idp/*.idp.csv.gz; do
-        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
-        else zcat "\$f" | tail -n +2; fi
-    done | gzip > idp.csv.gz
-
-    first=1
-    for f in sum/*.idp_summary.csv.gz; do
-        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
-        else zcat "\$f" | tail -n +2; fi
-    done | gzip > idp_summary.csv.gz
-
+    set -euo pipefail
     module load duckdb 2>/dev/null || true
-    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
+    printf '%s\\n' idp/*.idp.csv.gz         > idp.list
+    printf '%s\\n' sum/*.idp_summary.csv.gz > sum.list
+    ${m2p} --manifest idp.list --out idp.parquet         --temp-dir \${SCRATCH:-\$PWD}
     ${coverageCheck('idp.parquet')}
-    module load duckdb 2>/dev/null || true
-    duckdb -c "COPY (SELECT * FROM read_csv_auto('idp_summary.csv.gz', sample_size=-1)) TO 'idp_summary.parquet' (FORMAT PARQUET);"
+    ${m2p} --manifest sum.list --out idp_summary.parquet --temp-dir \${SCRATCH:-\$PWD}
     ${coverageCheck('idp_summary.parquet')}
-    rm -f idp.csv.gz idp_summary.csv.gz
+    rm -f idp.list sum.list
     """
 
     stub:
@@ -41,7 +36,6 @@ process MERGE_IDP {
     printf 'species_prefix,protein_id,IDP_residues,IDP_fraction,length\\n'        | gzip > idp_summary.csv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('idp.csv.gz', sample_size=-1)) TO 'idp.parquet' (FORMAT PARQUET);"
-    module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('idp_summary.csv.gz', sample_size=-1)) TO 'idp_summary.parquet' (FORMAT PARQUET);"
     rm -f idp.csv.gz idp_summary.csv.gz
     """
