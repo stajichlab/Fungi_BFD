@@ -69,6 +69,7 @@ def main():
     ap.add_argument("--memory-limit", default=None, help="DuckDB memory_limit, e.g. 18GB")
     ap.add_argument("--temp-dir", default=None, help="DuckDB spill dir (node-local scratch)")
     ap.add_argument("--sample-files", type=int, default=300)
+    ap.add_argument("--exclude", default="", help="col,... read but not written (e.g. sequence text)")
     a = ap.parse_args()
 
     paths = []
@@ -104,13 +105,19 @@ def main():
     colspec = "{" + ", ".join(f"{sql_str(c)}: {sql_str(t)}" for c, t in cols) + "}"
     tmp_out = a.out + ".tmp"
     t1 = time.time()
-    run_duckdb(settings + f"COPY (SELECT * FROM read_csv({file_list_sql(paths)}, header=true, "
+    excl = [c for c in a.exclude.split(",") if c.strip()]
+    missing = set(excl) - {c for c, _ in cols}
+    if missing:
+        sys.exit(f"ERROR: --exclude names columns not in the files: {sorted(missing)}")
+    sel = "* EXCLUDE (" + ", ".join(f'"{c}"' for c in excl) + ")" if excl else "*"
+    run_duckdb(settings + f"COPY (SELECT {sel} FROM read_csv({file_list_sql(paths)}, header=true, "
                f"delim={delim}, columns={colspec})) TO {sql_str(tmp_out)} (FORMAT PARQUET);\n")
     os.replace(tmp_out, a.out)
     n = run_duckdb(f"SELECT count(*) FROM read_parquet({sql_str(a.out)});\n", csv_out=True).strip()
     print(f"{a.out}: {n} rows from {len(paths)} files; types from {len(sample)} files "
           f"({t_detect:.0f} s), build {time.time() - t1:.0f} s; "
-          + ", ".join(f"{c}:{t}" for c, t in cols))
+          + ", ".join(f"{c}:{t}" for c, t in cols if c not in excl)
+          + (f"; excluded {','.join(excl)}" if excl else ""))
 
 
 if __name__ == "__main__":
