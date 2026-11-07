@@ -794,6 +794,18 @@
                     "default": false,
                     "description": "Route RUN_DEEPTMHMM to a GPU node."
                 },
+                "deeptmhmm_script": {
+                    "type": "string",
+                    "default": "predict.py",
+                    "enum": ["predict.py", "predict_fast.py"],
+                    "description": "DeepTMHMM driver inside the image. predict_fast.py needs the private DeepTMHMM-1.0-fast.sif."
+                },
+                "deeptmhmm_topo_batch": {
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 1,
+                    "description": "predict_fast.py only: proteins per topology-model batch (1 = same output as predict.py)."
+                },
                 "tcdb_dbdir": {
                     "type": "string",
                     "format": "directory-path",
