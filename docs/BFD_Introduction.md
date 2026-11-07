@@ -75,12 +75,12 @@ SELECT count(*) FROM read_parquet('/bigdata/stajichlab/shared/projects/BFD/Fungi
 WHERE protein_id LIKE 'F77FFF1D_%';
 ```
 
-**Note on the DuckDB file (changing now).** The current `db/BFD.duckdb`
-(rebuilt 2026-11-06) holds a full copy of each table. It is 394 GB, about three
-times the size of the Parquet files. A change under test replaces the copies
-with views that read `tables/*.parquet`. That file is 274 KB, but queries
-without indexes are slower: 8–16 s for one genome or one protein in the first
-test. Until this is decided, expect the DuckDB file to change.
+**Note on the DuckDB file.** From this branch on, `db/BFD.duckdb` holds views
+that read `tables/*.parquet` by absolute path (274 KB). It works only where
+`tables/` is at the same path. The `db/BFD.duckdb` built on 2026-11-06 is the
+old style, with a full copy of each table (394 GB). Views are a little slower
+than the indexed copies: 8.5 s against 1.9 s to count one genome's proteins,
+and 15.9 s against 13.3 s to fetch one protein's Pfam hits.
 
 ## 4. Tables
 
