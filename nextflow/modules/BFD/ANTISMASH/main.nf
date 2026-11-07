@@ -21,8 +21,13 @@ process RUN_ANTISMASH {
 
     script:
     def gff3_plain = plainName(gff3)
+    // The genome may be <id>.scaffolds.fa.gz (bgzip, FUNANNOTATE_PREDICT since 2026-11-07).
+    // Inflate it into the task dir: this tool may not read gzip.
+    def genome_plain = plainName(genome)
+    def genome_rm = genome.name.endsWith('.gz') ? "rm -f '${genome_plain}'" : ''
     """
     ${gzInflate(gff3)}
+    ${gzInflate(genome)}
     module load apptainer
     export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${gff3_plain}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
@@ -30,7 +35,7 @@ process RUN_ANTISMASH {
     # parent dirs too, or apptainer won't see the symlink targets inside the
     # container.
     GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
-    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome_plain}))
     SING_BINDS="--bind ${params.antismash_dbdir}:${params.antismash_dbdir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     OUTD=\$(mktemp -d)
     apptainer exec \${SING_BINDS} ${params.antismash_standalone_sif} \\
@@ -40,9 +45,10 @@ process RUN_ANTISMASH {
             --genefinding-gff3 ${gff3_plain} \\
             --fullhmmer --clusterhmmer --cb-general --pfam2go \\
             -c ${task.cpus} \\
-            ${genome}
+            ${genome_plain}
     pigz -c \${OUTD}/*.json > ${meta.id}.antismash.json.gz
     rm -rf \${OUTD}
+    ${genome_rm}
     """
 
     stub:

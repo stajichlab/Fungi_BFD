@@ -460,9 +460,14 @@ def gzInflate(f) {
 // build the index once and pass it in, instead of paying for a listing (or
 // worse, three .exists() calls) on every single genome.
 def resolveGenomeFile(Map genomeIndex, String metaId, String asmid) {
-    def byId = genomeIndex["${metaId}.scaffolds.fa"]
+    // FUNANNOTATE_PREDICT bgzips <id>.scaffolds.fa (2026-11-07); SETUP_SYMLINKS
+    // then links it under the .gz name. Try both before the ASMID fallback, which
+    // is a different file (the input assembly, not the funannotate scaffolds).
     // A dangling link (predict_results gone) must not shadow the ASMID fallback.
-    if (byId && byId.exists()) return byId
+    def byId = ["${metaId}.scaffolds.fa", "${metaId}.scaffolds.fa.gz"]
+        .collect { n -> genomeIndex[n.toString()] }
+        .find { f -> f && f.exists() }
+    if (byId) return byId
     if (!asmid) return null
     return genomeIndex["${asmid}.fa.gz"] ?: genomeIndex["${asmid}.masked.fasta.gz"]
 }

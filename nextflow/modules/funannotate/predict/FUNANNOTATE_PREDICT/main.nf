@@ -544,6 +544,23 @@ process FUNANNOTATE_PREDICT {
             -o -name "*.gbk" -o -name "*.gff3" -o -name "*.cds-transcripts.fa" \\
             -o -name "*.proteins.fa" -o -name "*.tbl" \\) -print0 \
         | xargs -0 --no-run-if-empty pigz -f
+    # Genome FASTA: bgzip (gzip-compatible, so gzip readers still work) plus a
+    # samtools faidx index (.fai + .gzi) for random access by region, e.g. intron
+    # sequences from gene_introns coordinates. bgzip/samtools come from the
+    # funannotate SIF. Completion gating is unaffected: it tests the GBK
+    # (gbkResult), not this file. SETUP_SYMLINKS links the .gz name and
+    # resolveGenomeFile()/lookupFile() accept it. FUNANNOTATE_UPDATE inflates it
+    # (gz_inflate ... .scaffolds.fa). A failure here leaves the plain file and warns.
+    SCAF="\$PREDICTDIR/predict_results/${out}.scaffolds.fa"
+    if [ -s "\$SCAF" ]; then
+        rm -f "\$SCAF.gz.fai" "\$SCAF.gz.gzi"
+        if \$SING bgzip -f -@ ${task.cpus} "\$SCAF" && \$SING samtools faidx "\$SCAF.gz"; then
+            echo "[INFO] bgzip + faidx: \$SCAF.gz"
+        else
+            echo "[WARN] bgzip/faidx failed for \$SCAF; left uncompressed" >&2
+            [ -s "\$SCAF" ] && rm -f "\$SCAF.gz" "\$SCAF.gz.fai" "\$SCAF.gz.gzi"
+        fi
+    fi
     # Provenance marker for ab-initio parameter reuse (decision 7,
     # todo/species_level_abinitio_reuse.md S6) -- lets a later BUSCO/QC regression be
     # traced back to "shared params" vs "independent training" without re-parsing logs.
