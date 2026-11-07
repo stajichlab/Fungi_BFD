@@ -83,6 +83,10 @@ ap.add_argument("--dnds-method", choices=["codeml", "yn00"], default="codeml",
                 help="estimator for dN/dS of the pairs that pass the pre-filter: codeml (pairwise ML, runmode -2) or yn00 (Yang & Nielsen 2000 "
                      "through kaks; about 30x faster per pair, reads lower than codeml above dS about 0.5)")
 ap.add_argument("--kaks", default="kaks", help="kaks executable (subopt-kaks; needed for --dnds-method yn00)")
+ap.add_argument("--max-family-genes", type=int, default=0,
+                help="upper limit for a family in the node-sampling path: a family with more distinct sequences than this keeps a seeded "
+                     "random subset of this many (0 = no limit). Cost grows with the square of the family size. Recent duplicate pairs are "
+                     "lost first (both genes must be kept), so a capped family is biased toward older nodes")
 ap.add_argument("--no-collapse", action="store_true", help="do not collapse identical CDS")
 ap.add_argument("--max-pairs", type=int, default=0, help="debug: stop after this many pairs")
 A = ap.parse_args()
@@ -493,6 +497,7 @@ def assign_nodes(fam_rows):
 
 
 GROUPS = []  # (family, member genes) of collapsed groups, filled by jobs()
+CAPPED = []  # (family, distinct sequences, kept, genes, genes kept) of families limited by --max-family-genes
 
 
 def jobs():
@@ -749,6 +754,12 @@ def run_sampled():
                              if not (have[a_] and have[b_])))
                 bump("missing", mp, mp)
             sel = np.nonzero(have)[0]
+            if A.max_family_genes > 0 and len(sel) > A.max_family_genes:
+                rng_c = np.random.default_rng((A.seed * 2000003 + zlib.crc32(fam.encode())) & 0xFFFFFFFF)
+                keep_c = np.sort(rng_c.choice(len(sel), size=A.max_family_genes, replace=False))
+                n_all = len(sel)
+                CAPPED.append((fam, n_all, A.max_family_genes, int(copies[sel].sum()), int(copies[sel[keep_c]].sum())))
+                sel = sel[keep_c]
             if len(sel) >= 2:
                 yield fam, [reps[i] for i in sel], copies[sel]
 
@@ -919,6 +930,12 @@ def run_all_pairs():
 
 _T0 = time.perf_counter()
 counts, gp = run_sampled() if A.node_sample > 0 else run_all_pairs()
+if CAPPED:
+    with gzip.open(A.out + ".capped.tsv.gz", "wt") as _fh:
+        _fh.write("family\tdistinct_sequences\tkept\tgenes\tgenes_kept\n")
+        for _r in CAPPED:
+            _fh.write("\t".join(str(x) for x in _r) + "\n")
+    print("families limited by --max-family-genes %d: %d (genes dropped: %d)" % (A.max_family_genes, len(CAPPED), sum(r[3] - r[4] for r in CAPPED)), file=sys.stderr)
 _report = "dnds_method=%s%s\n" % (A.dnds_method, " kaks=" + (subprocess.run([A.kaks, "--version"], capture_output=True, text=True).stdout.strip() or "?") if A.dnds_method == "yn00" else "") + timing_report(time.perf_counter() - _T0)
 print(_report, file=sys.stderr)
 if A.node_sample > 0:
