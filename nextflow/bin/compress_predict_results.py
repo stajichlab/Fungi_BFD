@@ -27,7 +27,10 @@ Safety:
     --min-age-minutes (default 60) or an *.inflate.* temp file is present
     (funannotate update/annotate inflate .gz copies next to the .gz while running).
   * The plain file is removed only after the .gz passes pigz -t.
-  * .scaffolds.fa is never compressed (funannotate update needs it plain).
+  * .scaffolds.fa is not handled here. It is bgzip-compressed with a samtools faidx
+    index (random access needs bgzip, not pigz): by FUNANNOTATE_PREDICT for new
+    predictions, and by Fungi_BFD_runs/bin/bgzip_scaffolds.sh for older folders.
+    FUNANNOTATE_UPDATE inflates it (gz_inflate ... .scaffolds.fa) before update runs.
   * Do not run --execute --resolve-both while update/annotate runs on those genomes.
 
 Usage:

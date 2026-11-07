@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 process CALC_ASM_STATS {
     label    'asmstats'
@@ -12,18 +12,24 @@ process CALC_ASM_STATS {
     path "${meta.asmid}.stats.txt", emit: stats
 
     script:
+    // The genome may be <id>.scaffolds.fa.gz (bgzip, FUNANNOTATE_PREDICT since 2026-11-07).
+    // Inflate it into the task dir: this tool may not read gzip.
+    def genome_plain = plainName(genome)
+    def genome_rm = genome.name.endsWith('.gz') ? "rm -f '${genome_plain}'" : ''
     """
+    ${gzInflate(genome)}
     module load apptainer
     export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
-    # ${genome} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${genome_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_dir elsewhere under /bigdata); bind its real parent dir
     # too, or apptainer won't see the symlink target inside the container.
-    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.aaftf_sif} \\
-        AAFTF assess -i ${genome} -r ${meta.asmid}.stats.txt
+        AAFTF assess -i ${genome_plain} -r ${meta.asmid}.stats.txt
     # Read by bin/summarize_asm_stats.py; a stats file without this line is annotated.
     echo "ANNOTATION STATUS = ${meta.annotated == false ? 'unannotated' : 'annotated'}" >> ${meta.asmid}.stats.txt
+    ${genome_rm}
     """
 
     stub:

@@ -27,8 +27,13 @@ process RUN_TRNASCAN {
 
     script:
     def gff3_plain = plainName(gff3)
+    // The genome may be <id>.scaffolds.fa.gz (bgzip, FUNANNOTATE_PREDICT since 2026-11-07).
+    // Inflate it into the task dir: this tool may not read gzip.
+    def genome_plain = plainName(genome)
+    def genome_rm = genome.name.endsWith('.gz') ? "rm -f '${genome_plain}'" : ''
     """
     ${gzInflate(gff3)}
+    ${gzInflate(genome)}
     module load apptainer
     export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     # ${gff3_plain}/${genome} may be symlinks Nextflow staged from outside \$PWD (e.g.
@@ -36,9 +41,9 @@ process RUN_TRNASCAN {
     # parent dirs too, or apptainer won't see the symlink targets inside the
     # container.
     GFF3_REAL_DIR=\$(dirname \$(readlink -f ${gff3_plain}))
-    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome_plain}))
     SING_BINDS="--bind \${PWD}:\${PWD},${projectDir}:${projectDir},\${GFF3_REAL_DIR}:\${GFF3_REAL_DIR},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\$TMPDIR:\$TMPDIR"
-    apptainer exec \${SING_BINDS} ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome}
+    apptainer exec \${SING_BINDS} ${params.trnascan_sif} tRNAscan-SE -o ${meta.id}.tRNAscan.out --thread ${task.cpus} ${genome_plain}
 
     awk -F'\\t' 'NR<=3 {print; next} {len=(\$3>\$4)?\$3-\$4:\$4-\$3; if (len>=50 && len<=150) print}' \\
         ${meta.id}.tRNAscan.out > ${meta.id}.tRNAscan.len-filtered.out
@@ -54,6 +59,7 @@ process RUN_TRNASCAN {
         -b ${meta.id}.genes.sorted.gff3 > ${meta.id}.trnascan.no-overlaps.gff3
 
     pigz ${meta.id}.trnascan.no-overlaps.gff3
+    ${genome_rm}
     """
 
     stub:
