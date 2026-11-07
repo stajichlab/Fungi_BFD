@@ -293,6 +293,42 @@ else
     echo "SKIP: $SRC/wgd.ks.summary.parquet not found; wgd_ks_summary table omitted."
 fi
 
+# ─── SwissProt homology ───────────────────────────────────────────────────────
+# Design: Fungi_BFD_runs/analysis/swissprot_design/REVIEW.md (2026-11-06).
+# swissprot_subject (575k rows) is materialized; the hit tables are VIEWs over
+# Parquet (2.2 B rows in swissprot_hits; a copy inside the DB would duplicate
+# ~40 GB). Paths are absolute ($SRC_ABS) because VIEWs resolve at query time.
+if [ -f "$SRC/swissprot_subject.parquet" ]; then
+duckdb -c "
+CREATE TABLE swissprot_subject AS SELECT * FROM read_parquet('$SRC_ABS/swissprot_subject.parquet');
+CREATE UNIQUE INDEX idx_sp_subject_id  ON swissprot_subject(sp_id);
+CREATE UNIQUE INDEX idx_sp_subject_acc ON swissprot_subject(accession);
+" "$DB"
+else
+    echo "SKIP: $SRC/swissprot_subject.parquet not found; SwissProt tables omitted."
+fi
+if [ -f "$SRC/swissprot_subject.parquet" ] && ls "$SRC"/swissprot_hits/swissprot_hits.*.parquet >/dev/null 2>&1; then
+duckdb -c "
+CREATE VIEW swissprot_hits AS
+    SELECT * FROM read_parquet('$SRC_ABS/swissprot_hits/swissprot_hits.*.parquet');
+CREATE VIEW v_swissprot_80_80 AS
+    SELECT * FROM swissprot_hits
+    WHERE pident_x10 >= 800 AND qcov_x10 >= 800 AND scov_x10 >= 800;
+CREATE VIEW v_swissprot_model_fungi AS
+    SELECT h.*, s.org_code, s.accession, s.entry_name, s.protein_name
+    FROM swissprot_hits h JOIN swissprot_subject s USING (sp_id)
+    WHERE s.org_code IN ('YEAST','SCHPO','NEUCR','EMENI')
+    QUALIFY row_number() OVER (PARTITION BY h.protein_id, s.org_code ORDER BY h.rk) = 1;
+" "$DB"
+fi
+for t in swissprot_best swissprot_subject_summary; do
+    if [ -f "$SRC/$t.parquet" ]; then
+        duckdb -c "CREATE VIEW $t AS SELECT * FROM read_parquet('$SRC_ABS/$t.parquet');" "$DB"
+    else
+        echo "SKIP: $SRC/$t.parquet not found; $t view omitted."
+    fi
+done
+
 # ─── analytical views ─────────────────────────────────────────────────────────
 # Per-species summary: genome stats + functional domain counts
 duckdb -c "

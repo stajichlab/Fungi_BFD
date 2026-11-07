@@ -27,11 +27,13 @@ process BUILD_DUCKDB {
     deadline=\$(( \$(date +%s) + 7200 ))
     for f in ${sync}; do
         case "\$f" in *.parquet) ;; *) continue ;; esac
-        dst="${params.tables}/\$(basename "\$f")"
+        b=\$(basename "\$f")
         want=\$(stat -L -c %s "\$f")
-        until [ -f "\$dst" ] && [ "\$(stat -c %s "\$dst")" = "\$want" ] \\
+        # published at the top of tables/ or one folder down (swissprot_hits/)
+        until dst=\$( { ls -d "${params.tables}/\$b" "${params.tables}"/*/"\$b" 2>/dev/null || true; } | head -1) \\
+              && [ -n "\$dst" ] && [ "\$(stat -c %s "\$dst")" = "\$want" ] \\
               && [ "\$(tail -c 4 "\$dst")" = "PAR1" ]; do
-            [ \$(date +%s) -lt \$deadline ] || { echo "ERROR: \$dst not published after 2 h" >&2; exit 1; }
+            [ \$(date +%s) -lt \$deadline ] || { echo "ERROR: \$b not published under ${params.tables} after 2 h" >&2; exit 1; }
             sleep 30
         done
     done
