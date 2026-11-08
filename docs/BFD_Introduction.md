@@ -109,7 +109,7 @@ Row counts come from the 2026-11-06 build. The full column lists are in
 | `gene_proteins` | `gene_proteins.parquet` | 244,988,294 | Protein ID, length, md5 |
 | `gene_exons` | `gene_exons.parquet` | 758,181,061 | Exon coordinates and GC |
 | `gene_CDS` | `gene_CDS.parquet` | 753,622,745 | CDS segment coordinates and GC |
-| `gene_introns` | `gene_introns.parquet` | 508,634,451 | Intron coordinates, splice sites, phase, sequence |
+| `gene_introns` | `gene_introns.parquet` | 508,634,451 | Intron coordinates, splice sites, phase (no sequence; see section 5) |
 | `gene_trna` | `gene_trnas.parquet` | 4,558,316 | tRNA genes |
 | `gene_intergenic_distances` | `gene_intergenic_distances.parquet` | 233,406,624 | Distance between neighboring genes |
 
@@ -164,6 +164,16 @@ LT=F01BDC31
 B=$(echo -n $LT | sha1sum | cut -c1-2)
 module load samtools
 samtools faidx seqdb/proteins/$B/$LT.proteins.fa.gz ${LT}_000001-T1
+```
+
+**Genome and intron sequences.** Each genome FASTA is bgzip-compressed and indexed
+in place: `genome_annotation/<out>/predict_results/<out>.scaffolds.fa.gz` (+ `.fai`,
+`.gzi`). An intron sequence is a region of it, from the `gene_introns` coordinates
+(1-based, inclusive; use `-i` for strand -1):
+
+```bash
+samtools faidx genome_annotation/<out>/predict_results/<out>.scaffolds.fa.gz chrom:start-end      # strand 1
+samtools faidx -i genome_annotation/<out>/predict_results/<out>.scaffolds.fa.gz chrom:start-end   # strand -1
 ```
 
 `seqdb/genomes.tsv` lists LOCUSTAG, `<out>`, and the source protein and CDS paths.
