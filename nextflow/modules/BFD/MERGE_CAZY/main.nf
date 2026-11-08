@@ -13,22 +13,22 @@ process MERGE_CAZY {
         path("cazy.cazymes_hmm.parquet"), emit: hmm_parquet
 
     script:
+    // DuckDB parses the per-genome files directly (bin/duckdb_merge.py +
+    // sql/merge/cazy_overview/cazy_cazymes_hmm.sql); same rows, columns and types as the former Python
+    // merge, checked on real BFD files (sql/merge/README_agent*.md, 2026-11-06).
+    // File lists are written with the printf builtin (no ARG_MAX limit) and
+    // sorted like the Python scripts sorted their inputs.
+    def dm = "python3 ${projectDir}/bin/duckdb_merge.py --threads ${task.cpus} " +
+             "--memory-limit ${(task.memory.toGiga() * 0.75) as int}GB"
     """
-    # ~23k inputs: write them to an argument file with the printf builtin (no
-    # exec, so no ARG_MAX limit) and let argparse read it (@file). Passing them
-    # on the python3 command line failed with "Argument list too long"
-    # (2026-11-05).
-    printf '%s\\n' --overviews ${overviews} --cazymes ${cazymes} > merge_cazy.args
-    python3 ${projectDir}/bin/merge_cazy.py @merge_cazy.args \\
-        --out-overview cazy.overview.csv \\
-        --out-hmm      cazy.cazymes_hmm.csv
+    set -euo pipefail
     module load duckdb 2>/dev/null || true
-    duckdb -c "COPY (SELECT * FROM read_csv_auto('cazy.overview.csv', sample_size=-1)) TO 'cazy.overview.parquet' (FORMAT PARQUET);"
+    printf '%s\\n' ${overviews} | LC_ALL=C sort > cazy_overview.files
+    ${dm} --sql ${projectDir}/sql/merge/cazy_overview.sql --files cazy_overview.files --out cazy.overview.parquet --temp-dir \${SCRATCH:-\$PWD}
     ${coverageCheck('cazy.overview.parquet')}
-    module load duckdb 2>/dev/null || true
-    duckdb -c "COPY (SELECT * FROM read_csv_auto('cazy.cazymes_hmm.csv', sample_size=-1)) TO 'cazy.cazymes_hmm.parquet' (FORMAT PARQUET);"
+    printf '%s\\n' ${cazymes} | LC_ALL=C sort > cazy_cazymes_hmm.files
+    ${dm} --sql ${projectDir}/sql/merge/cazy_cazymes_hmm.sql --files cazy_cazymes_hmm.files --out cazy.cazymes_hmm.parquet --temp-dir \${SCRATCH:-\$PWD}
     ${coverageCheck('cazy.cazymes_hmm.parquet')}
-    rm -f cazy.overview.csv cazy.cazymes_hmm.csv
     """
 
     stub:

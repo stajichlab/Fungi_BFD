@@ -41,6 +41,7 @@ include { MERGE_PFAM      } from '../../modules/BFD/MERGE_PFAM/main.nf'
 include { MERGE_CAZY      } from '../../modules/BFD/MERGE_CAZY/main.nf'
 include { MERGE_MEROPS    } from '../../modules/BFD/MERGE_MEROPS/main.nf'
 include { MERGE_SWISSPROT } from '../../modules/BFD/MERGE_SWISSPROT/main.nf'
+include { MERGE_SWISSPROT_GATHER } from '../../modules/BFD/MERGE_SWISSPROT_GATHER/main.nf'
 include { BUILD_SWISSPROT_ANNOT } from '../../modules/BFD/BUILD_SWISSPROT_ANNOT/main.nf'
 include { MERGE_SIGNALP   } from '../../modules/BFD/MERGE_SIGNALP/main.nf'
 include { MERGE_TMHMM     } from '../../modules/BFD/MERGE_TMHMM/main.nf'
@@ -59,7 +60,7 @@ include { MERGE_TRNASCAN  } from '../../modules/BFD/MERGE_TRNASCAN/main.nf'
 include { MERGE_INFERNAL  } from '../../modules/BFD/MERGE_INFERNAL/main.nf'
 include { MERGE_CAZY_CGC  } from '../../modules/BFD/MERGE_CAZY_CGC/main.nf'
 
-include { gatedGlobIn; staleGuard; bucketedOutputs; mergeWanted } from '../../modules/common/utils.nf'
+include { gatedGlobIn; staleGuard; bucketedOutputs; mergeWanted; hashBucketForType; tablesDir } from '../../modules/common/utils.nf'
 
 // Cached-output paths for staleGuard(). Protein-level tools name their outputs
 // by LOCUSTAG, genome-level tools (antiSMASH, tRNAscan-SE, Infernal, dbCAN CGC)
@@ -223,17 +224,34 @@ workflow BFD_FUNCTIONAL {
             merge_outs << MERGE_MEROPS.out.parquet
         }
 
-        def swissprot_in = !mergeWanted(run_swissprot, 'MERGE_SWISSPROT', params.outdir as String, ["swissprot/**/*.blasttab.gz"], ['swissprot.parquet']) ? null : mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
-        if (swissprot_in) {
-            MERGE_SWISSPROT(swissprot_in)
-            merge_outs << MERGE_SWISSPROT.out.parquet
+        // One-shot build of the SwissProt accession -> annotation tables
+        // (swissprot_annot, swissprot_subject), independent of the per-genome
+        // search engine (or of run_swissprot itself, so it can be refreshed
+        // standalone). The hit tables reference swissprot_subject.sp_id, so the
+        // subject table built in this run (or the published one) feeds them.
+        def subject_ch = Channel.value(file("${tablesDir()}/swissprot_subject.parquet", glob: false))
+        if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet', 'swissprot_subject.parquet'], [params.swissprot_dat], false)) {
+            BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
+            subject_ch = BUILD_SWISSPROT_ANNOT.out.subject.first()
         }
 
-        // One-shot build of the SwissProt accession -> annotation table,
-        // independent of the per-genome search engine used above (or of
-        // run_swissprot itself, so it can be refreshed standalone).
-        if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet'], [params.swissprot_dat], false))
-            BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
+        // SwissProt hits: one MERGE_SWISSPROT task per genome bucket writes
+        // tables/swissprot_hits/swissprot_hits.<bucket>.parquet, then
+        // MERGE_SWISSPROT_GATHER writes swissprot_best + swissprot_subject_summary
+        // (design: Fungi_BFD_runs/analysis/swissprot_design/REVIEW.md). A new
+        // swissprot_dat changes sp_id, so it is a staleness input here.
+        def swissprot_in = !mergeWanted(run_swissprot, 'MERGE_SWISSPROT', params.outdir as String, ["swissprot/**/*.blasttab.gz"], ['swissprot_best.parquet'], [params.swissprot_dat]) ? null : mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
+        if (swissprot_in) {
+            def by_bucket = swissprot_in
+                .flatMap { fs -> fs }
+                .map { f -> tuple(hashBucketForType('swissprot', f.name.tokenize('.')[0]), f) }
+                .groupTuple(sort: true)
+            MERGE_SWISSPROT(by_bucket.combine(subject_ch))
+            MERGE_SWISSPROT_GATHER(MERGE_SWISSPROT.out.hits.collect(), subject_ch)
+            merge_outs << MERGE_SWISSPROT.out.hits
+            merge_outs << MERGE_SWISSPROT_GATHER.out.best
+            merge_outs << MERGE_SWISSPROT_GATHER.out.summary
+        }
 
         def signalp_in = !mergeWanted(run_signalp, 'MERGE_SIGNALP', params.outdir as String, ["signalp/**/*.signalp.gff3.gz"], ['signalp.signal_peptide.parquet']) ? null : mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
         if (signalp_in) {

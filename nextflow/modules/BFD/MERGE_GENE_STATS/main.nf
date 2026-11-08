@@ -27,10 +27,13 @@ process MERGE_GENE_STATS {
     # Sequence text is not stored in the tables (2026-11-06: CDS_sequence 169 GB,
     # peptide 115 GB). It is served by bgzip + samtools faidx copies keyed by
     # LOCUSTAG in Fungi_BFD_runs/seqdb/{proteins,cds}/ (bin/seqdb_build.sh).
+    # Intron seq (23.7 GB, dropped 2026-11-07) comes from the bgzip + faidx genome:
+    # samtools faidx predict_results/<out>.scaffolds.fa.gz chrom:start-end (-i for strand -1).
     for type in gene_info gene_exons gene_CDS gene_introns gene_transcripts gene_trnas gene_proteins; do
         case \$type in
             gene_transcripts) excl=CDS_sequence ;;
             gene_proteins)    excl=peptide ;;
+            gene_introns)     excl=seq ;;
             *)                excl= ;;
         esac
         python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} --exclude "\$excl" \\

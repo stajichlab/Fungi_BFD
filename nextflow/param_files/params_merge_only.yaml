@@ -17,8 +17,9 @@ run_setup: false
 skip_merge: false
 merge_all: true
 merge_if_stale: true
-# Tools set aside: TargetP results exist for 125 genomes only (DeepLoc replaces it).
-skip_merges: "MERGE_TARGETP"
+# Tools set aside: TargetP results exist for 125 genomes only (DeepLoc replaces it);
+# Infernal has results for 15 genomes only (not run for BFD yet).
+skip_merges: "MERGE_TARGETP,MERGE_INFERNAL"
 run_build_duckdb: true
 
 # Producers off: merges read existing files under results/
