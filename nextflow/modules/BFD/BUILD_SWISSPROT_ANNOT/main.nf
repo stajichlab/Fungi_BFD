@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; codeMd5 } from '../../common/utils.nf'
 
 process BUILD_SWISSPROT_ANNOT {
     label      'merge'
@@ -22,6 +22,7 @@ process BUILD_SWISSPROT_ANNOT {
     // staleness inputs in BFD_FUNCTIONAL.nf).
     script:
     """
+    # code md5 (task cache key): ${codeMd5(['bin/duckdb_merge.py', 'sql/merge'])}
     set -euo pipefail
     python3 ${projectDir}/bin/parse_uniprot_sprot.py ${dat} -o swissprot_annot.csv
     module load duckdb 2>/dev/null || true

@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; codeMd5 } from '../../common/utils.nf'
 
 // One task per genome bucket (sha1(LOCUSTAG)[:2], the storeDir bucket of the
 // per-genome DIAMOND tables). DuckDB reads the 18-column tables directly and
@@ -20,6 +20,7 @@ process MERGE_SWISSPROT {
 
     script:
     """
+    # code md5 (task cache key): ${codeMd5(['bin/duckdb_merge.py', 'sql/merge'])}
     set -euo pipefail
     module load duckdb 2>/dev/null || true
     printf '%s\\n' ${blasttabs} | LC_ALL=C sort > swissprot.files

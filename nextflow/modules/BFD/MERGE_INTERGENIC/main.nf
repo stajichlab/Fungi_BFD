@@ -1,4 +1,4 @@
-include { tablesDir; coverageCheck } from '../../common/utils.nf'
+include { tablesDir; coverageCheck; codeMd5 } from '../../common/utils.nf'
 
 process MERGE_INTERGENIC {
     label      'merge'
@@ -16,6 +16,7 @@ process MERGE_INTERGENIC {
     // read_csv_auto(sample_size=-1) was 4.5x slower on 1,020 genomes and failed
     // at ~23k genomes with "Trying to seek a compressed CSV File" (2026-11-05).
     """
+    # code md5 (task cache key): ${codeMd5(['bin/manifest_to_parquet.py'])}
     set -euo pipefail
     module load duckdb 2>/dev/null || true
     python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} \\

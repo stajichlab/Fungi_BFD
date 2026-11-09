@@ -216,6 +216,7 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(ca_sync, "cazy/*/*.cazymes.tsv.gz")  : ca_sync
             )
             merge_outs << MERGE_CAZY.out.overview_parquet
+            merge_outs << MERGE_CAZY.out.hmm_parquet
         }
 
         def merops_in = !mergeWanted(run_merops, 'MERGE_MEROPS', params.outdir as String, ["merops/**/*.blasttab.gz"], ['merops.parquet']) ? null : mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
@@ -233,6 +234,8 @@ workflow BFD_FUNCTIONAL {
         if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet', 'swissprot_subject.parquet'], [params.swissprot_dat], false)) {
             BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
             subject_ch = BUILD_SWISSPROT_ANNOT.out.subject.first()
+            merge_outs << BUILD_SWISSPROT_ANNOT.out.annot_parquet
+            merge_outs << BUILD_SWISSPROT_ANNOT.out.subject
         }
 
         // SwissProt hits: one MERGE_SWISSPROT task per genome bucket writes
@@ -281,6 +284,7 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(sum_sync, "aiupred/**/*.idp_summary.csv.gz") : sum_sync
             )
             merge_outs << MERGE_IDP.out.idp
+            merge_outs << MERGE_IDP.out.summary
         }
 
         def wolf_in = !mergeWanted(run_wolfpsort, 'MERGE_WOLFPSORT', params.outdir as String, ["wolfpsort/**/*.wolfpsort.results.txt.gz"], ['wolfpsort.parquet']) ? null : mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/**/*.wolfpsort.results.txt.gz")

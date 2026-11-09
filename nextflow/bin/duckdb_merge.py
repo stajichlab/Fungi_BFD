@@ -41,6 +41,14 @@ def main():
     body = open(a.sql).read()
     paths = [l.rstrip("\n").split("\t")[0] for l in open(a.files)]
     paths = [p for p in paths if p]
+    # Read the files in file-name order, not full-path order. Per-genome files
+    # are named <LOCUSTAG>.<type>... under sha1 hash-bucket folders, so path
+    # order is hash order. Every id starts with the LOCUSTAG, so file-name order
+    # writes rows roughly sorted by id and genome, and Parquet row-group min/max
+    # statistics then let a filter on protein_id / species_prefix skip most of
+    # the file (2026-11-08: gene tables written in path order had 98-100% of
+    # row groups overlapping, so every lookup read the whole id column).
+    paths.sort(key=lambda p: (os.path.basename(p), p))
     if not paths and "{files}" in body:
         sys.exit(f"ERROR: no input files in {a.files}")
     tmp_out = a.out + ".tmp"

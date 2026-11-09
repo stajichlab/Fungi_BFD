@@ -70,6 +70,11 @@
                     "description": "Comma-separated MERGE_* labels never to run (e.g. MERGE_TARGETP).",
                     "default": ""
                 },
+                "force_merges": {
+                    "type": "string",
+                    "description": "Comma-separated MERGE_* labels to run even when merge_if_stale finds the table current (e.g. MERGE_PFAM after a merge-code change). skip_merges still wins.",
+                    "default": ""
+                },
                 "coverage_min_frac": {
                     "type": "number",
                     "description": "A full merge fails if the new table covers fewer than this fraction of the distinct genomes in the table it replaces.",

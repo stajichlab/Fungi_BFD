@@ -201,9 +201,35 @@ CREATE VIEW swissprot_hits AS
 CREATE VIEW v_swissprot_80_80 AS
     SELECT * FROM swissprot_hits
     WHERE pident_x10 >= 800 AND qcov_x10 >= 800 AND scov_x10 >= 800;
+-- For one protein or genome use swissprot_model_fungi_for(id) (below): this
+-- VIEW opens all 256 bucket files (about 10 s per protein).
 CREATE VIEW v_swissprot_model_fungi AS
     SELECT h.*, s.org_code, s.accession, s.entry_name, s.protein_name
     FROM swissprot_hits h JOIN swissprot_subject s USING (sp_id)
+    WHERE s.org_code IN ('YEAST','SCHPO','NEUCR','EMENI')
+    QUALIFY row_number() OVER (PARTITION BY h.protein_id, s.org_code ORDER BY h.rk) = 1;
+" "$DB"
+fi
+# Fast lookups by protein or genome (table macros). swissprot_hits is 256
+# bucket files; a filter on protein_id through the VIEW still opens all 256
+# footers (7-10 s per protein, 2026-11-08). The macros compute the one bucket
+# file from the id instead: bucket = first 2 hex of sha1(LOCUSTAG), the same
+# as hashBucketForType('swissprot', locustag) in modules/common/utils.nf
+# (bucketWidthFor('swissprot') = 2). Measured 0.04 s for one protein and
+# 0.16 s for its model-fungi best hits.
+#   SELECT * FROM swissprot_hits_for('F77FFF1D_000002-T1');   -- one protein
+#   SELECT * FROM swissprot_hits_for('F77FFF1D');             -- one genome
+#   SELECT * FROM swissprot_model_fungi_for('F77FFF1D_000002-T1');
+if [ -f "$SRC/swissprot_subject.parquet" ] && ls "$SRC"/swissprot_hits/swissprot_hits.*.parquet >/dev/null 2>&1; then
+duckdb -c "
+CREATE MACRO swissprot_hits_file(id) AS
+    '$SRC_ABS/swissprot_hits/swissprot_hits.' || left(sha1(split_part(id, '_', 1)), 2) || '.parquet';
+CREATE MACRO swissprot_hits_for(id) AS TABLE
+    SELECT * FROM read_parquet(swissprot_hits_file(id))
+    WHERE protein_id = id OR species_prefix = id;
+CREATE MACRO swissprot_model_fungi_for(id) AS TABLE
+    SELECT h.*, s.org_code, s.accession, s.entry_name, s.protein_name
+    FROM swissprot_hits_for(id) h JOIN swissprot_subject s USING (sp_id)
     WHERE s.org_code IN ('YEAST','SCHPO','NEUCR','EMENI')
     QUALIFY row_number() OVER (PARTITION BY h.protein_id, s.org_code ORDER BY h.rk) = 1;
 " "$DB"

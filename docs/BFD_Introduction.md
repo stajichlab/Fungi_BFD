@@ -72,21 +72,54 @@ DuckDB, Python (pyarrow, polars, pandas), and R (arrow).
 
 ```sql
 SELECT count(*) FROM read_parquet('/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/tables/pfam.parquet')
-WHERE protein_id LIKE 'F77FFF1D_%';
+WHERE protein_id >= 'F77FFF1D_' AND protein_id < 'F77FFF1E';   -- one genome
 ```
 
-**Note on the DuckDB file.** From this branch on, `db/BFD.duckdb` holds views
-that read `tables/*.parquet` by absolute path (274 KB). It works only where
-`tables/` is at the same path. The `db/BFD.duckdb` built on 2026-11-06 is the
-old style, with a full copy of each table (394 GB). Views are a little slower
-than the indexed copies: 8.5 s against 1.9 s to count one genome's proteins,
-and 15.9 s against 13.3 s to fetch one protein's Pfam hits.
+**Use `=` or a range on the id column, not `LIKE` or `starts_with`.** The
+sorted tables store the minimum and maximum id of each row group, so DuckDB
+skips the row groups that cannot match. DuckDB 1.1.3 skips row groups only for
+`=`, `<`, `>` and `BETWEEN`. Measured on `pfam` (368 million rows, 2026-11-08):
+
+| Query | Time |
+|---|---|
+| `protein_id = 'F07D2B4E_004856-T1'` | 0.6 s |
+| `protein_id >= 'F07D2B4E_' AND protein_id < 'F07D2B4F'` (17,166 rows) | 0.6 s |
+| `starts_with(protein_id, 'F07D2B4E_')` (same rows) | 28.8 s |
+
+For the range, the upper bound is the LOCUSTAG with its last character
+increased by one (`...4E` becomes `...4F`; `...9` becomes `...A`).
+
+**Fast lookups (table macros).** SwissProt hits are stored as 256 bucket
+files. A `WHERE protein_id = ...` filter on the `swissprot_hits` view opens all
+256 files (7-10 s per protein). These macros open only the one bucket file for
+the given protein or genome:
+
+```sql
+SELECT * FROM swissprot_hits_for('F77FFF1D_000002-T1');        -- one protein
+SELECT * FROM swissprot_hits_for('F77FFF1D');                  -- one genome (LOCUSTAG)
+SELECT * FROM swissprot_model_fungi_for('F77FFF1D_000002-T1'); -- best hit per model fungus
+```
+
+They return in under 1 s, including DuckDB start-up. `swissprot_best` (one row
+per protein) is a single sorted file and is fast through its view.
+
+Do not filter `v_swissprot_model_fungi` by genome (`species_prefix`). The filter
+is not passed through the per-protein ranking, so DuckDB ranks all 2.2 billion
+hits first. On a 2026-11-08 test that ran out of memory on a login node. Use
+`swissprot_model_fungi_for('<LOCUSTAG>')` instead.
+
+**Note on the DuckDB file.** `db/BFD.duckdb` holds views that read
+`tables/*.parquet` by absolute path, plus the small `swissprot_subject` table
+and the macros above. It works only where `tables/` is at the same path. The
+pipeline publishes it to `BFD_function/db/BFD.duckdb`;
+`Fungi_BFD_runs/db/BFD.duckdb` is a link to that file. Lookups are fastest when
+a table is sorted by the column you filter on (see section 8).
 
 ## 4. Tables
 
 Row counts come from the 2026-11-06 build. The full column lists are in
 `docs/BFD_SCHEMA.md`, which is generated from the database by
-`nextflow/bin/schema_doc.py`. That file is on the `merge-csv-list` branch (PR #54).
+`nextflow/bin/schema_doc.py`.
 
 ### Genome level
 
@@ -181,17 +214,11 @@ It is built by `bin/seqdb_build.sh`.
 
 ## 6. Known gaps
 
-- **SwissProt** is not in the database yet. `tables/swissprot.parquet` (146 GB)
-  is the old format. A smaller design (hits per bucket with a subject table,
-  plus best-hit and summary tables) is in PR #54 and will be built by the next
-  merge run.
 - **Infernal (Rfam)**: the Infernal steps have not run for this set.
   `tables/infernal_rfam.parquet` is from the old parser, which read the wrong
   columns. Do not use it.
 - **TargetP** has results for 127 genomes only. A move to DeepLoc is being considered.
 - **DeepTMHMM** is not part of this release. Use `tmhmm`.
-- **TF inventory** (`tables/tf_inventory.parquet`) exists, but it is not yet in
-  the DuckDB file. Query the Parquet file directly.
 - Not converted to the new merge path yet: EggNOG, Phobius, TCDB, antiSMASH,
   tRNAscan-SE, and CAZy CGC. These have no BFD-wide tables yet.
 - Genome counts differ between tables: `species` has 23,680 rows, `gene_info`
@@ -204,9 +231,68 @@ It is built by `bin/seqdb_build.sh`.
 2. Each `MERGE_*` step reads the per-genome files for the genomes in
    `samples.csv` minus `suppress.txt`, and writes one Parquet file to `tables/`.
    Most merges use DuckDB SQL templates (`nextflow/sql/merge/*.sql`, run by
-   `nextflow/bin/duckdb_merge.py`).
-3. `BUILD_DUCKDB` runs `nextflow/bin/build_BFD_duckDB.sh` to make `db/BFD.duckdb`.
-   It waits until all Parquet copies to `tables/` are complete.
+   `nextflow/bin/duckdb_merge.py`); the genome-stats merges use
+   `nextflow/bin/manifest_to_parquet.py`. Both read the input files in file-name
+   order (`<LOCUSTAG>.<type>...`), so rows come out grouped and roughly sorted by
+   LOCUSTAG and id.
+3. `BUILD_DUCKDB` runs `nextflow/bin/build_BFD_duckDB.sh` to make `db/BFD.duckdb`
+   (views, the `swissprot_subject` table, the lookup macros, duplicate-id checks).
+   It waits until every Parquet file of this run is fully copied to `tables/`.
+   Each merge passes all of its output files to `BUILD_DUCKDB` for this check.
 4. A merge whose inputs have not changed is skipped (`merge_if_stale`). A new
-   table that has fewer rows than the old one is not published unless
+   table that covers fewer genomes than the old one is not published unless
    `allow_shrink` is set.
+
+**Forcing a rebuild after a code change.** `merge_if_stale` compares file
+modification times only. A change to a merge's code (for example a new sort
+order) does not make its table stale. Name the merges to rebuild:
+
+```bash
+cd /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/BFD_function
+sbatch run_BFD_merge.sh --force_merges MERGE_PFAM,MERGE_GENE_STATS
+```
+
+`skip_merges` still wins over `force_merges`.
+
+**Cached tasks after a code change.** `run_BFD_merge.sh` uses `-resume`.
+Nextflow hashes a task's script text and inputs, but not the helper files the
+script calls by path (`bin/*.py`, `bin/*.sh`, `sql/merge/*.sql`). Each merge
+script therefore has a comment line with an MD5 of its helper files
+(`codeMd5()` in `modules/common/utils.nf`). A helper change gives a new task
+hash, so a forced merge runs again and does not reuse the old output. `WORKTREE=<path> sbatch
+run_BFD_merge.sh ...` runs the code in another worktree (for testing a branch).
+
+## 8. What a pipeline rebuild applies, and what it does not
+
+State on 2026-11-08.
+
+**Built into the Nextflow pipeline (a rebuild applies these):**
+
+| Item | Where |
+|---|---|
+| DuckDB merge templates for Pfam, MEROPS, SignalP, TMHMM, WoLF PSORT, PredGPI, TargetP, TF, CAZy, SwissProt, Infernal | `sql/merge/*.sql`, `bin/duckdb_merge.py` |
+| Pfam sorted by `protein_id` | `sql/merge/pfam.sql` (`ORDER BY`) |
+| SwissProt hits sorted by `protein_id`, rank; 256 bucket files; best-hit and summary tables | `sql/merge/swissprot_*.sql`, MERGE_SWISSPROT(_GATHER) |
+| Input files read in file-name (LOCUSTAG) order, so row groups can be skipped on lookups | `bin/duckdb_merge.py`, `bin/manifest_to_parquet.py` |
+| No sequence columns: `CDS_sequence`, `peptide`, intron `seq` | MERGE_GENE_STATS (`--exclude`) |
+| View-only DuckDB file, duplicate-id checks, SwissProt lookup macros | `bin/build_BFD_duckDB.sh` |
+| New predictions write `<out>.scaffolds.fa.gz` + `.fai` + `.gzi`; genome readers accept `.gz` | FUNANNOTATE_PREDICT, `resolveGenomeFile()` |
+| `force_merges` for code changes | `modules/common/utils.nf` (`mergeForced`) |
+| Helper code (`bin/`, `sql/merge/`) is part of the task cache key | `codeMd5()` in `modules/common/utils.nf`, one comment line per merge module |
+| ZSTD compression for every merge output | `sql/merge/*.sql`, `bin/manifest_to_parquet.py` |
+| `BUILD_DUCKDB` waits for every output file of every merge, not one per merge | `subworkflows/local/BFD_MERGE.nf`, `BFD_FUNCTIONAL.nf` |
+
+**Outside the pipeline (manual steps):**
+
+| Item | How to run it |
+|---|---|
+| `seqdb/` protein and CDS copies. New or re-predicted genomes are not added automatically. | `Fungi_BFD_runs/bin/seqdb_list.py`, then `sbatch --array=... bin/seqdb_build.sh` (skips copies that exist; a re-predicted genome needs its old copy removed first) |
+| bgzip of `scaffolds.fa` written before 2026-11-07 (done once for 23,450 files) | `Fungi_BFD_runs/bin/bgzip_scaffolds.sh` |
+| `Fungi_BFD_runs/db/BFD.duckdb` is a link to `BFD_function/db/BFD.duckdb` | made by hand; keep it |
+| `docs/BFD_SCHEMA.md` | `python3 nextflow/bin/schema_doc.py --db <db> --out docs/BFD_SCHEMA.md` |
+| Tables written by the old code before a template change | rerun with `--force_merges` (section 7) |
+
+**Not converted yet:** EggNOG, Phobius, TCDB, antiSMASH, tRNAscan-SE, CAZy CGC
+and DeepTMHMM merges still use the Python parsers (no BFD-wide data yet).
+TELOMERES and MERGE_SAMPLES stay on Python. Infernal and TargetP are in
+`skip_merges` in `param_files/params_merge_only.yaml`.

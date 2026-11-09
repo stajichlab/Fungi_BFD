@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; codeMd5 } from '../../common/utils.nf'
 
 process MERGE_GENE_STATS {
     label      'merge'
@@ -22,6 +22,7 @@ process MERGE_GENE_STATS {
     // read_csv_auto(sample_size=-1) was 4.5x slower on 1,020 genomes and failed
     // at ~23k genomes with "Trying to seek a compressed CSV File" (2026-11-05).
     """
+    # code md5 (task cache key): ${codeMd5(['bin/manifest_to_parquet.py'])}
     set -euo pipefail
     module load duckdb 2>/dev/null || true
     # Sequence text is not stored in the tables (2026-11-06: CDS_sequence 169 GB,

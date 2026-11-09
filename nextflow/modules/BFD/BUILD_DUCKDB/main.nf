@@ -1,4 +1,4 @@
-include { dbDir } from '../../common/utils.nf'
+include { dbDir; codeMd5 } from '../../common/utils.nf'
 
 // Rebuilds db/BFD.duckdb from tables/*.parquet (bin/build_BFD_duckDB.sh).
 // `sync` is a gating manifest, not a real input -- the script reads
@@ -23,6 +23,7 @@ process BUILD_DUCKDB {
     // gene_info/gene_proteins.parquet, "No magic bytes found"). Wait until each
     // published copy has the staged file's size and a Parquet footer ('PAR1').
     """
+    # code md5 (task cache key): ${codeMd5(['bin/build_BFD_duckDB.sh', '../sql/table_schema.json'])}
     set -euo pipefail
     deadline=\$(( \$(date +%s) + 7200 ))
     for f in ${sync}; do
