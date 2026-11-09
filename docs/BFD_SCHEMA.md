@@ -1,8 +1,8 @@
 # BFD DuckDB schema
 
-Generated 2026-11-07 by `nextflow/bin/schema_doc.py` from `BFD.duckdb`. Do not edit by hand; rerun the script after a rebuild.
+Generated 2026-11-08 by `nextflow/bin/schema_doc.py` from `BFD.duckdb`. Do not edit by hand; rerun the script after a rebuild.
 
-25 tables and 6 views. Row counts are DuckDB `estimated_size` for base tables. Views have no stored count.
+1 tables and 37 views. Row counts are DuckDB `estimated_size` for base tables and `count(*)` for the Parquet views. The `v_*` summary views have no count.
 
 ## Join keys
 
@@ -106,6 +106,18 @@ erDiagram
         VARCHAR ASMID
         VARCHAR LOCUSTAG
     }
+    swissprot_best {
+        VARCHAR protein_id
+        VARCHAR species_prefix
+    }
+    swissprot_hits {
+        VARCHAR protein_id
+        VARCHAR species_prefix
+    }
+    swissprot_subject {
+    }
+    swissprot_subject_summary {
+    }
     targetp {
         VARCHAR species_prefix
         VARCHAR protein_id
@@ -117,6 +129,10 @@ erDiagram
     telomere_tracts {
         VARCHAR ASMID
         VARCHAR LOCUSTAG
+    }
+    tf_inventory {
+        VARCHAR species_prefix
+        VARCHAR protein_id
     }
     tmhmm {
         VARCHAR species_prefix
@@ -155,9 +171,12 @@ erDiagram
     gene_proteins ||--o{ pfam : protein
     gene_proteins ||--o{ predgpi : protein
     gene_proteins ||--o{ signalp : protein
+    gene_proteins ||--o{ swissprot_best : protein
+    gene_proteins ||--o{ swissprot_hits : protein
     gene_proteins ||--o{ targetp : protein
     species ||--o{ telomere_summary : genome
     species ||--o{ telomere_tracts : genome
+    gene_proteins ||--o{ tf_inventory : protein
     gene_proteins ||--o{ tmhmm : protein
     species ||--o{ wgd_ks : genome
     species ||--o{ wgd_ks_summary : genome
@@ -166,7 +185,7 @@ erDiagram
 
 ## Genome level
 
-### `aa_frequency` (table, 477,535 rows)
+### `aa_frequency` (view, 477,535 rows)
 
 | Column | Type |
 |---|---|
@@ -174,7 +193,7 @@ erDiagram
 | `amino_acid` | VARCHAR |
 | `frequency` | DOUBLE |
 
-### `asm_stats` (view)
+### `asm_stats` (view, 23,584 rows)
 
 | Column | Type |
 |---|---|
@@ -200,7 +219,7 @@ erDiagram
 | `telomere_rev` | BIGINT |
 | `annotation_status` | VARCHAR |
 
-### `busco_genome` (view)
+### `busco_genome` (view, 23,582 rows)
 
 | Column | Type |
 |---|---|
@@ -214,7 +233,7 @@ erDiagram
 | `n_markers` | BIGINT |
 | `lineage` | VARCHAR |
 
-### `codon_frequency` (table, 1,500,925 rows)
+### `codon_frequency` (view, 1,500,925 rows)
 
 | Column | Type |
 |---|---|
@@ -222,7 +241,7 @@ erDiagram
 | `codon` | VARCHAR |
 | `frequency` | DOUBLE |
 
-### `species` (view)
+### `species` (view, 23,680 rows)
 
 | Column | Type |
 |---|---|
@@ -240,7 +259,7 @@ erDiagram
 | `NCBI_TAXONID` | BIGINT |
 | `STRAIN` | VARCHAR |
 
-### `telomere_summary` (table, 23,582 rows)
+### `telomere_summary` (view, 23,582 rows)
 
 | Column | Type |
 |---|---|
@@ -262,7 +281,7 @@ erDiagram
 | `telomere_top_monomer` | VARCHAR |
 | `telomere_monomers` | VARCHAR |
 
-### `telomere_tracts` (table, 73,242 rows)
+### `telomere_tracts` (view, 73,242 rows)
 
 | Column | Type |
 |---|---|
@@ -291,7 +310,7 @@ erDiagram
 
 ## Gene models
 
-### `gene_CDS` (table, 753,622,745 rows)
+### `gene_CDS` (view, 753,622,745 rows)
 
 | Column | Type |
 |---|---|
@@ -305,7 +324,7 @@ erDiagram
 | `GC_content` | DOUBLE |
 | `species_prefix` | VARCHAR |
 
-### `gene_exons` (table, 758,181,061 rows)
+### `gene_exons` (view, 758,181,061 rows)
 
 | Column | Type |
 |---|---|
@@ -319,7 +338,7 @@ erDiagram
 | `GC_content` | DOUBLE |
 | `species_prefix` | VARCHAR |
 
-### `gene_info` (table, 249,546,610 rows)
+### `gene_info` (view, 249,546,610 rows)
 
 | Column | Type |
 |---|---|
@@ -331,7 +350,7 @@ erDiagram
 | `strand` | BIGINT |
 | `gene_type` | VARCHAR |
 
-### `gene_intergenic_distances` (table, 233,406,624 rows)
+### `gene_intergenic_distances` (view, 233,406,624 rows)
 
 | Column | Type |
 |---|---|
@@ -340,7 +359,7 @@ erDiagram
 | `right_gene` | VARCHAR |
 | `distance` | BIGINT |
 
-### `gene_introns` (table, 508,634,451 rows)
+### `gene_introns` (view, 508,634,451 rows)
 
 | Column | Type |
 |---|---|
@@ -356,10 +375,9 @@ erDiagram
 | `GC_content` | DOUBLE |
 | `codon_position` | BIGINT |
 | `codon_frame` | BIGINT |
-| `seq` | VARCHAR |
 | `species_prefix` | VARCHAR |
 
-### `gene_proteins` (table, 244,988,294 rows)
+### `gene_proteins` (view, 244,988,294 rows)
 
 | Column | Type |
 |---|---|
@@ -370,7 +388,7 @@ erDiagram
 | `md5checksum` | VARCHAR |
 | `species_prefix` | VARCHAR |
 
-### `gene_transcripts` (table, 249,546,610 rows)
+### `gene_transcripts` (view, 249,546,610 rows)
 
 | Column | Type |
 |---|---|
@@ -387,7 +405,7 @@ erDiagram
 | `md5checksum` | VARCHAR |
 | `species_prefix` | VARCHAR |
 
-### `gene_trna` (table, 4,558,316 rows)
+### `gene_trna` (view, 4,558,316 rows)
 
 | Column | Type |
 |---|---|
@@ -398,7 +416,7 @@ erDiagram
 
 ## Protein function
 
-### `cazy` (table, 9,164,068 rows)
+### `cazy` (view, 9,164,068 rows)
 
 | Column | Type |
 |---|---|
@@ -414,7 +432,7 @@ erDiagram
 | `s_end` | BIGINT |
 | `coverage` | DOUBLE |
 
-### `cazy_overview` (table, 9,310,657 rows)
+### `cazy_overview` (view, 9,310,657 rows)
 
 | Column | Type |
 |---|---|
@@ -427,7 +445,7 @@ erDiagram
 | `substrate` | VARCHAR |
 | `toolcount` | BIGINT |
 
-### `idp` (table, 233,329,228 rows)
+### `idp` (view, 233,329,228 rows)
 
 | Column | Type |
 |---|---|
@@ -438,7 +456,7 @@ erDiagram
 | `IDP_length` | BIGINT |
 | `mean_score` | DOUBLE |
 
-### `idp_summary` (table, 144,924,594 rows)
+### `idp_summary` (view, 144,924,594 rows)
 
 | Column | Type |
 |---|---|
@@ -448,7 +466,7 @@ erDiagram
 | `IDP_fraction` | DOUBLE |
 | `length` | BIGINT |
 
-### `merops` (table, 43,462,876 rows)
+### `merops` (view, 43,462,876 rows)
 
 | Column | Type |
 |---|---|
@@ -466,7 +484,7 @@ erDiagram
 | `evalue` | DOUBLE |
 | `bitscore` | DOUBLE |
 
-### `pfam` (table, 368,209,721 rows)
+### `pfam` (view, 368,209,721 rows)
 
 | Column | Type |
 |---|---|
@@ -491,7 +509,7 @@ erDiagram
 | `env_to` | BIGINT |
 | `species_prefix` | VARCHAR |
 
-### `predgpi` (table, 227,238,177 rows)
+### `predgpi` (view, 227,238,177 rows)
 
 | Column | Type |
 |---|---|
@@ -506,7 +524,7 @@ erDiagram
 | `phase` | VARCHAR |
 | `attributes` | VARCHAR |
 
-### `signalp` (table, 18,767,284 rows)
+### `signalp` (view, 18,767,284 rows)
 
 | Column | Type |
 |---|---|
@@ -516,7 +534,81 @@ erDiagram
 | `peptide_end` | BIGINT |
 | `probability` | DOUBLE |
 
-### `targetp` (table, 178,535 rows)
+### `swissprot_best` (view, 157,614,964 rows)
+
+| Column | Type |
+|---|---|
+| `protein_id` | VARCHAR |
+| `species_prefix` | VARCHAR |
+| `sp_id` | INTEGER |
+| `accession` | VARCHAR |
+| `entry_name` | VARCHAR |
+| `org_code` | VARCHAR |
+| `protein_name` | VARCHAR |
+| `pident_x10` | USMALLINT |
+| `qcov_x10` | USMALLINT |
+| `scov_x10` | USMALLINT |
+| `aln_length` | INTEGER |
+| `q_start` | INTEGER |
+| `q_end` | INTEGER |
+| `s_start` | INTEGER |
+| `s_end` | INTEGER |
+| `q_len` | INTEGER |
+| `s_len` | INTEGER |
+| `bitscore` | FLOAT |
+| `neg_log10_evalue` | FLOAT |
+
+### `swissprot_hits` (view, 2,192,440,076 rows)
+
+| Column | Type |
+|---|---|
+| `protein_id` | VARCHAR |
+| `species_prefix` | VARCHAR |
+| `sp_id` | INTEGER |
+| `rk` | UTINYINT |
+| `pident_x10` | USMALLINT |
+| `qcov_x10` | USMALLINT |
+| `scov_x10` | USMALLINT |
+| `aln_length` | INTEGER |
+| `q_start` | INTEGER |
+| `q_end` | INTEGER |
+| `s_start` | INTEGER |
+| `s_end` | INTEGER |
+| `q_len` | INTEGER |
+| `bitscore` | FLOAT |
+| `neg_log10_evalue` | FLOAT |
+
+### `swissprot_subject` (table, 575,503 rows)
+
+| Column | Type |
+|---|---|
+| `sp_id` | INTEGER |
+| `accession` | VARCHAR |
+| `entry_name` | VARCHAR |
+| `org_code` | VARCHAR |
+| `s_len` | INTEGER |
+| `protein_name` | VARCHAR |
+| `gene_name` | VARCHAR |
+| `gene_synonyms` | VARCHAR |
+| `organism` | VARCHAR |
+| `ncbi_taxid` | BIGINT |
+| `go_terms` | VARCHAR |
+| `ec_numbers` | VARCHAR |
+| `interpro` | VARCHAR |
+| `pfam` | VARCHAR |
+
+### `swissprot_subject_summary` (view, 333,632 rows)
+
+| Column | Type |
+|---|---|
+| `sp_id` | INTEGER |
+| `n_hits` | BIGINT |
+| `n_genomes` | BIGINT |
+| `n_best_hits` | DOUBLE |
+| `max_bitscore` | FLOAT |
+| `max_pident_x10` | USMALLINT |
+
+### `targetp` (view, 178,535 rows)
 
 | Column | Type |
 |---|---|
@@ -529,7 +621,19 @@ erDiagram
 | `cleavage_probability` | DOUBLE |
 | `motif` | VARCHAR |
 
-### `tmhmm` (table, 45,707,260 rows)
+### `tf_inventory` (view, 10,946,927 rows)
+
+| Column | Type |
+|---|---|
+| `species_prefix` | VARCHAR |
+| `protein_id` | VARCHAR |
+| `pfam_acc` | VARCHAR |
+| `pfam_name` | VARCHAR |
+| `tf_family` | VARCHAR |
+| `domain_i_evalue` | DOUBLE |
+| `domain_score` | DOUBLE |
+
+### `tmhmm` (view, 45,707,260 rows)
 
 | Column | Type |
 |---|---|
@@ -541,7 +645,7 @@ erDiagram
 | `PredHel` | BIGINT |
 | `Topology` | VARCHAR |
 
-### `wolfpsort` (table, 244,790,951 rows)
+### `wolfpsort` (view, 244,790,951 rows)
 
 | Column | Type |
 |---|---|
@@ -552,7 +656,7 @@ erDiagram
 
 ## Paralog Ks
 
-### `wgd_ks` (table, 25,831,001 rows)
+### `wgd_ks` (view, 25,831,001 rows)
 
 | Column | Type |
 |---|---|
@@ -583,7 +687,7 @@ erDiagram
 | `copies2` | DOUBLE |
 | `npairs` | DOUBLE |
 
-### `wgd_ks_summary` (table, 7,384 rows)
+### `wgd_ks_summary` (view, 7,384 rows)
 
 | Column | Type |
 |---|---|
@@ -646,3 +750,47 @@ erDiagram
 | `signalp_count` | BIGINT |
 | `tmhmm_count` | BIGINT |
 | `idp_high_disorder` | BIGINT |
+
+### `v_swissprot_80_80` (view)
+
+| Column | Type |
+|---|---|
+| `protein_id` | VARCHAR |
+| `species_prefix` | VARCHAR |
+| `sp_id` | INTEGER |
+| `rk` | UTINYINT |
+| `pident_x10` | USMALLINT |
+| `qcov_x10` | USMALLINT |
+| `scov_x10` | USMALLINT |
+| `aln_length` | INTEGER |
+| `q_start` | INTEGER |
+| `q_end` | INTEGER |
+| `s_start` | INTEGER |
+| `s_end` | INTEGER |
+| `q_len` | INTEGER |
+| `bitscore` | FLOAT |
+| `neg_log10_evalue` | FLOAT |
+
+### `v_swissprot_model_fungi` (view)
+
+| Column | Type |
+|---|---|
+| `protein_id` | VARCHAR |
+| `species_prefix` | VARCHAR |
+| `sp_id` | INTEGER |
+| `rk` | UTINYINT |
+| `pident_x10` | USMALLINT |
+| `qcov_x10` | USMALLINT |
+| `scov_x10` | USMALLINT |
+| `aln_length` | INTEGER |
+| `q_start` | INTEGER |
+| `q_end` | INTEGER |
+| `s_start` | INTEGER |
+| `s_end` | INTEGER |
+| `q_len` | INTEGER |
+| `bitscore` | FLOAT |
+| `neg_log10_evalue` | FLOAT |
+| `org_code` | VARCHAR |
+| `accession` | VARCHAR |
+| `entry_name` | VARCHAR |
+| `protein_name` | VARCHAR |

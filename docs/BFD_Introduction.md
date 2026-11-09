@@ -89,6 +89,20 @@ skips the row groups that cannot match. DuckDB 1.1.3 skips row groups only for
 For the range, the upper bound is the LOCUSTAG with its last character
 increased by one (`...4E` becomes `...4F`; `...9` becomes `...A`).
 
+Lookup times after the 2026-11-08 rebuild (job 31887562). Every table below
+has 0 row groups whose id range overlaps another row group.
+
+| Table | Filter | Row groups | Time |
+|---|---|---|---|
+| `gene_proteins` | `protein_id =` | 1,978 | 0.05 s |
+| `gene_info` | `gene_id =` | 2,015 | 0.44 s |
+| `gene_transcripts` | `transcript_id =` | 2,015 | 0.30 s |
+| `gene_exons` | `transcript_id =` | 6,123 | 0.32 s |
+| `gene_exons` | `exon_id` range, one genome (7,195 rows) | 6,123 | 0.72 s |
+| `gene_CDS` | `transcript_id =` | 6,086 | 0.66 s |
+| `gene_introns` | `transcript_id =` | 4,108 | 0.35 s |
+| `pfam` | `protein_id =` | 2,996 | 0.6 s |
+
 **Fast lookups (table macros).** SwissProt hits are stored as 256 bucket
 files. A `WHERE protein_id = ...` filter on the `swissprot_hits` view opens all
 256 files (7-10 s per protein). These macros open only the one bucket file for
@@ -100,7 +114,7 @@ SELECT * FROM swissprot_hits_for('F77FFF1D');                  -- one genome (LO
 SELECT * FROM swissprot_model_fungi_for('F77FFF1D_000002-T1'); -- best hit per model fungus
 ```
 
-They return in under 1 s, including DuckDB start-up. `swissprot_best` (one row
+They return in about 1 s or less (0.15-1.0 s measured on 2026-11-08). `swissprot_best` (one row
 per protein) is a single sorted file and is fast through its view.
 
 Do not filter `v_swissprot_model_fungi` by genome (`species_prefix`). The filter
@@ -117,7 +131,7 @@ a table is sorted by the column you filter on (see section 8).
 
 ## 4. Tables
 
-Row counts come from the 2026-11-06 build. The full column lists are in
+Row counts come from the 2026-11-06 build. The 2026-11-08 rebuild gave the same counts. The full column lists are in
 `docs/BFD_SCHEMA.md`, which is generated from the database by
 `nextflow/bin/schema_doc.py`.
 
@@ -281,6 +295,35 @@ State on 2026-11-08.
 | Helper code (`bin/`, `sql/merge/`) is part of the task cache key | `codeMd5()` in `modules/common/utils.nf`, one comment line per merge module |
 | ZSTD compression for every merge output | `sql/merge/*.sql`, `bin/manifest_to_parquet.py` |
 | `BUILD_DUCKDB` waits for every output file of every merge, not one per merge | `subworkflows/local/BFD_MERGE.nf`, `BFD_FUNCTIONAL.nf` |
+
+**Measured after the 2026-11-08 rebuild** (jobs 31866309 and 31887562, run with
+`--force_merges`). Row counts did not change. "Overlap" is the number of row
+groups whose id range overlaps another row group; 0 means a lookup reads only
+the row groups that can hold the id.
+
+| Table | Rows | Size before | Size after | Overlap before | Overlap after |
+|---|---|---|---|---|---|
+| `pfam` | 368,209,721 | 12.0 GB | 12.0 GB | 2,987 / 2,988 | 0 / 2,996 |
+| `gene_exons` | 758,181,061 | 17.3 GB | 8.0 GB | 98-100% | 0 / 6,123 |
+| `gene_CDS` | 753,622,745 | 17.1 GB | 8.0 GB | 98-100% | 0 / 6,086 |
+| `gene_introns` | 508,634,451 | 13.8 GB | 6.8 GB | 98-100% | 0 / 4,108 |
+| `gene_transcripts` | 249,546,610 | 14.1 GB | 6.8 GB | 98-100% | 0 / 2,015 |
+| `gene_proteins` | 244,988,294 | 12.3 GB | 5.5 GB | 98-100% | 0 / 1,978 |
+| `gene_info` | 249,546,610 | 4.0 GB | 1.6 GB | 98-100% | 0 / 2,015 |
+| `gene_intergenic_distances` | 233,406,624 | 3.1 GB | 0.9 GB | not measured | 0 / 1,885 |
+
+The "before" gene-table sizes are from the Snappy files of job 31866309. The
+seven gene tables went from 81.7 GB to 37.6 GB.
+
+One-protein lookups through `db/BFD.duckdb` (wall time, DuckDB start-up included):
+
+| Query | Before | After |
+|---|---|---|
+| `pfam WHERE protein_id = ...` | 28.9 s | 1.2 s (0.6 s on the Parquet file) |
+| `gene_exons WHERE transcript_id = ...` | 0.43 s (1,018-genome test) | 0.5 s (all genomes) |
+| `gene_info` for one genome (range on `gene_id`, 10,877 rows) | not measured | 0.16 s |
+| SwissProt hits, one protein | 7.2 s (`swissprot_hits` view) | 0.7 s (`swissprot_hits_for`) |
+| SwissProt model-fungi hits, one protein | 9.6-23 s (`v_swissprot_model_fungi`) | 0.9 s (`swissprot_model_fungi_for`) |
 
 **Outside the pipeline (manual steps):**
 
