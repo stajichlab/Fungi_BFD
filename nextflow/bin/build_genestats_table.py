@@ -324,6 +324,10 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
                     CDS_exon_seq = chrom_segment[cds_start:cds_end]
                     if cds["strand"] == -1:
                         CDS_exon_seq = -CDS_exon_seq
+                    # Coding bases 5' of this CDS segment = where the intron
+                    # between lastcds and this segment sits in the CDS. Must be
+                    # taken before this segment is appended.
+                    cds_len_upstream = len(CDS_sequence)
                     CDS_sequence += CDS_exon_seq.seq
 
                     if c == 0:
@@ -368,8 +372,11 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
                             intron_index += 1
 
                         intronobj = transcript["intron"][intron_index]
-                        intronobj["codon_position"] = int(len(CDS_sequence) / 3)
-                        intronobj["codon_frame"] = len(CDS_sequence) % 3
+                        # codon_position: number of complete codons 5' of the
+                        # intron; codon_frame: intron phase (0 = between
+                        # codons, 1 = after codon base 1, 2 = after base 2).
+                        intronobj["codon_position"] = cds_len_upstream // 3
+                        intronobj["codon_frame"] = cds_len_upstream % 3
                     lastcds = cds
                     c += 1
 
