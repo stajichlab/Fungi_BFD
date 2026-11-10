@@ -79,6 +79,11 @@ def main():
             paths.append(p)
     if not paths:
         sys.exit(f"ERROR: no files in {a.manifest} end with '{a.suffix}'")
+    # File-name order (<LOCUSTAG>.<type>.csv.gz), not path order (sha1 bucket
+    # folders = hash order): rows come out roughly sorted by id and genome, so
+    # Parquet row-group statistics can skip most of the file on a lookup. See
+    # the same note in duckdb_merge.py.
+    paths.sort(key=lambda p: (os.path.basename(p), p))
     step = max(1, len(paths) // a.sample_files)
     sample = paths[::step][: a.sample_files]
     delim = sql_str(a.delim)
@@ -111,7 +116,8 @@ def main():
         sys.exit(f"ERROR: --exclude names columns not in the files: {sorted(missing)}")
     sel = "* EXCLUDE (" + ", ".join(f'"{c}"' for c in excl) + ")" if excl else "*"
     run_duckdb(settings + f"COPY (SELECT {sel} FROM read_csv({file_list_sql(paths)}, header=true, "
-               f"delim={delim}, columns={colspec})) TO {sql_str(tmp_out)} (FORMAT PARQUET);\n")
+               f"delim={delim}, columns={colspec})) TO {sql_str(tmp_out)} "
+               f"(FORMAT PARQUET, COMPRESSION ZSTD);\n")
     os.replace(tmp_out, a.out)
     n = run_duckdb(f"SELECT count(*) FROM read_parquet({sql_str(a.out)});\n", csv_out=True).strip()
     print(f"{a.out}: {n} rows from {len(paths)} files; types from {len(sample)} files "

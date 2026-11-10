@@ -135,7 +135,17 @@ workflow BFD_MERGE {
                              'gene_transcripts.parquet', 'gene_trnas.parquet', 'gene_proteins.parquet'])
     if (gene_stats_in) {
         MERGE_GENE_STATS(gene_stats_in)
+        // Every emit, not one: BUILD_DUCKDB waits only for the files in its
+        // input list, and publishDir copies each file separately. With only
+        // gene_info here, run 31866309 (2026-11-08) read gene_proteins.parquet
+        // half-copied ("No magic bytes found").
         merge_outs << MERGE_GENE_STATS.out.gene_info
+        merge_outs << MERGE_GENE_STATS.out.gene_exons
+        merge_outs << MERGE_GENE_STATS.out.gene_CDS
+        merge_outs << MERGE_GENE_STATS.out.gene_introns
+        merge_outs << MERGE_GENE_STATS.out.gene_transcripts
+        merge_outs << MERGE_GENE_STATS.out.gene_trnas
+        merge_outs << MERGE_GENE_STATS.out.gene_proteins
     }
 
     def asm_in = statsManifest(use_glob, params.run_asm_stats.toBoolean(), asm_stats, asm_stats,
@@ -152,6 +162,7 @@ workflow BFD_MERGE {
     if (telomeres_in) {
         MERGE_TELOMERES(telomeres_in, file(params.samples))
         merge_outs << MERGE_TELOMERES.out.summary_parquet
+        merge_outs << MERGE_TELOMERES.out.tracts_parquet
     }
 
     def busco_in = statsManifest(use_glob, params.run_busco_genome.toBoolean(), busco_genome, busco_genome,

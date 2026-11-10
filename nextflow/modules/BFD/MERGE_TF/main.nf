@@ -1,4 +1,4 @@
-include { tablesDir; coverageCheck } from '../../common/utils.nf'
+include { tablesDir; coverageCheck; codeMd5 } from '../../common/utils.nf'
 
 // Transcription-factor inventory, derived from RUN_PFAM's domtblout hits
 // (same input files as MERGE_PFAM) filtered against a curated list of
@@ -23,6 +23,7 @@ process MERGE_TF {
     def dm = "python3 ${projectDir}/bin/duckdb_merge.py --threads ${task.cpus} " +
              "--memory-limit ${(task.memory.toGiga() * 0.75) as int}GB"
     """
+    # code md5 (task cache key): ${codeMd5(['bin/duckdb_merge.py', 'sql/merge'])}
     set -euo pipefail
     module load duckdb 2>/dev/null || true
     printf '%s\\n' ${domtbls} | LC_ALL=C sort > tf.files

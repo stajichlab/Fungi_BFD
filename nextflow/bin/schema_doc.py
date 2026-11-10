@@ -5,8 +5,10 @@ counts, join keys, Mermaid ER diagram) from a built BFD DuckDB file.
 Usage:
     schema_doc.py --db db/BFD.duckdb --out docs/BFD_SCHEMA.md
 
-Reads only information_schema and duckdb_tables() (estimated_size is the row
-count DuckDB stores for a base table; views show no count). GitHub renders the
+Reads information_schema and duckdb_tables() (estimated_size is the row count
+DuckDB stores for a base table). Since 2026-11-07 the tables are views over
+Parquet files; for those views (not the v_* summary views) the script runs
+count(*) (31 s for the 2026-11-08 database). GitHub renders the
 ```mermaid block as a diagram.
 """
 import argparse, csv, datetime, io, os, subprocess, sys
@@ -56,6 +58,11 @@ def main():
     for r in cols:
         tables.setdefault(r["table_name"], []).append((r["column_name"], r["data_type"]))
         kind[r["table_name"]] = "view" if r["table_type"] == "VIEW" else "table"
+    # Parquet-backed views: count(*) reads only the file footers.
+    pv = [t for t in kind if kind[t] == "view" and not t.startswith("v_")]
+    if pv:
+        sql = " UNION ALL ".join(f"SELECT '{t}' AS t, count(*) AS n FROM \"{t}\"" for t in pv)
+        rows.update({r["t"]: int(r["n"]) for r in q(a.db, sql)})
 
     def group(t):
         if t in ("species", "asm_stats", "busco_genome") or t.startswith("telomere") \
@@ -78,7 +85,8 @@ def main():
            "",
            f"{sum(1 for t in kind if kind[t] == 'table')} tables and "
            f"{sum(1 for t in kind if kind[t] == 'view')} views. Row counts are DuckDB "
-           "`estimated_size` for base tables. Views have no stored count.",
+           "`estimated_size` for base tables and `count(*)` for the Parquet views. "
+           "The `v_*` summary views have no count.",
            "",
            "## Join keys",
            "",

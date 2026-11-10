@@ -585,6 +585,33 @@ def mergeSkipped(String label) {
     return false
 }
 
+// params.force_merges: MERGE_* labels to run even when merge_if_stale finds
+// the table current. merge_if_stale compares input and table mtimes only, so a
+// change to a merge's code (e.g. pfam.sql gaining ORDER BY protein_id) does not
+// make the table stale. A list, or a comma-separated string.
+// Task cache key for code that Nextflow does not hash. A process script is
+// hashed as text, but helper files it calls by path (bin/*.py, bin/*.sh,
+// sql/merge/*.sql) are not. Without this, -resume reuses an old merge output
+// after a helper changes (2026-11-08: a ZSTD change in manifest_to_parquet.py
+// would not rebuild gene_*.parquet). Put the result in a script comment.
+// rels: paths relative to projectDir; a folder hashes all files in it.
+def codeMd5(List rels) {
+    rels.collect { r ->
+        def f = file("${projectDir}/${r}")
+        f.isDirectory() ? f.listFiles().findAll { g -> g.isFile() }.sort { g -> g.name }.collect { g -> g.name + g.text }.join('') : f.text
+    }.join('').md5()
+}
+
+def mergeForced(String label) {
+    def s = params.force_merges
+    def names = (s instanceof List) ? s : (s ? s.toString().split(',')*.trim() : [])
+    if (names.contains(label)) {
+        log.info "force_merges: ${label} will run"
+        return true
+    }
+    return false
+}
+
 // Collapse a channel of input files into one sorted manifest, TAB-delimited:
 //     <absolute_path>\t<mtime_ms>\t<size_bytes>
 //
@@ -681,6 +708,7 @@ def findFirst(String baseDir, String glob, newerThan) {
 // (BUILD_SWISSPROT_ANNOT).
 def mergeWanted(boolean ran, String label, String baseDir, List globs, List tables, List extraInputs = [], boolean perGenome = true) {
     if (mergeSkipped(label)) return false
+    if (mergeForced(label)) return true
     if (!params.merge_if_stale.toBoolean() || ran) return true
     def setInputs = perGenome ? [params.samples, params.suppress].findAll { x -> x }.collect { x -> x.toString() } : []
     return tablesStale(label, baseDir, globs, tables, extraInputs, setInputs)
