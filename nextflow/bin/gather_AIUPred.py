@@ -20,10 +20,10 @@ def average(lst):
     return sum(lst) / len(lst)
 
 def scores_to_idpstatus(iupred_scores, min_length=30):
-    """Return (disordered_residues, total_residues); a protein is disordered if any run of scores>=0.5 exceeds min_length."""
+    """Return (disordered_residues, total_residues); a protein is disordered if any run of scores>=0.5 is at least min_length long (same rule as the region table)."""
     disordered_residues = 0
     all_residues = 0
-    if max([sum([1 for _ in y]) if x == 1 else 0 for x, y in groupby([1 if x>=0.5 else 0 for x in iupred_scores])]) > min_length:
+    if max([sum([1 for _ in y]) if x == 1 else 0 for x, y in groupby([1 if x>=0.5 else 0 for x in iupred_scores])], default=0) >= min_length:
         disordered_protein = 1
         disordered_residues += sum([1 for x in iupred_scores if x>=0.5])
     all_residues += len(iupred_scores)
@@ -53,7 +53,7 @@ def scores_to_idp_regions(iupred_scores, min_length=30):
         idp_regions.append((s+1, e+1, e - s + 1, mean_score))
     return idp_regions
 
-def parse_iupred_file(iupred_file):
+def parse_iupred_file(iupred_file, min_length=30):
     """Parse a gzipped IUPred output file and return a dict mapping sequence name → [idpstatus, idp_regions]."""
     iupred_scores = []
     
@@ -65,11 +65,13 @@ def parse_iupred_file(iupred_file):
             if line.startswith("#>"):
                 if seqname is not None:
                     score_set[seqname] = [
-                        scores_to_idpstatus(iupred_scores),
+                        scores_to_idpstatus(iupred_scores, min_length),
                         scores_to_idp_regions(iupred_scores)
                         ]
                     iupred_scores = []
-                seqname = line[2:].split()[1]
+                # Header is "#><protein id> <gene id>". Use the protein id, which is
+                # the protein_id in gene_proteins and the other function tables.
+                seqname = line[2:].split()[0]
             elif line.startswith("#"):
                 # skip header/comment
                 continue
@@ -84,7 +86,7 @@ def parse_iupred_file(iupred_file):
                     continue
         if seqname is not None:
             score_set[seqname] = [
-                        scores_to_idpstatus(iupred_scores),
+                        scores_to_idpstatus(iupred_scores, min_length),
                         scores_to_idp_regions(iupred_scores)
                         ]
     return score_set
@@ -120,7 +122,7 @@ def main():
                 if args.debug:
                     print(f"Processing {file}")
                 timestart = time.time() 
-                iupred_regions = parse_iupred_file(file)
+                iupred_regions = parse_iupred_file(file, args.idp_length)
                 timeend = time.time()
                 if args.debug:
                     print(f"Reading Time elapsed: {timeend-timestart}")
