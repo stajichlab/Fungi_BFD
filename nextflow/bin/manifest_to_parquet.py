@@ -70,6 +70,7 @@ def main():
     ap.add_argument("--temp-dir", default=None, help="DuckDB spill dir (node-local scratch)")
     ap.add_argument("--sample-files", type=int, default=300)
     ap.add_argument("--exclude", default="", help="col,... read but not written (e.g. sequence text)")
+    ap.add_argument("--upper", default="", help="col,... written upper-case (e.g. splice_5,splice_3: soft-masked genomes give lower-case)")
     a = ap.parse_args()
 
     paths = []
@@ -115,6 +116,12 @@ def main():
     if missing:
         sys.exit(f"ERROR: --exclude names columns not in the files: {sorted(missing)}")
     sel = "* EXCLUDE (" + ", ".join(f'"{c}"' for c in excl) + ")" if excl else "*"
+    upper = [c for c in a.upper.split(",") if c.strip()]
+    missing = set(upper) - {c for c, _ in cols} - set(excl)
+    if missing:
+        sys.exit(f"ERROR: --upper names columns not in the files: {sorted(missing)}")
+    if upper:
+        sel += " REPLACE (" + ", ".join(f'upper("{c}") AS "{c}"' for c in upper) + ")"
     run_duckdb(settings + f"COPY (SELECT {sel} FROM read_csv({file_list_sql(paths)}, header=true, "
                f"delim={delim}, columns={colspec})) TO {sql_str(tmp_out)} "
                f"(FORMAT PARQUET, COMPRESSION ZSTD);\n")
@@ -123,7 +130,8 @@ def main():
     print(f"{a.out}: {n} rows from {len(paths)} files; types from {len(sample)} files "
           f"({t_detect:.0f} s), build {time.time() - t1:.0f} s; "
           + ", ".join(f"{c}:{t}" for c, t in cols if c not in excl)
-          + (f"; excluded {','.join(excl)}" if excl else ""))
+          + (f"; excluded {','.join(excl)}" if excl else "")
+          + (f"; upper-cased {','.join(upper)}" if upper else ""))
 
 
 if __name__ == "__main__":
