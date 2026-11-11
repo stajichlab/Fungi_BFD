@@ -37,7 +37,11 @@ process MERGE_GENE_STATS {
             gene_introns)     excl=seq ;;
             *)                excl= ;;
         esac
-        python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} --exclude "\$excl" \\
+        case \$type in
+            gene_introns)     up=splice_5,splice_3 ;;  # soft-masked genomes give lower-case pairs
+            *)                up= ;;
+        esac
+        python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} --exclude "\$excl" --upper "\$up" \\
             --suffix .\${type}.csv.gz \\
             --out \${type}.parquet --threads ${task.cpus} \\
             --memory-limit ${(task.memory.toGiga() * 0.75) as int}GB --temp-dir \${SCRATCH:-\$PWD}
