@@ -422,11 +422,30 @@ def open_handle(path: str):
     return open(path, "r")
 
 
+def gstrand_label(pat: str) -> str:
+    """Return the G-rich-strand form of a pattern, used as the reported label.
+
+    A pattern and its reverse complement describe the same telomere repeat.
+    Reporting one label avoids splitting one motif into two (CCCTAA vs TTAGGG)
+    and removes the dependence of the label on the input orientation. The
+    orientation of each hit is in the ``strand`` and ``end`` columns.
+    """
+    rc = reverse_complement_pattern(pat)
+
+    def gt_minus_ca(p: str) -> int:
+        body = re.sub(r"\[[^\]]*\]", lambda m: m.group(0)[1:-1][:1], p)
+        body = re.sub(r"[^ACGT]", "", body.upper())
+        return sum(c in "GT" for c in body) - sum(c in "CA" for c in body)
+
+    return rc if gt_minus_ca(rc) > gt_minus_ca(pat) else pat
+
+
 def build_pattern_set(patterns: List[str], both_ends: bool, no_rc: bool
                       ) -> List[Tuple[str, str, str]]:
     """Return list of (canonical_monomer, search_monomer, strand) tuples.
 
-    canonical_monomer: the pattern as supplied by the user.
+    canonical_monomer: the G-rich-strand form of the pattern (see
+            gstrand_label); a pattern and its reverse complement share it.
     search_monomer: the monomer to actually search at this end.
     strand: '+' if search_monomer is the canonical monomer, '-' if it is the
             reverse complement.
@@ -436,34 +455,39 @@ def build_pattern_set(patterns: List[str], both_ends: bool, no_rc: bool
     for pat in patterns:
         pat = pat.upper()
         rc = reverse_complement_pattern(pat)
+        label = gstrand_label(pat)
         if no_rc:
-            result.append((pat, pat, "+"))
-            seen.add((pat, pat, "+"))
+            keys = [(label, pat, "+")]
             if both_ends:
-                result.append((pat, pat, "-"))
-            continue
-
-        # Canonical orientation: forward at 5', RC at 3'.
-        key = (pat, pat, "+")
-        if key not in seen:
-            result.append(key)
-            seen.add(key)
-        key = (pat, rc, "-")
-        if key not in seen:
-            result.append(key)
-            seen.add(key)
-
-        if both_ends:
-            # Also search RC at 5' and forward at 3'.
-            key = (pat, rc, "+")
-            if key not in seen:
-                result.append(key)
-                seen.add(key)
-            key = (pat, pat, "-")
+                keys.append((label, pat, "-"))
+        else:
+            # Input orientation: forward at 5', RC at 3'.
+            keys = [(label, pat, "+"), (label, rc, "-")]
+            if both_ends:
+                # Also search RC at 5' and forward at 3'.
+                keys += [(label, rc, "+"), (label, pat, "-")]
+        for key in keys:
             if key not in seen:
                 result.append(key)
                 seen.add(key)
     return result
+
+
+def drop_contained_hits(hits: List[TelomereHit]) -> List[TelomereHit]:
+    """Drop hits whose span lies inside a longer hit at the same scaffold end.
+
+    Overlapping patterns (for example CCCTAA and CCC[C]+TAA) can report one
+    tract more than once. Keep the longest; on a tie keep the first.
+    """
+    kept: List[TelomereHit] = []
+    for h in sorted(hits, key=lambda x: -x.tract_length):
+        if any(k.scaffold == h.scaffold and k.end == h.end
+               and k.start <= h.start and h.end_coord <= k.end_coord
+               for k in kept):
+            continue
+        kept.append(h)
+    kept.sort(key=lambda x: (x.end, x.start))
+    return kept
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -528,7 +552,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         terminal_tolerance=args.terminal_tolerance,
                     ))
 
-            for hit in hits:
+            for hit in drop_contained_hits(hits):
                 row = [
                     hit.scaffold, hit.end, hit.strand, hit.monomer,
                     hit.repeat_count, hit.tract_length,
