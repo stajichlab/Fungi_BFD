@@ -17,7 +17,7 @@ include { BATCH_CODON_FREQ } from '../../modules/BFD/BATCH_CODON_FREQ/main.nf'
 include { CALC_INTERGENIC  } from '../../modules/BFD/CALC_INTERGENIC/main.nf'
 include { CALC_GENE_STATS  } from '../../modules/BFD/CALC_GENE_STATS/main.nf'
 include { CALC_ASM_STATS   } from '../../modules/BFD/CALC_ASM_STATS/main.nf'
-include { FIND_TELOMERES   } from '../../modules/BFD/FIND_TELOMERES/main.nf'
+include { BATCH_TELOMERES  } from '../../modules/BFD/BATCH_TELOMERES/main.nf'
 include { BUSCO_GENOME     } from '../../modules/BFD/BUSCO_GENOME/main.nf'
 include { BUSCO_PEP        } from '../../modules/BFD/BUSCO_PEP/main.nf'
 
@@ -38,9 +38,9 @@ include { clearIfStale; staleGuard; bucketedOutputs } from '../../modules/common
 // exactly what BATCH_AA_FREQ/BATCH_CODON_FREQ (#20) actually write, or every
 // genome misclassifies as "todo" and gets recomputed regardless of what's
 // already on disk.
-def planFreq(ch, String subdir, String suffix) {
+def planFreq(ch, String subdir, String suffix, String keyField = 'locustag') {
     ch.map { meta, input ->
-        def out = bucketedOutputs(params.genome_stats_outdir as String, subdir, meta.locustag as String, [".${suffix}"])[0]
+        def out = bucketedOutputs(params.genome_stats_outdir as String, subdir, meta[keyField] as String, [".${suffix}"])[0]
         clearIfStale(input, [out])
         tuple(meta, input, out, out.exists())
     }
@@ -50,11 +50,11 @@ def planFreq(ch, String subdir, String suffix) {
     }
 }
 
-// Collate the not-yet-computed genomes into freq_batch_size jobs.
-def batchFreq(todo_ch) {
+// Collate the not-yet-computed genomes into jobs of batch_size genomes.
+def batchFreq(todo_ch, int batch_size = params.freq_batch_size as int) {
     todo_ch
         .map { meta, input, _out, _cached -> tuple(meta, input) }
-        .buffer(size: params.freq_batch_size as int, remainder: true)
+        .buffer(size: batch_size, remainder: true)
         .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }) }
 }
 
@@ -101,10 +101,14 @@ workflow BFD_GENOME_STATS {
             bucketedOutputs(stats, 'asm_stats', m.asmid as String, ['.stats.txt'])
         }))
 
-    if (params.run_telomeres.toBoolean())
-        FIND_TELOMERES(staleGuard(telomeres_ch, { m ->
-            bucketedOutputs(stats, 'telomeres', m.asmid as String, ['.telomeres.tsv.gz'])
-        }))
+    // Telomeres are batched (several seconds per genome, a few minutes for
+    // fragmented assemblies). Keyed by ASMID; new telomeres_v2 directory so the
+    // old single-method results are not reused.
+    def telomere_plan = null
+    if (params.run_telomeres.toBoolean()) {
+        telomere_plan = planFreq(telomeres_ch, 'telomeres_v2', 'telomeres.tsv.gz', 'asmid')
+        BATCH_TELOMERES(batchFreq(telomere_plan.todo, params.telomere_batch_size as int))
+    }
 
     if (params.run_busco_genome.toBoolean())
         BUSCO_GENOME(staleGuard(busco_genome_ch, { m ->
@@ -125,7 +129,8 @@ workflow BFD_GENOME_STATS {
     codon_csv      = params.run_codon_freq.toBoolean()   ? BATCH_CODON_FREQ.out.csv : Channel.empty()
     intergenic_csv = params.run_intergenic.toBoolean()   ? CALC_INTERGENIC.out.csv  : Channel.empty()
     asm_stats      = params.run_asm_stats.toBoolean()    ? CALC_ASM_STATS.out.stats : Channel.empty()
-    telomeres      = params.run_telomeres.toBoolean()    ? FIND_TELOMERES.out.tsv   : Channel.empty()
+    telomeres_cached = telomere_plan ? telomere_plan.cached.map { it[2] } : Channel.empty()
+    telomeres      = params.run_telomeres.toBoolean()    ? BATCH_TELOMERES.out.tsv  : Channel.empty()
     busco_genome   = params.run_busco_genome.toBoolean() ? BUSCO_GENOME.out.summary : Channel.empty()
     gene_stats     = params.run_gene_stats.toBoolean()
         ? CALC_GENE_STATS.out.gene_info
