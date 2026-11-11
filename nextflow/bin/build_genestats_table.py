@@ -66,7 +66,9 @@ def parse_gff(gff, dna="", codon_table=1, debug=False):
         # consider index_db and compressed bgz fasta for speed/space?
         # dnadb = SeqIO.index_db(dna + ".idx",dna,format='fasta')
         # dnadb = SeqIO.index(dna,format='fasta')
-        dnadb = Fasta(dna)
+        # Upper-case on read: soft-masked genomes have lower-case bases, and the
+        # ATG / stop-codon checks and the CDS md5 are case-sensitive.
+        dnadb = Fasta(dna, sequence_always_upper=True)
     tRNA_gff = os.path.join(os.path.dirname(os.path.realpath(gff)), 
                             "../predict_misc/trnascan.no-overlaps.gff3")
     temp_tRNA = None
