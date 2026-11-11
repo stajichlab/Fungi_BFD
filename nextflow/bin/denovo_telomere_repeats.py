@@ -29,6 +29,7 @@ import argparse
 import csv
 import gzip
 import random
+import re
 import sys
 from collections import Counter, defaultdict
 
@@ -79,11 +80,26 @@ def read_fasta(path):
 
 
 def detect(seq: str, pmin: int, pmax: int, purity: float, tol: int,
-           min_len: int):
-    """Return (period, start, end, unit, purity) or None for one end window.
+           min_len: int, kmer_fallback: bool = True):
+    """Return (period, start, end, unit, purity, method) or None.
 
-    ``seq`` is read from the edge inward, upper case.
+    ``seq`` is read from the edge inward, upper case. ``method`` is
+    ``periodic`` (fixed-period match) or ``kmer_runs`` (fallback for repeats
+    broken by insertions or deletions; ``purity`` is then the covered fraction
+    of the first 300 bp).
     """
+    r = _detect_periodic(seq, pmin, pmax, purity, tol, min_len)
+    if r:
+        return r + ("periodic",)
+    if kmer_fallback:
+        r = detect_kmer_runs(seq, pmin, min(pmax, 12), tol)
+        if r:
+            return r + ("kmer_runs",)
+    return None
+
+
+def _detect_periodic(seq: str, pmin: int, pmax: int, purity: float, tol: int,
+                     min_len: int):
     a = CODE[np.frombuffer(seq.encode(), dtype=np.uint8)]
     n = len(a)
     best = None
@@ -130,6 +146,43 @@ def detect(seq: str, pmin: int, pmax: int, purity: float, tol: int,
     return len(unit), i0, end, unit, round(best_match, 3)
 
 
+def detect_kmer_runs(seq: str, kmin: int, kmax: int, tol: int,
+                     span: int = 300, min_cover: float = 0.3,
+                     min_copies: int = 3, min_unit: int = 4):
+    """Fallback for repeats broken by insertions or deletions.
+
+    Count the bases of the first ``span`` bp covered by exact tandem runs
+    (>= ``min_copies`` copies) of one unit and its rotations/strand, and return
+    the unit with the highest coverage when it is >= ``min_cover`` and the
+    first run starts within ``tol`` bp of the edge.
+    Returns (period, start, end, unit, coverage) or None.
+    """
+    head = seq[:span + tol]
+    best = None
+    for k in range(kmin, kmax + 1):
+        pat = re.compile(r"([ACGT]{%d})\1{%d,}" % (k, min_copies - 1))
+        cover = defaultdict(int)
+        first = {}
+        last = {}
+        for m in pat.finditer(head):
+            unit = primitive(m.group(1))
+            if len(unit) < min_unit or len(set(unit)) < 2:
+                continue
+            cu = canonical(unit)
+            lo, hi = m.start(), min(m.end(), span)
+            if hi > lo:
+                cover[cu] += hi - lo
+            first.setdefault(cu, m.start())
+            last[cu] = m.end()
+        for cu, c in cover.items():
+            if first[cu] <= tol and (best is None or c > best[0]):
+                best = (c, cu, first[cu], last[cu])
+    if best is None or best[0] / span < min_cover:
+        return None
+    c, cu, start, end = best
+    return len(cu), start, end, cu, round(c / span, 3)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -150,6 +203,8 @@ def main(argv=None):
     ap.add_argument("--min-ends", type=int, default=2,
                     help="ends needed before a unit is called a candidate")
     ap.add_argument("--min-enrichment", type=float, default=5.0)
+    ap.add_argument("--no-kmer-fallback", action="store_true",
+                    help="disable the indel-tolerant k-mer run fallback")
     ap.add_argument("--seed", type=int, default=1)
     args = ap.parse_args(argv)
 
@@ -163,7 +218,8 @@ def main(argv=None):
             scaffolds.append((name, seq.upper()))
 
     det = dict(pmin=args.min_period, pmax=args.max_period,
-               purity=args.purity, tol=args.tolerance, min_len=args.min_length)
+               purity=args.purity, tol=args.tolerance, min_len=args.min_length,
+               kmer_fallback=not args.no_kmer_fallback)
 
     ends_rows = []
     unit_ends = defaultdict(list)
@@ -179,12 +235,12 @@ def main(argv=None):
                 biased += 1
             r = detect(win, **det)
             if r:
-                period, i0, end, unit, pur = r
+                period, i0, end, unit, pur, method = r
                 cu = canonical(unit)
                 unit_ends[cu].append(end - i0)
                 ends_rows.append([asmid, name, len(seq), end_name, cu, unit,
                                   period, i0, end, end - i0, pur,
-                                  round(ca, 3)])
+                                  round(ca, 3), method])
 
     # Background: random internal windows read in a random orientation.
     long_scaf = [(n, s) for n, s in scaffolds if len(s) >= 4 * W]
@@ -207,7 +263,7 @@ def main(argv=None):
         w = csv.writer(fh, delimiter="\t", lineterminator="\n")
         w.writerow(["ASMID", "scaffold", "scaffold_len", "end", "unit_canonical",
                     "unit_observed", "period", "start", "end_coord",
-                    "tract_length", "purity", "ca_frac_100"])
+                    "tract_length", "purity", "ca_frac_100", "method"])
         w.writerows(ends_rows)
 
     cols = ["ASMID", "unit", "period", "n_ends", "n_ends_examined", "frac_ends",

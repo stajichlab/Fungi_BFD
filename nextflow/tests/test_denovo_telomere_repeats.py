@@ -36,3 +36,18 @@ def test_random_sequence_gives_nothing():
 
 def test_repeat_far_from_edge_is_ignored():
     assert d.detect(rnd(500) + "TTAGGG" * 30 + rnd(500), **DET) is None
+
+
+def test_kmer_fallback_finds_indel_interrupted_repeat():
+    # TACC runs of 5 copies separated by 9-bp AT-rich insertions of varying
+    # length: the fixed-period match fails, the run-coverage fallback works.
+    gaps = ["AATATTAAT", "TATAATATTAA", "ATTATAATA", "AATTATATATA", "TAATATTAT"]
+    seq = "".join("TACC" * 6 + g for g in gaps * 3) + rnd(1500)
+    assert d._detect_periodic(seq, 4, 40, 0.85, 50, 60) is None
+    r = d.detect(seq, **DET)
+    assert r and r[5] == "kmer_runs" and r[3] == d.canonical("TACC")
+
+
+def test_kmer_fallback_ignores_random_sequence():
+    for seed in range(50):
+        assert d.detect(rnd(2000, seed), **DET) is None
