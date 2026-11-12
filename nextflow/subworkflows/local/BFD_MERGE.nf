@@ -69,6 +69,7 @@ workflow BFD_MERGE {
     intergenic_csv
     gene_stats
     asm_stats
+    telomeres_cached // genomes whose telomere output predates this run
     telomeres
     busco_genome
     functional_sync // BFD_FUNCTIONAL.out.sync -- gates BUILD_DUCKDB on the
@@ -156,8 +157,9 @@ workflow BFD_MERGE {
         merge_outs << MERGE_ASM_STATS.out.parquet
     }
 
-    def telomeres_in = statsManifest(use_glob, params.run_telomeres.toBoolean(), telomeres, telomeres,
-        "telomeres/**/*.telomeres.tsv.gz", 'telomeres.manifest.txt',
+    def telomeres_in = statsManifest(use_glob, params.run_telomeres.toBoolean(), telomeres,
+        telomeres_cached.mix(telomeres.flatten()),
+        "telomeres_v2/**/*.telomeres.tsv.gz", 'telomeres.manifest.txt',
         'MERGE_TELOMERES', ['telomere_summary.parquet', 'telomere_tracts.parquet'], [params.samples])
     if (telomeres_in) {
         MERGE_TELOMERES(telomeres_in, file(params.samples))

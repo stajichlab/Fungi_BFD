@@ -163,6 +163,7 @@ workflow BFD {
             BFD_GENOME_STATS.out.intergenic_csv,
             BFD_GENOME_STATS.out.gene_stats,
             BFD_GENOME_STATS.out.asm_stats,
+            BFD_GENOME_STATS.out.telomeres_cached,
             BFD_GENOME_STATS.out.telomeres,
             BFD_GENOME_STATS.out.busco_genome,
             BFD_FUNCTIONAL.out.sync,
