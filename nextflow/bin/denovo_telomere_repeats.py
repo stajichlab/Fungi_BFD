@@ -15,7 +15,8 @@ several scaffold ends and is rare at internal positions.
 
 Outputs (the first is gzip-compressed when the name ends in .gz):
   --ends-out     one row per scaffold end examined that has a tandem tract
-  --summary-out  one row per candidate unit with end counts and enrichment, plus
+  --summary-out  one row per candidate unit with end counts, enrichment and
+                 polarity (share of ends in one orientation), plus
                  a per-genome status row (unit = '.')
 
 Irregular repeats (for example Saccharomyces TG1-3) have no fixed period. They
@@ -59,6 +60,32 @@ def canonical(u: str) -> str:
         return sum(c in "GT" for c in x) - sum(c in "CA" for c in x)
     s = rc(u) if gt_minus_ca(rc(u)) > gt_minus_ca(u) else u
     return min(s[i:] + s[:i] for i in range(len(s)))
+
+
+def _rotations(u: str) -> set:
+    return {u[i:] + u[:i] for i in range(len(u))}
+
+
+def orientation(observed: str, canon: str) -> str:
+    """'fwd' if the observed unit is a rotation of canon, 'rev' if of its
+    reverse complement, 'amb' if both, 'none' if neither."""
+    f = canon in _rotations(observed)
+    r = canon in _rotations(rc(observed))
+    return "amb" if (f and r) else "fwd" if f else "rev" if r else "none"
+
+
+def polarity(observed_units, canon: str):
+    """Share of ends in the majority orientation, or None if no end has a
+    defined orientation.
+
+    Every end is read from the edge inward (the 3' end is reverse-complemented),
+    so a telomere shows one orientation at all ends: ~1.0. Sequence that is not
+    strand-polar (for example AT-rich low-complexity repeats at contig ends)
+    gives ~0.5. With few ends the value is weakly informative.
+    """
+    c = Counter(orientation(o, canon) for o in observed_units)
+    n = c["fwd"] + c["rev"]
+    return max(c["fwd"], c["rev"]) / n if n else None
 
 
 def open_text(path):
@@ -223,6 +250,7 @@ def main(argv=None):
 
     ends_rows = []
     unit_ends = defaultdict(list)
+    unit_obs = defaultdict(list)
     n_ends = 0
     biased = 0
     for name, seq in scaffolds:
@@ -238,6 +266,7 @@ def main(argv=None):
                 period, i0, end, unit, pur, method = r
                 cu = canonical(unit)
                 unit_ends[cu].append(end - i0)
+                unit_obs[cu].append(unit)
                 ends_rows.append([asmid, name, len(seq), end_name, cu, unit,
                                   period, i0, end, end - i0, pur,
                                   round(ca, 3), method])
@@ -268,7 +297,7 @@ def main(argv=None):
 
     cols = ["ASMID", "unit", "period", "n_ends", "n_ends_examined", "frac_ends",
             "median_tract_len", "bg_windows", "bg_hits", "enrichment",
-            "strand_biased_ends", "status"]
+            "polarity", "strand_biased_ends", "status"]
     rows = []
     for cu, lens in sorted(unit_ends.items(), key=lambda kv: -len(kv[1])):
         k = len(lens)
@@ -283,9 +312,10 @@ def main(argv=None):
             enrich = end_rate / (bg / bg_n)
             called = k >= args.min_ends and enrich >= args.min_enrichment
         med = sorted(lens)[k // 2]
+        pol = polarity(unit_obs[cu], cu)
         rows.append([asmid, cu, len(cu), k, n_ends, round(end_rate, 3), med,
                      bg_n, bg, "bg0" if enrich is None else round(enrich, 1),
-                     biased, "candidate" if called else "weak"])
+                     "NA" if pol is None else round(pol, 3), biased, "candidate" if called else "weak"])
     called_any = any(r[-1] == "candidate" for r in rows)
     if called_any:
         status = "repeat_found"
@@ -295,7 +325,7 @@ def main(argv=None):
         status = "no_scaffolds"
     else:
         status = "no_terminal_repeat"
-    rows.append([asmid, ".", 0, 0, n_ends, 0, 0, bg_n, 0, "NA", biased, status])
+    rows.append([asmid, ".", 0, 0, n_ends, 0, 0, bg_n, 0, "NA", "NA", biased, status])
     with open(args.summary_out, "w", newline="") as fh:
         w = csv.writer(fh, delimiter="\t", lineterminator="\n")
         w.writerow(cols)

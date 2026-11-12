@@ -9,14 +9,14 @@ st = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(st)
 
 HDR = ("ASMID\tunit\tperiod\tn_ends\tn_ends_examined\tfrac_ends\tmedian_tract_len\t"
-       "bg_windows\tbg_hits\tenrichment\tstrand_biased_ends\tstatus\n")
+       "bg_windows\tbg_hits\tenrichment\tpolarity\tstrand_biased_ends\tstatus\n")
 
 
-def write_denovo(dirpath, asmid, cand_unit, n_ends, status, biased=0):
+def write_denovo(dirpath, asmid, cand_unit, n_ends, status, biased=0, pol=1.0):
     rows = HDR
     if cand_unit:
-        rows += f"{asmid}\t{cand_unit}\t{len(cand_unit)}\t{n_ends}\t20\t0.5\t100\t300\t0\tbg0\t{biased}\tcandidate\n"
-    rows += f"{asmid}\t.\t0\t0\t20\t0\t0\t300\t0\tNA\t{biased}\t{status}\n"
+        rows += f"{asmid}\t{cand_unit}\t{len(cand_unit)}\t{n_ends}\t20\t0.5\t100\t300\t0\tbg0\t{pol}\t{biased}\tcandidate\n"
+    rows += f"{asmid}\t.\t0\t0\t20\t0\t0\t300\t0\tNA\tNA\t{biased}\t{status}\n"
     (dirpath / f"{asmid}.telomere_denovo.tsv").write_text(rows)
 
 
@@ -37,8 +37,15 @@ def test_calls(tmp_path):
     assert st.telomere_call(0, d) == "denovo_found"
     assert st.telomere_call(5, d) == "motif_found"
 
-    write_denovo(tmp_path, "S", "ATT", 30, "repeat_found")
-    assert st.telomere_call(0, st.load_denovo(tract_path(tmp_path, "S"))) == "short_unit_only"
+    write_denovo(tmp_path, "S", "ATT", 30, "repeat_found", pol=0.52)
+    assert st.telomere_call(0, st.load_denovo(tract_path(tmp_path, "S"))) == "short_unit_nonpolar"
+
+    write_denovo(tmp_path, "P", "CT", 12, "repeat_found", pol=1.0)
+    assert st.telomere_call(0, st.load_denovo(tract_path(tmp_path, "P"))) == "short_unit_polar"
+
+    # Too few ends: polarity is not informative.
+    write_denovo(tmp_path, "F", "ATT", 3, "repeat_found", pol=0.33)
+    assert st.telomere_call(0, st.load_denovo(tract_path(tmp_path, "F"))) == "short_unit_few_ends"
 
     write_denovo(tmp_path, "B", None, 0, "strand_biased_only", biased=4)
     d = st.load_denovo(tract_path(tmp_path, "B"))

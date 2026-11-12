@@ -79,7 +79,7 @@ process BATCH_TELOMERES {
         """
         mkdir -p ${bucket}
         printf 'scaffold\\tend\\tstrand\\tmonomer\\trepeat_count\\ttract_length\\tstart\\tend_coord\\tterminal\\tdistance_to_end\\ttract_seq\\tflank_seq\\nscaffold_1\\t5prime\\t+\\tTTAGGG\\t12\\t72\\t0\\t72\\tTrue\\t0\\tttagggttagggttaggg\\tACGT\\n' | gzip -n > ${bucket}/${asmid}.telomeres.tsv.gz
-        printf 'ASMID\\tunit\\tperiod\\tn_ends\\tn_ends_examined\\tfrac_ends\\tmedian_tract_len\\tbg_windows\\tbg_hits\\tenrichment\\tstrand_biased_ends\\tstatus\\n${asmid}\\t.\\t0\\t0\\t2\\t0\\t0\\t0\\t0\\tNA\\t0\\tno_terminal_repeat\\n' > ${bucket}/${asmid}.telomere_denovo.tsv
+        printf 'ASMID\\tunit\\tperiod\\tn_ends\\tn_ends_examined\\tfrac_ends\\tmedian_tract_len\\tbg_windows\\tbg_hits\\tenrichment\\tpolarity\\tstrand_biased_ends\\tstatus\\n${asmid}\\t.\\t0\\t0\\t2\\t0\\t0\\t0\\t0\\tNA\\tNA\\t0\\tno_terminal_repeat\\n' > ${bucket}/${asmid}.telomere_denovo.tsv
         printf 'ASMID\\tscaffold\\tscaffold_len\\tend\\tunit_canonical\\tunit_observed\\tperiod\\tstart\\tend_coord\\ttract_length\\tpurity\\tca_frac_100\\tmethod\\n' | gzip -n > ${bucket}/${asmid}.telomere_denovo_ends.tsv.gz
         """.stripIndent()
     }.join('\n') }

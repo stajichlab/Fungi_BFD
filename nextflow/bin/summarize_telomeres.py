@@ -48,6 +48,7 @@ SUMMARY_COLUMNS = [
     "telomere_denovo_status",
     "telomere_denovo_unit",
     "telomere_denovo_unit_len",
+    "telomere_denovo_polarity",
     "telomere_denovo_n_ends",
     "telomere_denovo_ends_examined",
     "telomere_denovo_strand_biased_ends",
@@ -56,6 +57,12 @@ SUMMARY_COLUMNS = [
 # Units this short are common low-complexity sequence; they are reported apart
 # from longer units until checked against long-read or literature evidence.
 SHORT_UNIT_MAX = 3
+# A real telomere read inward from the edge shows one orientation at all ends.
+# In 47 trial genomes where both methods agreed (unit >= 5 bp, >= 8 ends) the
+# share in the majority orientation was >= 0.87. Below POLARITY_MIN, with at
+# least POLARITY_MIN_ENDS ends, a short unit is treated as non-polar.
+POLARITY_MIN = 0.80
+POLARITY_MIN_ENDS = 5
 
 TRACT_COLUMNS = [
     "tract_id", "ASMID", "LOCUSTAG",
@@ -222,6 +229,9 @@ def load_denovo(tract_path):
         "telomere_denovo_status": status_row.get("status", ""),
         "telomere_denovo_unit": top["unit"] if top else "",
         "telomere_denovo_unit_len": len(top["unit"]) if top else "",
+        "telomere_denovo_polarity": (
+            "" if not top or top.get("polarity") in (None, "", "NA")
+            else float(top["polarity"])),
         "telomere_denovo_n_ends": parse_int(top["n_ends"]) if top else 0,
         "telomere_denovo_ends_examined": parse_int(status_row.get("n_ends_examined")),
         "telomere_denovo_strand_biased_ends": parse_int(status_row.get("strand_biased_ends")),
@@ -233,7 +243,12 @@ def telomere_call(n_motif_tracts, denovo):
 
     motif_found          known-motif tract(s) found
     denovo_found         de novo repeat unit of >= 4 bp at >= min_ends ends
-    short_unit_only      only a unit of <= 3 bp (unverified; may be low complexity)
+    short_unit_nonpolar  only a unit of <= 3 bp at >= 5 ends with polarity < 0.80;
+                         likely low-complexity sequence at contig ends
+    short_unit_polar     only a unit of <= 3 bp at >= 5 ends with polarity >= 0.80;
+                         unresolved (may be a microsatellite or a real repeat)
+    short_unit_few_ends  only a unit of <= 3 bp at < 5 ends; polarity is not
+                         informative
     strand_biased_only   strongly strand-biased ends, no fixed-period unit
     no_terminal_repeat   neither method found a terminal repeat
     ""                   de novo step did not run for this genome
@@ -245,7 +260,13 @@ def telomere_call(n_motif_tracts, denovo):
         return ""
     if status == "repeat_found":
         unit_len = denovo.get("telomere_denovo_unit_len") or 0
-        return "short_unit_only" if unit_len <= SHORT_UNIT_MAX else "denovo_found"
+        if unit_len > SHORT_UNIT_MAX:
+            return "denovo_found"
+        pol = denovo.get("telomere_denovo_polarity")
+        n_ends = denovo.get("telomere_denovo_n_ends") or 0
+        if n_ends < POLARITY_MIN_ENDS or not isinstance(pol, float):
+            return "short_unit_few_ends"
+        return "short_unit_nonpolar" if pol < POLARITY_MIN else "short_unit_polar"
     if status == "strand_biased_only":
         return "strand_biased_only"
     return "no_terminal_repeat"
