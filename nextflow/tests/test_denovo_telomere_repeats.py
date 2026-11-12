@@ -51,3 +51,12 @@ def test_kmer_fallback_finds_indel_interrupted_repeat():
 def test_kmer_fallback_ignores_random_sequence():
     for seed in range(50):
         assert d.detect(rnd(2000, seed), **DET) is None
+
+
+def test_polarity_consistent_vs_mixed():
+    can = d.canonical("TTAGGG")
+    same = ["CCCTAA"] * 6 + ["TAACCC"]          # one strand, different rotations
+    assert d.polarity(same, can) == 1.0
+    mixed = ["ATT"] * 5 + ["AAT"] * 5
+    assert abs(d.polarity(mixed, d.canonical("ATT")) - 0.5) < 1e-9
+    assert d.polarity([], can) is None

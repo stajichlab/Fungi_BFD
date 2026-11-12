@@ -29,7 +29,7 @@ process MERGE_TELOMERES {
 
     stub:
     """
-    printf 'ASMID\tLOCUSTAG\tSPECIES\tSTRAIN\ttelomere_scaffolds\ttelomere_scaffolds_both_ends\ttelomere_tracts\ttelomere_total_length_bp\ttelomere_total_repeats\ttelomere_5prime_count\ttelomere_3prime_count\ttelomere_plus_count\ttelomere_minus_count\ttelomere_terminal_count\ttelomere_internal_count\ttelomere_top_monomer\ttelomere_monomers\ttelomere_call\ttelomere_denovo_status\ttelomere_denovo_unit\ttelomere_denovo_unit_len\ttelomere_denovo_n_ends\ttelomere_denovo_ends_examined\ttelomere_denovo_strand_biased_ends\n' | gzip > telomere_summary.tsv.gz
+    printf 'ASMID\tLOCUSTAG\tSPECIES\tSTRAIN\ttelomere_scaffolds\ttelomere_scaffolds_both_ends\ttelomere_tracts\ttelomere_total_length_bp\ttelomere_total_repeats\ttelomere_5prime_count\ttelomere_3prime_count\ttelomere_plus_count\ttelomere_minus_count\ttelomere_terminal_count\ttelomere_internal_count\ttelomere_top_monomer\ttelomere_monomers\ttelomere_call\ttelomere_denovo_status\ttelomere_denovo_unit\ttelomere_denovo_unit_len\ttelomere_denovo_polarity\ttelomere_denovo_n_ends\ttelomere_denovo_ends_examined\ttelomere_denovo_strand_biased_ends\n' | gzip > telomere_summary.tsv.gz
     printf 'tract_id\tASMID\tLOCUSTAG\tscaffold\tend_type\tstrand\tmonomer\trepeat_count\ttract_length\tstart\tend_coord\tterminal\tdistance_to_end\ttract_seq\tflank_seq\n' | gzip > telomere_tracts.tsv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('telomere_summary.tsv.gz', delim='\\t', sample_size=-1)) TO 'telomere_summary.parquet' (FORMAT PARQUET);"
