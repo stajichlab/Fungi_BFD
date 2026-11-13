@@ -115,8 +115,28 @@ def test_publish_shrink_check_is_opt_in_and_overridable():
         assert result_override.returncode == 0, result_override.stderr
 
 
+def test_publish_shrink_accepted_when_equal_to_expected_rows():
+    # A one-row-per-genome table that shrinks to exactly the samples.csv count
+    # is a deliberate removal (suppress.txt), not a partial glob.
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        tables_dir = td / "tables"
+        tables_dir.mkdir()
+        big = td / "big.parquet"
+        make_fixture_parquet(big, "ASMID\tcomplete_pct\nA1\t1.0\nA2\t2.0\nA3\t3.0\n")
+        small = td / "small.parquet"
+        make_fixture_parquet(small, "ASMID\tcomplete_pct\nA1\t1.0\nA2\t2.0\n")
+        assert run_publish(big, tables_dir, "run-a", ["--enforce-no-shrink"]).returncode == 0
+        wrong = run_publish(small, tables_dir, "run-b", ["--enforce-no-shrink", "--expected-rows", "3"])
+        assert wrong.returncode != 0
+        ok = run_publish(small, tables_dir, "run-c", ["--enforce-no-shrink", "--expected-rows", "2"])
+        assert ok.returncode == 0, ok.stderr
+        assert "shrink accepted" in ok.stdout
+
+
 if __name__ == "__main__":
     test_publish_writes_parquet_and_manifest_atomically()
     test_publish_rejects_empty_parquet()
     test_publish_shrink_check_is_opt_in_and_overridable()
+    test_publish_shrink_accepted_when_equal_to_expected_rows()
     print("All tests passed.")

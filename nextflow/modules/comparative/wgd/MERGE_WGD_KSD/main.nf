@@ -14,6 +14,15 @@
 //                            analysis columns, keyed by species_prefix (LOCUSTAG)
 //                            + genome (sampletag). NULLs for pairs with no valid
 //                            Ka/Ks estimate (~43% of rows).
+//                            Pairs with dS > params.wgd_max_ds (saturated) and, with
+//                            params.wgd_drop_null_ds, pairs with no dS are dropped here;
+//                            Pairs with fewer than params.wgd_min_codons codons left after
+//                            wgd's family-wide gap stripping are dropped too (dS from 1-2
+//                            codons is unreliable). alignmentcoverage, alignmentidentity and
+//                            strippedalignmentlength are kept. The raw ks.tsv is not changed.
+//                            With wgd ksd --pairwise or WGD_PAIR_KS (params.wgd_ks_method) the family-level
+//                            columns are constants, so the gate is params.wgd_min_pair_codons on
+//                            pair_codons = (N+S)/3, a column added here.
 //   wgd.ks.summary.parquet— per-genome counts: n_pairs, n_pairs_with_ds, n_families
 include { tablesDir } from '../../../common/utils.nf'
 
@@ -26,21 +35,38 @@ process MERGE_WGD_KSD {
     input:
     val(outdir)  // absolute path of params.outdir; completion gate only
     path(sync)   // completion gate only; data is globbed off disk
+    val(n_expected) // genomes selected in this invocation; merge stops with an error if fewer ks tables exist
 
     output:
     path("wgd.ks.parquet"),         emit: ks_table
     path("wgd.ks.summary.parquet"), emit: ks_summary
+    path("wgd.ks.check.txt"),       emit: check
+    path("wgd.ks.nodes.parquet"),   emit: nodes_table, optional: true
 
     script:
+    // params.wgd_speedups = false: no dS cut, no pair-codon gate, no dS-null drop (all pairs kept).
+    def fast     = params.wgd_speedups.toString().toBoolean()
+    def max_ds   = (fast && params.wgd_max_ds) ? "--max-ds ${params.wgd_max_ds}" : ''
+    def min_cod  = params.wgd_min_codons ? "--min-codons ${params.wgd_min_codons}" : ''
+    def min_pcod = (fast && params.wgd_min_pair_codons) ? "--min-pair-codons ${params.wgd_min_pair_codons}" : ''
+    def sub      = [pair: (fast ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'), ksd_pairwise: 'wgd_ksd_pw', ksd: 'wgd_ksd'][params.wgd_ks_method]
+    // per-node table: only for the pair method with node sampling (wgd_pair_ks.py writes the nodes files)
+    def nodes    = (params.wgd_ks_method == 'pair' && fast && (params.wgd_node_sample as int) > 0) ? '--nodes-out wgd.ks.nodes.parquet' : ''
+    def drop_nul = (fast && params.wgd_drop_null_ds.toString().toBoolean()) ? '--drop-null-ds' : ''
     """
     python3 ${projectDir}/bin/merge_wgd_ks.py \
-        --glob '${outdir}/wgd_ksd/*/*.ks.tsv' \
+        --glob '${outdir}/${sub}/*.ks.tsv*' '${outdir}/${sub}/*/*.ks.tsv*' \
+        --failed-glob '${outdir}/${sub}/*.failed.txt' \
+        --expected-genomes ${n_expected} \
+        --check-out wgd.ks.check.txt \
+        ${nodes} \
         -o wgd.ks.parquet \
-        -s wgd.ks.summary.parquet
+        -s wgd.ks.summary.parquet \
+        ${max_ds} ${min_cod} ${min_pcod} ${drop_nul}
     """
 
     stub:
     """
-    touch wgd.ks.parquet wgd.ks.summary.parquet
+    touch wgd.ks.parquet wgd.ks.summary.parquet; echo OK > wgd.ks.check.txt
     """
 }

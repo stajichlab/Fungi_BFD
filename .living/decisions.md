@@ -778,3 +778,15 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Consequences**: All four fixes committed to `main` (`86f537c`, `31282d6`, `a63348f`, `191ab3a`), not yet pushed. Each verified via `nextflow run main.nf --pipeline funannotate --help` (a full DSL2 strict-parser compile of the whole include chain touched by these changes) plus targeted checks (real mtime comparisons against known species, a live MariaDB schema-load test against the funannotate container). The `FUNANNOTATE_PREDICTION`/`FUNANNOTATE_ANNOTATION` consolidation remains open; revisit only if (a) actual slow DAG-construction/launch time is observed and traced to the rescan, or (b) a concrete double-annotation or missing-annotation case is observed (the correctness angle, independent of performance, since the "disjoint by construction" claim is currently false).
 
 **Tags**: funannotate, pasa, mariadb, mysql, latin1, storeDir, slurm, resubmission, train_todo, train_done, branch, stale, staleRnaseq, staleGenome, dedup, decision
+
+## 2026-11-04 — Pin funannotate 1.9.1 release for all funannotate processes
+
+**Context**: funannotate 1.9.1 was released (registry tag `ghcr.io/nextgenusfs/funannotate:v1.9.1`, confirmed in the ghcr tag list on 2026-11-04).
+
+**Decision** (user choice): point both `funannotate_sif` (was `funannotate-1.9.0-rc.6.sif`) and `funannotate_predict_sif` (was the local overlay `funannotate-1.9.1-beta.2.sif`) at `${params.singularity_cache}/funannotate-1.9.1.sif`. Updated `nextflow/conf/profile_funannotate.config` and the `PINNED_SIFS` row in `nextflow/bin/setup_singularity_cache.sh`.
+
+**Alternatives considered**: predict-only or funannotate_sif-only update, to keep `-resume` caches valid.
+
+**Consequences**: The path is in the script text of ANNOTATE, TRINITY_STANDALONE, RNASEQ_PREPARE, TRAIN, UPDATE and PREDICT, so `-resume` reruns their cached work-dir tasks (storeDir outputs are not affected by the hash). The SIF is not built yet; build it before the next run: `apptainer build $SINGULARITY_CACHE/funannotate-1.9.1.sif docker://ghcr.io/nextgenusfs/funannotate:v1.9.1`. Feature gates in TRAIN/PREDICT probe the image `--help`, not the file name, so no gate code changed. Not yet run on BFD with 1.9.1.
+
+**Tags**: funannotate, apptainer, sif, container, version-pin, resume, decision

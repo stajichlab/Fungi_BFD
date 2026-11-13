@@ -56,6 +56,7 @@ def setupBindSourceDirs() {
 }
 
 workflow {
+    main:
     setupBindSourceDirs()
 
     if (!params.pipeline) {
@@ -111,4 +112,17 @@ workflow {
               "  setup_symlinks — only run SETUP_SYMLINKS (input/ symlinking), skip all downstream steps\n" +
               "  paralogoscope — per-species WGD duplication dating via wgd (dmd -> ksd [+ syn])"
     }
+    onComplete:
+    // Paralogoscope: summarise failed and ignored tasks so a dropped task is never silent.
+    if (params.pipeline == 'paralogoscope') {
+        def ign  = workflow.stats.ignoredCount
+        def fail = workflow.stats.failedCount
+        if (!workflow.success || ign > 0 || fail > 0) {
+            log.error "PARALOGOSCOPE finished with success=${workflow.success}, failed tasks=${fail}, ignored tasks=${ign}. " +
+                      "Check ${workflow.launchDir}/.nextflow.log and tables/wgd.ks.check.txt; rerun with -resume to redo failed tasks."
+        } else {
+            log.info "PARALOGOSCOPE: all tasks succeeded (failed=0, ignored=0)."
+        }
+    }
 }
+

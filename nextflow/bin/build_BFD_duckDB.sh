@@ -14,8 +14,9 @@
 # post-hoc extraction from this master DB (EXTRACT_BFD_TAXONOMIC_SUBSET,
 # tracked separately), not a build-time option here.
 #
-# Full rebuild every run (rm -f "$DB" + CREATE TABLE AS SELECT), same as
-# before Parquet -- no incremental upsert, per §D.1's decision.
+# Full rebuild every run (rm -f "$DB"), no incremental upsert, per §D.1.
+# Since 2026-11-07 the DB holds VIEWs over tables/*.parquet (absolute paths),
+# not copies; only swissprot_subject (575k rows) is materialized.
 
 set -euo pipefail
 
@@ -44,9 +45,8 @@ echo "Building $DB from $SRC"
 # ─── species / asm_stats / busco_genome: schema-contract-driven VIEWs ───────
 # These three are VIEWs over tables/*.parquet, not materialized copies -- see
 # sql/table_schema.json and
-# docs/superpowers/specs/2026-09-09-bfd-duckdb-datalake-design.md. Everything
-# below this block is still a materialized CREATE TABLE copy (fast-follow
-# migrates the rest to the same pattern).
+# docs/superpowers/specs/2026-09-09-bfd-duckdb-datalake-design.md. The other
+# types below use the same VIEW pattern (mkview).
 BIN_DIR="${BIN_DIR:?BIN_DIR must be set to an absolute path to nextflow/bin}"
 SCHEMA="${SCHEMA:?SCHEMA must be set to an absolute path to sql/table_schema.json}"
 # A VIEW's read_parquet('...') path is evaluated at *query* time by whatever
@@ -60,39 +60,63 @@ python3 "$BIN_DIR/generate_bfd_catalog_sql.py" --schema "$SCHEMA" --tables-dir "
 duckdb "$DB" < "$CATALOG_SQL"
 rm -f "$CATALOG_SQL"
 
+# ─── per-type VIEWs over tables/*.parquet ─────────────────────────────────────
+# Changed 2026-11-07: every table below is a VIEW, not a CREATE TABLE copy.
+# The copies made db/BFD.duckdb 394 GB for ~127 GB of Parquet (2026-11-06
+# rebuild, job 31810018). A VIEW reads the Parquet at query time, so:
+#   - the paths are absolute ($SRC_ABS), and db/BFD.duckdb works only where
+#     tables/ is at the same path;
+#   - there are no ART indexes. Measured 2026-11-07 (16 threads, same
+#     queries): one genome in gene_proteins 8.5 s (views) vs 1.9 s (copies);
+#     one protein in pfam 15.9 vs 13.3 s; v_protein_annotation for one genome
+#     68.8 vs 54.5 s; v_species_summary 34.9 vs 30.0 s. Row-group pruning
+#     needs rows sorted by id: pfam.sql now writes ORDER BY protein_id (the
+#     2026-11-06 pfam.parquet was not sorted: 2,987 of 2,988 row groups overlap);
+#   - the UNIQUE indexes were also the duplicate-key check. That check is now
+#     an explicit query (check_unique), on by default; CHECK_UNIQUE=0 skips it.
+CHECK_UNIQUE="${CHECK_UNIQUE:-1}"
+
+# mkview NAME FILE REQUIRED [EXTRA_SELECT]
+#   REQUIRED=1: a missing FILE stops the build; 0: the view is skipped.
+mkview() {
+    local name=$1 file=$2 required=$3 extra=${4:-}
+    if [ ! -f "$SRC/$file" ]; then
+        if [ "$required" = 1 ]; then
+            echo "ERROR: $SRC/$file not found (required for $name)." >&2; exit 1
+        fi
+        echo "SKIP: $SRC/$file not found; $name view omitted."
+        return 0
+    fi
+    duckdb -c "CREATE VIEW $name AS SELECT *${extra:+, $extra} FROM read_parquet('$SRC_ABS/$file');" "$DB"
+}
+
+# check_unique NAME KEYCOLS -- fail the build when KEYCOLS repeat in NAME.
+check_unique() {
+    local name=$1 keys=$2
+    [ "$CHECK_UNIQUE" = 1 ] || return 0
+    duckdb -c "SELECT CASE WHEN count(*) > 0 THEN error('duplicate ($keys) in $name: ' || count(*) || ' keys') END
+               FROM (SELECT 1 FROM $name GROUP BY $keys HAVING count(*) > 1);" "$DB" >/dev/null \
+        || { echo "ERROR: duplicate keys ($keys) in $name" >&2; exit 1; }
+}
+has_view() {
+    [ "$(duckdb -csv -noheader -c "SELECT count(*) FROM duckdb_views() WHERE view_name = '$1'" "$DB")" = 1 ]
+}
+
 # ─── telomeres ────────────────────────────────────────────────────────────────
 # Produced by the dedicated telomere-finder pipeline (MERGE_TELOMERES), separate
 # from AAFTF's simple motif-count heuristic already embedded in asm_stats as
 # t2t_scaffolds/telomere_fwd/telomere_rev -- the two can and will disagree; this
 # is the detailed, per-tract-capable source. Both tables carry ASMID and
-# LOCUSTAG directly (looked up from samples.csv at merge time), rather than the
-# species_prefix-derived-from-id pattern used by gene_*/functional tables,
-# since there is no encoded id string to split here.
-if [ -f "$SRC/telomere_summary.parquet" ]; then
+# LOCUSTAG directly (looked up from samples.csv at merge time).
+mkview telomere_summary telomere_summary.parquet 0
+has_view telomere_summary && check_unique telomere_summary ASMID
+mkview telomere_tracts telomere_tracts.parquet 0
+if has_view telomere_tracts; then
+    check_unique telomere_tracts tract_id
+    # Scaffolds carrying a *terminal* tract on both ends -- the chromosome-
+    # completeness signal. terminal=true excludes interstitial telomeric
+    # sequences (ITS). Column is end_type, not end (END is reserved SQL).
     duckdb -c "
-CREATE TABLE telomere_summary AS
-SELECT * FROM read_parquet('$SRC/telomere_summary.parquet');
-CREATE UNIQUE INDEX idx_telosum_asmid    ON telomere_summary(ASMID);
-CREATE        INDEX idx_telosum_locustag ON telomere_summary(LOCUSTAG);
-" "$DB"
-else
-    echo "SKIP: $SRC/telomere_summary.parquet not found; telomere_summary table omitted."
-fi
-
-if [ -f "$SRC/telomere_tracts.parquet" ]; then
-    duckdb -c "
-CREATE TABLE telomere_tracts AS
-SELECT * FROM read_parquet('$SRC/telomere_tracts.parquet');
-CREATE UNIQUE INDEX idx_telotracts_id       ON telomere_tracts(tract_id);
-CREATE        INDEX idx_telotracts_asmid    ON telomere_tracts(ASMID);
-CREATE        INDEX idx_telotracts_locustag ON telomere_tracts(LOCUSTAG);
-CREATE        INDEX idx_telotracts_scaffold ON telomere_tracts(ASMID, scaffold);
-
--- Scaffolds carrying a *terminal* tract on both ends -- the chromosome-
--- completeness signal. terminal=true excludes interstitial telomeric
--- sequences (ITS), which would otherwise falsely register a scaffold as
--- capped on both ends. Column is end_type, not end -- END is a reserved
--- SQL keyword and 'end' would force every ad hoc query to quote it.
 CREATE VIEW v_telomere_both_ends AS
 SELECT ASMID, scaffold
 FROM telomere_tracts
@@ -100,123 +124,44 @@ WHERE terminal
 GROUP BY ASMID, scaffold
 HAVING count(DISTINCT end_type) = 2;
 " "$DB"
-else
-    echo "SKIP: $SRC/telomere_tracts.parquet not found; telomere_tracts table omitted."
 fi
 
 # ─── gene tables ──────────────────────────────────────────────────────────────
-duckdb -c "
-CREATE TABLE gene_info AS
-SELECT * FROM read_parquet('$SRC/gene_info.parquet');
-CREATE UNIQUE INDEX idx_gene_info_gene_id  ON gene_info(gene_id);
-CREATE        INDEX idx_gene_info_locustag ON gene_info(LOCUSTAG);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_proteins AS
-SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_proteins.parquet');
-CREATE UNIQUE INDEX idx_gene_prot_protein_id  ON gene_proteins(protein_id);
-CREATE        INDEX idx_gene_prot_locustag    ON gene_proteins(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_transcripts AS
-SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_transcripts.parquet');
-CREATE UNIQUE INDEX idx_tx_transcript_id ON gene_transcripts(transcript_id);
-CREATE        INDEX idx_tx_locustag      ON gene_transcripts(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_exons AS
-SELECT *, string_split(exon_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_exons.parquet');
-CREATE UNIQUE INDEX idx_exon_exon_id  ON gene_exons(exon_id);
-CREATE        INDEX idx_exon_locustag ON gene_exons(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_CDS AS
-SELECT *, string_split(cds_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_CDS.parquet');
-CREATE UNIQUE INDEX idx_cds_cds_id   ON gene_CDS(cds_id);
-CREATE        INDEX idx_cds_locustag ON gene_CDS(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_introns AS
-SELECT *, string_split(transcript_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_introns.parquet');
-CREATE UNIQUE INDEX idx_intron_intron_id  ON gene_introns(intron_id);
-CREATE        INDEX idx_intron_locustag   ON gene_introns(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE gene_trna AS
-SELECT *, string_split(gene_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/gene_trnas.parquet');
-CREATE UNIQUE INDEX idx_trna_gene_id  ON gene_trna(gene_id);
-CREATE        INDEX idx_trna_locustag ON gene_trna(species_prefix);
-" "$DB"
-
-# intergenic distances (large — only species_prefix index)
-duckdb -c "
-CREATE TABLE gene_intergenic_distances AS
-SELECT * FROM read_parquet('$SRC/gene_intergenic_distances.parquet');
-CREATE INDEX idx_intergenic_locustag ON gene_intergenic_distances(species_prefix);
-" "$DB"
+# Sequence text is not here: proteins and CDS are in seqdb/ (bgzip + faidx).
+mkview gene_info        gene_info.parquet        1
+mkview gene_proteins    gene_proteins.parquet    1 "string_split(protein_id,'_')[1] AS species_prefix"
+mkview gene_transcripts gene_transcripts.parquet 1 "string_split(transcript_id,'_')[1] AS species_prefix"
+mkview gene_exons       gene_exons.parquet       1 "string_split(exon_id,'_')[1] AS species_prefix"
+mkview gene_CDS         gene_CDS.parquet         1 "string_split(cds_id,'_')[1] AS species_prefix"
+mkview gene_introns     gene_introns.parquet     1 "string_split(transcript_id,'_')[1] AS species_prefix"
+mkview gene_trna        gene_trnas.parquet       1 "string_split(gene_id,'_')[1] AS species_prefix"
+mkview gene_intergenic_distances gene_intergenic_distances.parquet 1
+check_unique gene_info        gene_id
+check_unique gene_proteins    protein_id
+check_unique gene_transcripts transcript_id
+check_unique gene_exons       exon_id
+check_unique gene_CDS         cds_id
+check_unique gene_introns     intron_id
+check_unique gene_trna        gene_id
 
 # ─── functional annotation ────────────────────────────────────────────────────
-duckdb -c "
-CREATE TABLE pfam AS
-SELECT *, string_split(protein_id,'_')[1] AS species_prefix
-FROM read_parquet('$SRC/pfam.parquet');
-CREATE UNIQUE INDEX idx_pfam_domain_hit    ON pfam(protein_id, pfam_id, domain_num);
-CREATE        INDEX idx_pfam_locustag      ON pfam(species_prefix);
-CREATE        INDEX idx_pfam_pfam_id       ON pfam(pfam_id);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE cazy AS
-SELECT * FROM read_parquet('$SRC/cazy.cazymes_hmm.parquet');
-CREATE UNIQUE INDEX idx_cazy_hit        ON cazy(protein_id, HMM_id, s_start);
-CREATE        INDEX idx_cazy_locustag   ON cazy(species_prefix);
-CREATE        INDEX idx_cazy_hmm_id     ON cazy(HMM_id);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE cazy_overview AS
-SELECT * FROM read_parquet('$SRC/cazy.overview.parquet');
-CREATE UNIQUE INDEX idx_cazyov_protein_id ON cazy_overview(protein_id);
-CREATE        INDEX idx_cazyov_locustag   ON cazy_overview(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE merops AS
-SELECT * FROM read_parquet('$SRC/merops.parquet');
-CREATE        INDEX idx_merops_locustag  ON merops(species_prefix);
-CREATE        INDEX idx_merops_merops_id ON merops(merops_id);
-" "$DB"
+mkview pfam          pfam.parquet              1 "string_split(protein_id,'_')[1] AS species_prefix"
+mkview cazy          cazy.cazymes_hmm.parquet  1
+mkview cazy_overview cazy.overview.parquet     1
+mkview merops        merops.parquet            1
+mkview tf_inventory  tf_inventory.parquet      0
+check_unique pfam          "protein_id, pfam_id, domain_num"
+check_unique cazy          "protein_id, HMM_id, s_start"
+check_unique cazy_overview protein_id
 
 # ─── subcellular localisation / secretome ─────────────────────────────────────
-duckdb -c "
-CREATE TABLE signalp AS
-SELECT * FROM read_parquet('$SRC/signalp.signal_peptide.parquet');
-CREATE INDEX idx_signalp_locustag  ON signalp(species_prefix);
-CREATE INDEX idx_signalp_protein   ON signalp(protein_id);
-" "$DB"
+mkview signalp   signalp.signal_peptide.parquet 1
 
 # TargetP 2.0 is replaced by DeepLoc 2.1 (run_targetp=false in -profile BFD),
 # so targetP.parquet may be absent. Create an empty typed table then, so
 # v_protein_annotation still binds.
 if [ -f "$SRC/targetP.parquet" ]; then
-duckdb -c "
-CREATE TABLE targetp AS
-SELECT * FROM read_parquet('$SRC/targetP.parquet');
-CREATE INDEX idx_targetp_locustag ON targetp(species_prefix);
-CREATE INDEX idx_targetp_protein  ON targetp(protein_id);
-" "$DB"
+mkview targetp   targetP.parquet                1
 else
 duckdb -c "
 CREATE TABLE targetp(species_prefix VARCHAR, protein_id VARCHAR, prediction VARCHAR,
@@ -226,13 +171,10 @@ CREATE TABLE targetp(species_prefix VARCHAR, protein_id VARCHAR, prediction VARC
 fi
 
 # DeepLoc 2.1: one row per protein (~200 M rows at full scale), so this is a
-# VIEW over the Parquet file, not a copy (absolute path; see SRC_ABS above).
-# Empty typed table when deeploc.parquet does not exist yet.
+# VIEW over the Parquet file, not a copy. Empty typed table when
+# deeploc.parquet does not exist yet.
 if [ -f "$SRC/deeploc.parquet" ]; then
-duckdb -c "
-CREATE VIEW deeploc AS
-SELECT * FROM read_parquet('$SRC_ABS/deeploc.parquet');
-" "$DB"
+mkview deeploc   deeploc.parquet                1
 else
 duckdb -c "
 CREATE TABLE deeploc(species_prefix VARCHAR, protein_id VARCHAR, model VARCHAR,
@@ -245,84 +187,90 @@ CREATE TABLE deeploc(species_prefix VARCHAR, protein_id VARCHAR, model VARCHAR,
 " "$DB"
 fi
 
-duckdb -c "
-CREATE TABLE wolfpsort AS
-SELECT * FROM read_parquet('$SRC/wolfpsort.parquet');
-CREATE INDEX idx_wolfpsort_locustag ON wolfpsort(species_prefix);
-CREATE INDEX idx_wolfpsort_protein  ON wolfpsort(protein_id);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE predgpi AS
-SELECT * FROM read_parquet('$SRC/predgpi.parquet');
-CREATE INDEX idx_predgpi_locustag ON predgpi(species_prefix);
-CREATE INDEX idx_predgpi_protein  ON predgpi(protein_id);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE tmhmm AS
-SELECT * FROM read_parquet('$SRC/tmhmm.parquet');
-CREATE INDEX idx_tmhmm_locustag ON tmhmm(species_prefix);
-CREATE INDEX idx_tmhmm_protein  ON tmhmm(protein_id);
-" "$DB"
+mkview wolfpsort wolfpsort.parquet              1
+mkview predgpi   predgpi.parquet                1
+mkview tmhmm     tmhmm.parquet                  1
 
 # ─── disorder ─────────────────────────────────────────────────────────────────
-duckdb -c "
-CREATE TABLE idp_summary AS
-SELECT * FROM read_parquet('$SRC/idp_summary.parquet');
-CREATE UNIQUE INDEX idx_idpsum_protein   ON idp_summary(protein_id);
-CREATE        INDEX idx_idpsum_locustag  ON idp_summary(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE idp AS
-SELECT * FROM read_parquet('$SRC/idp.parquet');
-CREATE UNIQUE INDEX idx_idp_region    ON idp(protein_id, IDP_start);
-CREATE        INDEX idx_idp_locustag  ON idp(species_prefix);
-" "$DB"
+mkview idp_summary idp_summary.parquet 1
+mkview idp         idp.parquet         1
+check_unique idp_summary protein_id
+check_unique idp         "protein_id, IDP_start"
 
 # ─── composition ──────────────────────────────────────────────────────────────
-duckdb -c "
-CREATE TABLE aa_frequency AS
-SELECT * FROM read_parquet('$SRC/aa_freq.parquet');
-CREATE INDEX idx_aa_locustag ON aa_frequency(species_prefix);
-" "$DB"
-
-duckdb -c "
-CREATE TABLE codon_frequency AS
-SELECT * FROM read_parquet('$SRC/codon_freq.parquet');
-CREATE INDEX idx_codon_locustag ON codon_frequency(species_prefix);
-" "$DB"
+mkview aa_frequency    aa_freq.parquet    1
+mkview codon_frequency codon_freq.parquet 1
 
 # ─── paralogoscope / WGD ───────────────────────────────────────────────────────
 # Optional: only exists after the paralogoscope workflow's terminal merge
-# (MERGE_WGD_KSD → tables/wgd.ks.parquet) has run. Not produced by the main BFD
-# functional pipeline, so guarded like telomeres / busco_genome rather than
-# created empty. Note 1: genome here is the sampletag (filename stem), which
-# maps 1:1 to the species/representative concept carrier of LOCUSTAG/SAMPLE in
-# species.parquet -- join on species_prefix (the LOCUSTAG) for BFD cross-tables,
-# not on genome. Note 2: rows with NULL dS are non-dup paralog pairs wgd emitted
-# without a valid Ka/Ks estimate, not errors -- keep raw semantics.
-if [ -f "$SRC/wgd.ks.parquet" ]; then
-    duckdb -c "
-CREATE TABLE wgd_ks AS
-SELECT * FROM read_parquet('$SRC/wgd.ks.parquet');
-CREATE INDEX idx_wgdks_locustag ON wgd_ks(species_prefix);
-CREATE INDEX idx_wgdks_genome   ON wgd_ks(genome);
-" "$DB"
-else
-    echo "SKIP: $SRC/wgd.ks.parquet not found (paralogoscope not run); wgd_ks table omitted."
-fi
+# (MERGE_WGD_KSD -> tables/wgd.ks.parquet). genome is the sampletag; join on
+# species_prefix (the LOCUSTAG) for BFD cross-tables. Rows with NULL dS are
+# non-dup paralog pairs without a valid Ka/Ks estimate, not errors.
+mkview wgd_ks         wgd.ks.parquet         0
+mkview wgd_ks_summary wgd.ks.summary.parquet 0
+has_view wgd_ks_summary && check_unique wgd_ks_summary genome
 
-if [ -f "$SRC/wgd.ks.summary.parquet" ]; then
-    duckdb -c "
-CREATE TABLE wgd_ks_summary AS
-SELECT * FROM read_parquet('$SRC/wgd.ks.summary.parquet');
-CREATE UNIQUE INDEX idx_wgdkssum_genome ON wgd_ks_summary(genome);
+# ─── SwissProt homology ───────────────────────────────────────────────────────
+# Design: Fungi_BFD_runs/analysis/swissprot_design/REVIEW.md (2026-11-06).
+# swissprot_subject (575k rows) is materialized; the hit tables are VIEWs over
+# Parquet (2.2 B rows in swissprot_hits; a copy inside the DB would duplicate
+# ~40 GB). Paths are absolute ($SRC_ABS) because VIEWs resolve at query time.
+if [ -f "$SRC/swissprot_subject.parquet" ]; then
+duckdb -c "
+CREATE TABLE swissprot_subject AS SELECT * FROM read_parquet('$SRC_ABS/swissprot_subject.parquet');
+CREATE UNIQUE INDEX idx_sp_subject_id  ON swissprot_subject(sp_id);
+CREATE UNIQUE INDEX idx_sp_subject_acc ON swissprot_subject(accession);
 " "$DB"
 else
-    echo "SKIP: $SRC/wgd.ks.summary.parquet not found; wgd_ks_summary table omitted."
+    echo "SKIP: $SRC/swissprot_subject.parquet not found; SwissProt tables omitted."
 fi
+if [ -f "$SRC/swissprot_subject.parquet" ] && ls "$SRC"/swissprot_hits/swissprot_hits.*.parquet >/dev/null 2>&1; then
+duckdb -c "
+CREATE VIEW swissprot_hits AS
+    SELECT * FROM read_parquet('$SRC_ABS/swissprot_hits/swissprot_hits.*.parquet');
+CREATE VIEW v_swissprot_80_80 AS
+    SELECT * FROM swissprot_hits
+    WHERE pident_x10 >= 800 AND qcov_x10 >= 800 AND scov_x10 >= 800;
+-- For one protein or genome use swissprot_model_fungi_for(id) (below): this
+-- VIEW opens all 256 bucket files (about 10 s per protein).
+CREATE VIEW v_swissprot_model_fungi AS
+    SELECT h.*, s.org_code, s.accession, s.entry_name, s.protein_name
+    FROM swissprot_hits h JOIN swissprot_subject s USING (sp_id)
+    WHERE s.org_code IN ('YEAST','SCHPO','NEUCR','EMENI')
+    QUALIFY row_number() OVER (PARTITION BY h.protein_id, s.org_code ORDER BY h.rk) = 1;
+" "$DB"
+fi
+# Fast lookups by protein or genome (table macros). swissprot_hits is 256
+# bucket files; a filter on protein_id through the VIEW still opens all 256
+# footers (7-10 s per protein, 2026-11-08). The macros compute the one bucket
+# file from the id instead: bucket = first 2 hex of sha1(LOCUSTAG), the same
+# as hashBucketForType('swissprot', locustag) in modules/common/utils.nf
+# (bucketWidthFor('swissprot') = 2). Measured 0.04 s for one protein and
+# 0.16 s for its model-fungi best hits.
+#   SELECT * FROM swissprot_hits_for('F77FFF1D_000002-T1');   -- one protein
+#   SELECT * FROM swissprot_hits_for('F77FFF1D');             -- one genome
+#   SELECT * FROM swissprot_model_fungi_for('F77FFF1D_000002-T1');
+if [ -f "$SRC/swissprot_subject.parquet" ] && ls "$SRC"/swissprot_hits/swissprot_hits.*.parquet >/dev/null 2>&1; then
+duckdb -c "
+CREATE MACRO swissprot_hits_file(id) AS
+    '$SRC_ABS/swissprot_hits/swissprot_hits.' || left(sha1(split_part(id, '_', 1)), 2) || '.parquet';
+CREATE MACRO swissprot_hits_for(id) AS TABLE
+    SELECT * FROM read_parquet(swissprot_hits_file(id))
+    WHERE protein_id = id OR species_prefix = id;
+CREATE MACRO swissprot_model_fungi_for(id) AS TABLE
+    SELECT h.*, s.org_code, s.accession, s.entry_name, s.protein_name
+    FROM swissprot_hits_for(id) h JOIN swissprot_subject s USING (sp_id)
+    WHERE s.org_code IN ('YEAST','SCHPO','NEUCR','EMENI')
+    QUALIFY row_number() OVER (PARTITION BY h.protein_id, s.org_code ORDER BY h.rk) = 1;
+" "$DB"
+fi
+for t in swissprot_best swissprot_subject_summary; do
+    if [ -f "$SRC/$t.parquet" ]; then
+        duckdb -c "CREATE VIEW $t AS SELECT * FROM read_parquet('$SRC_ABS/$t.parquet');" "$DB"
+    else
+        echo "SKIP: $SRC/$t.parquet not found; $t view omitted."
+    fi
+done
 
 # ─── analytical views ─────────────────────────────────────────────────────────
 # Per-species summary: genome stats + functional domain counts
@@ -403,6 +351,6 @@ LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi FROM predgpi) gpi USING(pr
 LEFT JOIN (SELECT protein_id, IDP_fraction FROM idp_summary) idps USING(protein_id);
 " "$DB"
 
-echo "Build complete: $DB"
+echo "Build complete: $DB ($(du -h "$DB" | cut -f1))"
 duckdb -c "SELECT table_name, estimated_size FROM duckdb_tables() ORDER BY table_name;" "$DB"
-duckdb -c "SELECT view_name FROM duckdb_views() ORDER BY view_name;" "$DB"
+duckdb -c "SELECT view_name FROM duckdb_views() WHERE NOT internal ORDER BY view_name;" "$DB"

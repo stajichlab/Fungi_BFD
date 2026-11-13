@@ -21,20 +21,26 @@ process REPEATMASK_STRAIN {
     esac
 
     mkdir -p rmask_out
+    # -engine rmblast: since 2026-11-11 the RepeatMasker/4.1.8 module defaults to the HMMER
+    # engine, which fails in hmmpress on a FASTA library (exit 2, no output). A custom FASTA
+    # library needs rmblast.
     RepeatMasker \
+        -engine rmblast \
         -lib ${library} \
         -xsmall \
         -pa ${task.cpus} \
         -dir rmask_out \
-        "\$GENOME_IN"
+        "\$GENOME_IN" \
+        || { echo "ERROR: RepeatMasker failed for ${asmid} (exit \$?)" >&2; exit 1; }
 
+    # RepeatMasker writes <genome>.masked even when no repeat matches (checked with 4.1.8), so a
+    # missing file means a failure. Do not deliver an unmasked genome as a masked one.
     MASKED="rmask_out/\$(basename "\$GENOME_IN").masked"
-    if [ -f "\$MASKED" ]; then
-        gzip -c "\$MASKED" > ${asmid}.masked.fasta.gz
-    else
-        echo "WARN: no repeats masked for ${asmid}; using unmasked genome" >&2
-        gzip -c "\$GENOME_IN" > ${asmid}.masked.fasta.gz
+    if [ ! -s "\$MASKED" ]; then
+        echo "ERROR: RepeatMasker made no masked file for ${asmid}" >&2
+        exit 1
     fi
+    gzip -c "\$MASKED" > ${asmid}.masked.fasta.gz
     """
 
     stub:

@@ -23,7 +23,10 @@ _EC_RE = re.compile(r'EC=([0-9]+(?:\.[0-9]+)+)')
 HEADER = [
     'accession', 'entry_name', 'protein_name', 'gene_name', 'gene_synonyms',
     'organism', 'go_terms', 'ec_numbers', 'interpro', 'pfam',
+    'length', 'ncbi_taxid',   # added 2026-11-06 for swissprot_subject (s_len, organism filter)
 ]
+_LEN_RE = re.compile(r'(\d+) AA\.')
+_TAX_RE = re.compile(r'NCBI_TaxID=(\d+)')
 
 
 def uniq(seq):
@@ -48,6 +51,8 @@ def parse_entry(lines):
     interpro = []
     pfam = []
     ec = []
+    length = ''
+    taxid = ''
 
     for raw in lines:
         ln = raw.rstrip('\n')
@@ -58,6 +63,13 @@ def parse_entry(lines):
 
         if code == 'ID':
             entry_name = body.split()[0] if body.split() else ''
+            m = _LEN_RE.search(body)
+            if m:
+                length = m.group(1)
+        elif code == 'OX' and not taxid:
+            m = _TAX_RE.search(body)
+            if m:
+                taxid = m.group(1)
         elif code == 'AC':
             accs.extend(t.strip().rstrip(';') for t in body.split(';') if t.strip())
         elif code == 'DE':
@@ -98,6 +110,8 @@ def parse_entry(lines):
         'ec_numbers': '; '.join(uniq(ec)),
         'interpro': '; '.join(uniq(interpro)),
         'pfam': '; '.join(uniq(pfam)),
+        'length': length,
+        'ncbi_taxid': taxid,
     }
 
 

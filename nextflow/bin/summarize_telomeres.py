@@ -43,7 +43,26 @@ SUMMARY_COLUMNS = [
     "telomere_internal_count",
     "telomere_top_monomer",
     "telomere_monomers",
+    # Combined call from the motif search and the de novo finder.
+    "telomere_call",
+    "telomere_denovo_status",
+    "telomere_denovo_unit",
+    "telomere_denovo_unit_len",
+    "telomere_denovo_polarity",
+    "telomere_denovo_n_ends",
+    "telomere_denovo_ends_examined",
+    "telomere_denovo_strand_biased_ends",
 ]
+
+# Units this short are common low-complexity sequence; they are reported apart
+# from longer units until checked against long-read or literature evidence.
+SHORT_UNIT_MAX = 3
+# A real telomere read inward from the edge shows one orientation at all ends.
+# In 47 trial genomes where both methods agreed (unit >= 5 bp, >= 8 ends) the
+# share in the majority orientation was >= 0.87. Below POLARITY_MIN, with at
+# least POLARITY_MIN_ENDS ends, a short unit is treated as non-polar.
+POLARITY_MIN = 0.80
+POLARITY_MIN_ENDS = 5
 
 TRACT_COLUMNS = [
     "tract_id", "ASMID", "LOCUSTAG",
@@ -186,6 +205,73 @@ def process_genome(path, asmid, locustag):
     return summary, tract_rows
 
 
+def load_denovo(tract_path):
+    """Read the de novo summary that sits beside a tract file; {} if absent.
+
+    <asmid>.telomeres.tsv.gz  ->  <asmid>.telomere_denovo.tsv
+    """
+    base = tract_path
+    for suffix in (".telomeres.tsv.gz", ".telomeres.tsv"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    path = base + ".telomere_denovo.tsv"
+    if not os.path.exists(path):
+        return {}
+    with open(path, newline="") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    if not rows:
+        return {}
+    status_row = rows[-1]
+    cands = [r for r in rows[:-1] if r.get("status") == "candidate"]
+    top = cands[0] if cands else None
+    return {
+        "telomere_denovo_status": status_row.get("status", ""),
+        "telomere_denovo_unit": top["unit"] if top else "",
+        "telomere_denovo_unit_len": len(top["unit"]) if top else "",
+        "telomere_denovo_polarity": (
+            "" if not top or top.get("polarity") in (None, "", "NA")
+            else float(top["polarity"])),
+        "telomere_denovo_n_ends": parse_int(top["n_ends"]) if top else 0,
+        "telomere_denovo_ends_examined": parse_int(status_row.get("n_ends_examined")),
+        "telomere_denovo_strand_biased_ends": parse_int(status_row.get("strand_biased_ends")),
+    }
+
+
+def telomere_call(n_motif_tracts, denovo):
+    """One label per genome from the two methods.
+
+    motif_found          known-motif tract(s) found
+    denovo_found         de novo repeat unit of >= 4 bp at >= min_ends ends
+    short_unit_nonpolar  only a unit of <= 3 bp at >= 5 ends with polarity < 0.80;
+                         likely low-complexity sequence at contig ends
+    short_unit_polar     only a unit of <= 3 bp at >= 5 ends with polarity >= 0.80;
+                         unresolved (may be a microsatellite or a real repeat)
+    short_unit_few_ends  only a unit of <= 3 bp at < 5 ends; polarity is not
+                         informative
+    strand_biased_only   strongly strand-biased ends, no fixed-period unit
+    no_terminal_repeat   neither method found a terminal repeat
+    ""                   de novo step did not run for this genome
+    """
+    if n_motif_tracts > 0:
+        return "motif_found"
+    status = denovo.get("telomere_denovo_status", "")
+    if not status:
+        return ""
+    if status == "repeat_found":
+        unit_len = denovo.get("telomere_denovo_unit_len") or 0
+        if unit_len > SHORT_UNIT_MAX:
+            return "denovo_found"
+        pol = denovo.get("telomere_denovo_polarity")
+        n_ends = denovo.get("telomere_denovo_n_ends") or 0
+        if n_ends < POLARITY_MIN_ENDS or not isinstance(pol, float):
+            return "short_unit_few_ends"
+        return "short_unit_nonpolar" if pol < POLARITY_MIN else "short_unit_polar"
+    if status == "strand_biased_only":
+        return "strand_biased_only"
+    return "no_terminal_repeat"
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     src = p.add_mutually_exclusive_group(required=True)
@@ -228,6 +314,9 @@ def main():
 
         row = {"ASMID": stem, "LOCUSTAG": locustag, "SPECIES": species, "STRAIN": strain}
         row.update(summary)
+        denovo = load_denovo(path)
+        row.update(denovo)
+        row["telomere_call"] = telomere_call(summary["telomere_tracts"], denovo)
         summary_rows.append(row)
         tract_rows.extend(tracts)
 

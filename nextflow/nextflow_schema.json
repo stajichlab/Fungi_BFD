@@ -55,6 +55,36 @@
                     "description": "Skip all MERGE_* steps (e.g. when running only new species).",
                     "default": true
                 },
+                "merge_if_stale": {
+                    "type": "boolean",
+                    "description": "Skip a merge unless a result file is newer than its table (or the table is missing). Applies to merges whose producer did not run this session.",
+                    "default": false
+                },
+                "merge_filter_samples": {
+                    "type": "boolean",
+                    "description": "Drop merge inputs whose genome is not in samples.csv or is listed in suppress.txt.",
+                    "default": true
+                },
+                "skip_merges": {
+                    "type": "string",
+                    "description": "Comma-separated MERGE_* labels never to run (e.g. MERGE_TARGETP).",
+                    "default": ""
+                },
+                "force_merges": {
+                    "type": "string",
+                    "description": "Comma-separated MERGE_* labels to run even when merge_if_stale finds the table current (e.g. MERGE_PFAM after a merge-code change). skip_merges still wins.",
+                    "default": ""
+                },
+                "coverage_min_frac": {
+                    "type": "number",
+                    "description": "A full merge fails if the new table covers fewer than this fraction of the distinct genomes in the table it replaces.",
+                    "default": 0.9
+                },
+                "allow_shrink": {
+                    "type": "boolean",
+                    "description": "Allow a deliberate shrink: turns off the coverage check and MERGE_SAMPLES' no-shrink check.",
+                    "default": false
+                },
                 "run_build_duckdb": {
                     "type": "boolean",
                     "description": "Rebuild db/BFD.duckdb from tables/*.parquet after MERGE_* steps complete.",
@@ -769,6 +799,18 @@
                     "default": false,
                     "description": "Route RUN_DEEPTMHMM to a GPU node."
                 },
+                "deeptmhmm_script": {
+                    "type": "string",
+                    "default": "predict.py",
+                    "enum": ["predict.py", "predict_fast.py"],
+                    "description": "DeepTMHMM driver inside the image. predict_fast.py needs the private DeepTMHMM-1.0-fast.sif."
+                },
+                "deeptmhmm_topo_batch": {
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 1,
+                    "description": "predict_fast.py only: proteins per topology-model batch (1 = same output as predict.py)."
+                },
                 "tcdb_dbdir": {
                     "type": "string",
                     "format": "directory-path",
@@ -815,6 +857,11 @@
                     "type": "string",
                     "format": "directory-path",
                     "description": "SETUP_DBCAN_DB's storeDir for the full run_dbcan reference set."
+                },
+                "dbcan_cazy_src": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Local CAZyDB release dir (e.g. /srv/projects/db/CAZY/CAZyDB/v14.0). SETUP_DBCAN_DB links its CAZy.dmnd, dbCAN.hmm, dbCAN_sub.hmm and substrate map into dbcan_dbdir and downloads only the rest. Empty = download all."
                 },
                 "pfam_nodes": {
                     "type": "integer",

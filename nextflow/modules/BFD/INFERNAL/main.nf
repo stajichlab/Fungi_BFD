@@ -1,4 +1,4 @@
-include { hashBucketForType } from '../../common/utils.nf'
+include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 
 // ncRNA (non-coding RNA) gene calling against Rfam covariance models --
 // complements RUN_TRNASCAN (tRNAs specifically) with rRNAs, snoRNAs,
@@ -22,14 +22,19 @@ process RUN_INFERNAL {
         path("${meta.id}.rfam.tblout.gz"), emit: tblout
 
     script:
+    // The genome may be <id>.scaffolds.fa.gz (bgzip, FUNANNOTATE_PREDICT since 2026-11-07).
+    // Inflate it into the task dir: this tool may not read gzip.
+    def genome_plain = plainName(genome)
+    def genome_rm = genome.name.endsWith('.gz') ? "rm -f '${genome_plain}'" : ''
     """
+    ${gzInflate(genome)}
     module load apptainer
     export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
-    # ${genome} may be a symlink Nextflow staged from outside \$PWD (e.g. a
+    # ${genome_plain} may be a symlink Nextflow staged from outside \$PWD (e.g. a
     # shared genome_annotation dir elsewhere under /bigdata); bind its real
     # parent dir too, or apptainer won't see the symlink target inside the
     # container.
-    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome}))
+    GENOME_REAL_DIR=\$(dirname \$(readlink -f ${genome_plain}))
     SING_BINDS="--bind ${params.rfam_dbdir}:${params.rfam_dbdir},\${GENOME_REAL_DIR}:\${GENOME_REAL_DIR},\${PWD}:\${PWD},\$TMPDIR:\$TMPDIR"
     apptainer exec \${SING_BINDS} ${params.infernal_sif} cmscan \\
         --cut_ga --rfam --nohmmonly \\
@@ -37,8 +42,9 @@ process RUN_INFERNAL {
         --fmt 2 \\
         --tblout ${meta.id}.rfam.tblout \\
         --cpu ${task.cpus} \\
-        ${params.rfam_dbdir}/Rfam.cm ${genome} > /dev/null
+        ${params.rfam_dbdir}/Rfam.cm ${genome_plain} > /dev/null
     pigz ${meta.id}.rfam.tblout
+    ${genome_rm}
     """
 
     stub:

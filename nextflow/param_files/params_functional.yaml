@@ -27,7 +27,7 @@ run_wolfpsort: true
 run_predgpi: true
 run_busco_genome: true
 run_busco_pep: true
-
+run_deeploc: false
 # Added 2026-10-21: switches that were previously implicit. Values match the
 # conf/profile_BFD.config defaults, so run behavior is unchanged. Flip to
 # toggle.
@@ -47,10 +47,10 @@ run_gene_stats: true
 run_eggnog: false
 run_phobius: false
 run_tcdb: false
-run_tf: false
+run_tf: true
 run_antismash: false
 run_trnascan: false
 run_cazy_cgc: false
 
 # Merge into DuckDB
-run_build_duckdb: false
+run_build_duckdb: true

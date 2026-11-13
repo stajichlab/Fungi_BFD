@@ -1,4 +1,4 @@
-include { tablesDir } from '../../common/utils.nf'
+include { tablesDir; coverageCheck; codeMd5 } from '../../common/utils.nf'
 
 process MERGE_CODON_FREQ {
     label      'merge'
@@ -11,16 +11,18 @@ process MERGE_CODON_FREQ {
     path "codon_freq.parquet", emit: parquet
 
     script:
+    // DuckDB reads the per-genome .csv.gz files listed in the manifest directly
+    // (bin/manifest_to_parquet.py). The former zcat-concatenate loop +
+    // read_csv_auto(sample_size=-1) was 4.5x slower on 1,020 genomes and failed
+    // at ~23k genomes with "Trying to seek a compressed CSV File" (2026-11-05).
     """
-    first=1
-    while IFS=\$'\\t' read -r f _mtime _size; do
-        [ -n "\$f" ] || continue
-        if [ "\$first" = "1" ]; then zcat "\$f"; first=0
-        else zcat "\$f" | tail -n +2; fi
-    done < ${manifest} | gzip > codon_freq.csv.gz
+    # code md5 (task cache key): ${codeMd5(['bin/manifest_to_parquet.py'])}
+    set -euo pipefail
     module load duckdb 2>/dev/null || true
-    duckdb -c "COPY (SELECT * FROM read_csv_auto('codon_freq.csv.gz', sample_size=-1)) TO 'codon_freq.parquet' (FORMAT PARQUET);"
-    rm -f codon_freq.csv.gz
+    python3 ${projectDir}/bin/manifest_to_parquet.py --manifest ${manifest} \\
+        --out codon_freq.parquet --threads ${task.cpus} \\
+        --memory-limit ${(task.memory.toGiga() * 0.75) as int}GB --temp-dir \${SCRATCH:-\$PWD}
+    ${coverageCheck('codon_freq.parquet')}
     """
 
     stub:
@@ -28,6 +30,5 @@ process MERGE_CODON_FREQ {
     printf 'species_prefix,codon,frequency\\n' | gzip > codon_freq.csv.gz
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('codon_freq.csv.gz', sample_size=-1)) TO 'codon_freq.parquet' (FORMAT PARQUET);"
-    rm -f codon_freq.csv.gz
     """
 }

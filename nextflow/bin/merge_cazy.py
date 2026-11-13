@@ -32,7 +32,8 @@ def merge_hmm(files, outfile):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Merge CAZy per-species results")
+    parser = argparse.ArgumentParser(description="Merge CAZy per-species results",
+                                     fromfile_prefix_chars="@")  # @file: one argument per line
     parser.add_argument("--overviews", nargs="+", required=True,
                         help="overview.tsv.gz files")
     parser.add_argument("--cazymes", nargs="+", required=True,

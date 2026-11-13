@@ -42,6 +42,7 @@ include { MERGE_PFAM      } from '../../modules/BFD/MERGE_PFAM/main.nf'
 include { MERGE_CAZY      } from '../../modules/BFD/MERGE_CAZY/main.nf'
 include { MERGE_MEROPS    } from '../../modules/BFD/MERGE_MEROPS/main.nf'
 include { MERGE_SWISSPROT } from '../../modules/BFD/MERGE_SWISSPROT/main.nf'
+include { MERGE_SWISSPROT_GATHER } from '../../modules/BFD/MERGE_SWISSPROT_GATHER/main.nf'
 include { BUILD_SWISSPROT_ANNOT } from '../../modules/BFD/BUILD_SWISSPROT_ANNOT/main.nf'
 include { MERGE_SIGNALP   } from '../../modules/BFD/MERGE_SIGNALP/main.nf'
 include { MERGE_TMHMM     } from '../../modules/BFD/MERGE_TMHMM/main.nf'
@@ -61,7 +62,7 @@ include { MERGE_TRNASCAN  } from '../../modules/BFD/MERGE_TRNASCAN/main.nf'
 include { MERGE_INFERNAL  } from '../../modules/BFD/MERGE_INFERNAL/main.nf'
 include { MERGE_CAZY_CGC  } from '../../modules/BFD/MERGE_CAZY_CGC/main.nf'
 
-include { gatedGlobIn; staleGuard; bucketedOutputs } from '../../modules/common/utils.nf'
+include { gatedGlobIn; staleGuard; bucketedOutputs; mergeWanted; hashBucketForType; tablesDir } from '../../modules/common/utils.nf'
 
 // Cached-output paths for staleGuard(). Protein-level tools name their outputs
 // by LOCUSTAG, genome-level tools (antiSMASH, tRNAscan-SE, Infernal, dbCAN CGC)
@@ -201,13 +202,21 @@ workflow BFD_FUNCTIONAL {
     // tables/pfam.parquet had all 276 genomes).
     def merge_outs = []
     if (!skip_merge) {
-        def pfam_in = mergeInput(use_glob, run_pfam, run_pfam ? RUN_PFAM.out.domtbl : null, "pfam_hmmscan/**/*.domtblout.gz")
-        if (pfam_in) {
+        // MERGE_TF reads the same domtblout files, so pfam_in is built when
+        // either table needs a merge (see merge_if_stale in utils.nf).
+        def pfam_want = mergeWanted(run_pfam, 'MERGE_PFAM', params.outdir as String, ["pfam_hmmscan/**/*.domtblout.gz"], ['pfam.parquet'])
+        def tf_want   = run_tf && mergeWanted(run_pfam, 'MERGE_TF', params.outdir as String, ["pfam_hmmscan/**/*.domtblout.gz"], ['tf_inventory.parquet'])
+        def pfam_in = (pfam_want || tf_want) ? mergeInput(use_glob, run_pfam, run_pfam ? RUN_PFAM.out.domtbl : null, "pfam_hmmscan/**/*.domtblout.gz") : null
+        if (pfam_in && pfam_want) {
             MERGE_PFAM(pfam_in)
             merge_outs << MERGE_PFAM.out.parquet
         }
 
-        if (use_glob || run_cazy) {
+        if ((use_glob || run_cazy) && mergeWanted(run_cazy, 'MERGE_CAZY', params.outdir as String,
+                // One scan: overview/cazymes/substrates are written together, and
+                // cazy/ is 23k unbucketed dirs (a full scan takes minutes).
+                ["cazy/*/*.tsv.gz"],
+                ['cazy.overview.parquet', 'cazy.cazymes_hmm.parquet'])) {
             def ov_sync = run_cazy ? RUN_CAZY.out.overview.collect() : Channel.of(true)
             def ca_sync = run_cazy ? RUN_CAZY.out.cazymes.collect()  : Channel.of(true)
             MERGE_CAZY(
@@ -215,52 +224,74 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(ca_sync, "cazy/*/*.cazymes.tsv.gz")  : ca_sync
             )
             merge_outs << MERGE_CAZY.out.overview_parquet
+            merge_outs << MERGE_CAZY.out.hmm_parquet
         }
 
-        def merops_in = mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
+        def merops_in = !mergeWanted(run_merops, 'MERGE_MEROPS', params.outdir as String, ["merops/**/*.blasttab.gz"], ['merops.parquet']) ? null : mergeInput(use_glob, run_merops, run_merops ? RUN_MEROPS.out.blasttab : null, "merops/**/*.blasttab.gz")
         if (merops_in) {
             MERGE_MEROPS(merops_in)
             merge_outs << MERGE_MEROPS.out.parquet
         }
 
-        def swissprot_in = mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
-        if (swissprot_in) {
-            MERGE_SWISSPROT(swissprot_in)
-            merge_outs << MERGE_SWISSPROT.out.parquet
+        // One-shot build of the SwissProt accession -> annotation tables
+        // (swissprot_annot, swissprot_subject), independent of the per-genome
+        // search engine (or of run_swissprot itself, so it can be refreshed
+        // standalone). The hit tables reference swissprot_subject.sp_id, so the
+        // subject table built in this run (or the published one) feeds them.
+        def subject_ch = Channel.value(file("${tablesDir()}/swissprot_subject.parquet", glob: false))
+        if (run_swissprot_annot && mergeWanted(false, 'BUILD_SWISSPROT_ANNOT', params.outdir as String, [], ['swissprot_annot.parquet', 'swissprot_subject.parquet'], [params.swissprot_dat], false)) {
+            BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
+            subject_ch = BUILD_SWISSPROT_ANNOT.out.subject.first()
+            merge_outs << BUILD_SWISSPROT_ANNOT.out.annot_parquet
+            merge_outs << BUILD_SWISSPROT_ANNOT.out.subject
         }
 
-        // One-shot build of the SwissProt accession -> annotation table,
-        // independent of the per-genome search engine used above (or of
-        // run_swissprot itself, so it can be refreshed standalone).
-        if (run_swissprot_annot)
-            BUILD_SWISSPROT_ANNOT(Channel.of(file(params.swissprot_dat)))
+        // SwissProt hits: one MERGE_SWISSPROT task per genome bucket writes
+        // tables/swissprot_hits/swissprot_hits.<bucket>.parquet, then
+        // MERGE_SWISSPROT_GATHER writes swissprot_best + swissprot_subject_summary
+        // (design: Fungi_BFD_runs/analysis/swissprot_design/REVIEW.md). A new
+        // swissprot_dat changes sp_id, so it is a staleness input here.
+        def swissprot_in = !mergeWanted(run_swissprot, 'MERGE_SWISSPROT', params.outdir as String, ["swissprot/**/*.blasttab.gz"], ['swissprot_best.parquet'], [params.swissprot_dat]) ? null : mergeInput(use_glob, run_swissprot, run_swissprot ? RUN_SWISSPROT.out.blasttab : null, "swissprot/**/*.blasttab.gz")
+        if (swissprot_in) {
+            def by_bucket = swissprot_in
+                .flatMap { fs -> fs }
+                .map { f -> tuple(hashBucketForType('swissprot', f.name.tokenize('.')[0]), f) }
+                .groupTuple(sort: true)
+            MERGE_SWISSPROT(by_bucket.combine(subject_ch))
+            MERGE_SWISSPROT_GATHER(MERGE_SWISSPROT.out.hits.collect(), subject_ch)
+            merge_outs << MERGE_SWISSPROT.out.hits
+            merge_outs << MERGE_SWISSPROT_GATHER.out.best
+            merge_outs << MERGE_SWISSPROT_GATHER.out.summary
+        }
 
-        def signalp_in = mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
+        def signalp_in = !mergeWanted(run_signalp, 'MERGE_SIGNALP', params.outdir as String, ["signalp/**/*.signalp.gff3.gz"], ['signalp.signal_peptide.parquet']) ? null : mergeInput(use_glob, run_signalp, run_signalp ? RUN_SIGNALP.out.gff3 : null, "signalp/**/*.signalp.gff3.gz")
         if (signalp_in) {
             MERGE_SIGNALP(signalp_in)
             merge_outs << MERGE_SIGNALP.out.parquet
         }
 
-        def tmhmm_in = mergeInput(use_glob, run_tmhmm, run_tmhmm ? RUN_TMHMM.out.short_tsv : null, "tmhmm/**/*.tmhmm_short.tsv.gz")
+        def tmhmm_in = !mergeWanted(run_tmhmm, 'MERGE_TMHMM', params.outdir as String, ["tmhmm/**/*.tmhmm_short.tsv.gz"], ['tmhmm.parquet']) ? null : mergeInput(use_glob, run_tmhmm, run_tmhmm ? RUN_TMHMM.out.short_tsv : null, "tmhmm/**/*.tmhmm_short.tsv.gz")
         if (tmhmm_in) {
             MERGE_TMHMM(tmhmm_in)
             merge_outs << MERGE_TMHMM.out.parquet
         }
 
-        def targetp_in = mergeInput(use_glob, run_targetp, run_targetp ? RUN_TARGETP.out.summary : null, "targetP/**/*_summary.targetp2.gz")
+        def targetp_in = !mergeWanted(run_targetp, 'MERGE_TARGETP', params.outdir as String, ["targetP/**/*_summary.targetp2.gz"], ['targetP.parquet']) ? null : mergeInput(use_glob, run_targetp, run_targetp ? RUN_TARGETP.out.summary : null, "targetP/**/*_summary.targetp2.gz")
         if (targetp_in) {
             MERGE_TARGETP(targetp_in)
             merge_outs << MERGE_TARGETP.out.parquet
         }
 
         // Only the selected model's files are merged (Fast and Accurate never mix).
-        def deeploc_in = mergeInput(use_glob, run_deeploc, run_deeploc ? RUN_DEEPLOC.out.results : null, "deeploc/**/*.deeploc_${deeploc_model}.csv.gz")
+        def deeploc_in = !mergeWanted(run_deeploc, 'MERGE_DEEPLOC', params.outdir as String, ["deeploc/**/*.deeploc_${deeploc_model}.csv.gz"], ['deeploc.parquet']) ? null : mergeInput(use_glob, run_deeploc, run_deeploc ? RUN_DEEPLOC.out.results : null, "deeploc/**/*.deeploc_${deeploc_model}.csv.gz")
         if (deeploc_in) {
             MERGE_DEEPLOC(deeploc_in)
             merge_outs << MERGE_DEEPLOC.out.parquet
         }
 
-        if (use_glob || run_idp) {
+        if ((use_glob || run_idp) && mergeWanted(run_idp, 'MERGE_IDP', params.outdir as String,
+                ["aiupred/**/*.idp.csv.gz", "aiupred/**/*.idp_summary.csv.gz"],
+                ['idp.parquet', 'idp_summary.parquet'])) {
             def idp_sync = run_idp ? RUN_IDP.out.idp_csv.collect()         : Channel.of(true)
             def sum_sync = run_idp ? RUN_IDP.out.idp_summary_csv.collect() : Channel.of(true)
             MERGE_IDP(
@@ -268,40 +299,41 @@ workflow BFD_FUNCTIONAL {
                 use_glob ? gatedGlob(sum_sync, "aiupred/**/*.idp_summary.csv.gz") : sum_sync
             )
             merge_outs << MERGE_IDP.out.idp
+            merge_outs << MERGE_IDP.out.summary
         }
 
-        def wolf_in = mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/**/*.wolfpsort.results.txt.gz")
+        def wolf_in = !mergeWanted(run_wolfpsort, 'MERGE_WOLFPSORT', params.outdir as String, ["wolfpsort/**/*.wolfpsort.results.txt.gz"], ['wolfpsort.parquet']) ? null : mergeInput(use_glob, run_wolfpsort, run_wolfpsort ? RUN_WOLFPSORT.out.results : null, "wolfpsort/**/*.wolfpsort.results.txt.gz")
         if (wolf_in) {
             MERGE_WOLFPSORT(wolf_in)
             merge_outs << MERGE_WOLFPSORT.out.parquet
         }
 
-        def predgpi_in = mergeInput(use_glob, run_predgpi, run_predgpi ? RUN_PREDGPI.out.gff3 : null, "predgpi/**/*.predgpi.gff3.gz")
+        def predgpi_in = !mergeWanted(run_predgpi, 'MERGE_PREDGPI', params.outdir as String, ["predgpi/**/*.predgpi.gff3.gz"], ['predgpi.parquet']) ? null : mergeInput(use_glob, run_predgpi, run_predgpi ? RUN_PREDGPI.out.gff3 : null, "predgpi/**/*.predgpi.gff3.gz")
         if (predgpi_in) {
             MERGE_PREDGPI(predgpi_in)
             merge_outs << MERGE_PREDGPI.out.parquet
         }
 
         // ── New tools' MERGE steps (2026-08-20 followup) ────────────────────
-        def eggnog_in = mergeInput(use_glob, run_eggnog, run_eggnog ? RUN_EGGNOG.out.annotations : null, "eggnog/**/*.emapper.annotations.gz")
+        def eggnog_in = !mergeWanted(run_eggnog, 'MERGE_EGGNOG', params.outdir as String, ["eggnog/**/*.emapper.annotations.gz"], ['eggnog.parquet']) ? null : mergeInput(use_glob, run_eggnog, run_eggnog ? RUN_EGGNOG.out.annotations : null, "eggnog/**/*.emapper.annotations.gz")
         if (eggnog_in) {
             MERGE_EGGNOG(eggnog_in)
             merge_outs << MERGE_EGGNOG.out.parquet
         }
 
-        def phobius_in = mergeInput(use_glob, run_phobius, run_phobius ? RUN_PHOBIUS.out.short_txt : null, "phobius/**/*.phobius.short.txt.gz")
+        def phobius_in = !mergeWanted(run_phobius, 'MERGE_PHOBIUS', params.outdir as String, ["phobius/**/*.phobius.short.txt.gz"], ['phobius.parquet']) ? null : mergeInput(use_glob, run_phobius, run_phobius ? RUN_PHOBIUS.out.short_txt : null, "phobius/**/*.phobius.short.txt.gz")
         if (phobius_in) {
             MERGE_PHOBIUS(phobius_in)
             merge_outs << MERGE_PHOBIUS.out.parquet
         }
 
-        def deeptmhmm_in = mergeInput(use_glob, run_deeptmhmm, run_deeptmhmm ? RUN_DEEPTMHMM.out.gff3 : null, "deeptmhmm/**/*.deeptmhmm.gff3.gz")
+        def deeptmhmm_in = !mergeWanted(run_deeptmhmm, 'MERGE_DEEPTMHMM', params.outdir as String, ["deeptmhmm/**/*.deeptmhmm.gff3.gz"], ['deeptmhmm.parquet']) ? null : mergeInput(use_glob, run_deeptmhmm, run_deeptmhmm ? RUN_DEEPTMHMM.out.gff3 : null, "deeptmhmm/**/*.deeptmhmm.gff3.gz")
         if (deeptmhmm_in) {
             MERGE_DEEPTMHMM(deeptmhmm_in)
             merge_outs << MERGE_DEEPTMHMM.out.parquet
         }
 
-        def tcdb_in = mergeInput(use_glob, run_tcdb, run_tcdb ? RUN_TCDB.out.blasttab : null, "tcdb/**/*.blasttab.gz")
+        def tcdb_in = !mergeWanted(run_tcdb, 'MERGE_TCDB', params.outdir as String, ["tcdb/**/*.blasttab.gz"], ['tcdb.parquet']) ? null : mergeInput(use_glob, run_tcdb, run_tcdb ? RUN_TCDB.out.blasttab : null, "tcdb/**/*.blasttab.gz")
         if (tcdb_in) {
             MERGE_TCDB(tcdb_in)
             merge_outs << MERGE_TCDB.out.parquet
@@ -310,30 +342,30 @@ workflow BFD_FUNCTIONAL {
         // TF inventory is derived from the same domtblout files as MERGE_PFAM
         // (see bin/merge_tf_domains.py) -- gated on run_tf, but reuses pfam_in
         // computed above rather than re-globbing.
-        if (run_tf && pfam_in) {
+        if (tf_want && pfam_in) {
             MERGE_TF(pfam_in)
             merge_outs << MERGE_TF.out.parquet
         }
 
-        def antismash_in = mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.json : null, "antismash/**/*.antismash.json.gz")
+        def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.json.gz"], ['antismash.parquet']) ? null : mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.json : null, "antismash/**/*.antismash.json.gz")
         if (antismash_in) {
             MERGE_ANTISMASH(antismash_in)
             merge_outs << MERGE_ANTISMASH.out.parquet
         }
 
-        def trnascan_in = mergeInput(use_glob, run_trnascan, run_trnascan ? RUN_TRNASCAN.out.gff3 : null, "trnascan/**/*.trnascan.no-overlaps.gff3.gz")
+        def trnascan_in = !mergeWanted(run_trnascan, 'MERGE_TRNASCAN', params.outdir as String, ["trnascan/**/*.trnascan.no-overlaps.gff3.gz"], ['trnascan.parquet']) ? null : mergeInput(use_glob, run_trnascan, run_trnascan ? RUN_TRNASCAN.out.gff3 : null, "trnascan/**/*.trnascan.no-overlaps.gff3.gz")
         if (trnascan_in) {
             MERGE_TRNASCAN(trnascan_in)
             merge_outs << MERGE_TRNASCAN.out.parquet
         }
 
-        def infernal_in = mergeInput(use_glob, run_infernal, run_infernal ? RUN_INFERNAL.out.tblout : null, "infernal/**/*.rfam.tblout.gz")
+        def infernal_in = !mergeWanted(run_infernal, 'MERGE_INFERNAL', params.outdir as String, ["infernal/**/*.rfam.tblout.gz"], ['infernal_rfam.parquet']) ? null : mergeInput(use_glob, run_infernal, run_infernal ? RUN_INFERNAL.out.tblout : null, "infernal/**/*.rfam.tblout.gz")
         if (infernal_in) {
             MERGE_INFERNAL(infernal_in)
             merge_outs << MERGE_INFERNAL.out.parquet
         }
 
-        def cazy_cgc_in = mergeInput(use_glob, run_cazy_cgc, run_cazy_cgc ? RUN_CAZY_CGC.out.cgc : null, "cazy_cgc/**/*.cgc.tsv.gz")
+        def cazy_cgc_in = !mergeWanted(run_cazy_cgc, 'MERGE_CAZY_CGC', params.outdir as String, ["cazy_cgc/**/*.cgc.tsv.gz"], ['cazy_cgc.parquet']) ? null : mergeInput(use_glob, run_cazy_cgc, run_cazy_cgc ? RUN_CAZY_CGC.out.cgc : null, "cazy_cgc/**/*.cgc.tsv.gz")
         if (cazy_cgc_in) {
             MERGE_CAZY_CGC(cazy_cgc_in)
             merge_outs << MERGE_CAZY_CGC.out.parquet
@@ -344,5 +376,8 @@ workflow BFD_FUNCTIONAL {
     // Gating channel for BUILD_DUCKDB (see comment above merge_outs). Always
     // emits at least one item so downstream .collect()/.mix() callers never
     // stall waiting on an empty channel when skip_merge is set or no tool ran.
-    sync = merge_outs ? merge_outs.inject(Channel.empty()) { acc, ch -> acc.mix(ch) } : Channel.of(true)
+    // Under merge_if_stale an empty sync means "no functional table changed",
+    // so BUILD_DUCKDB is not triggered by this subworkflow alone.
+    sync = merge_outs ? merge_outs.inject(Channel.empty()) { acc, ch -> acc.mix(ch) }
+         : (params.merge_if_stale.toBoolean() ? Channel.empty() : Channel.of(true))
 }

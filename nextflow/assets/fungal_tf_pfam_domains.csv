@@ -19,7 +19,7 @@ PF00446,SBP,SBP zinc finger
 PF00249,Myb_DNA-binding,Myb-like DNA-binding domain
 PF13921,Myb_DNA-bind_6,Myb-like DNA-binding domain variant
 PF04844,DNA_binding_1,Fungal APSES-type DNA-binding domain (e.g. Swi4/Mbp1)
-PF11955,WOPR,WOPR DNA-binding domain (fungal, e.g. Wor1/Ryp1)
+PF11955,WOPR,"WOPR DNA-binding domain (fungal, e.g. Wor1/Ryp1)"
 PF00105,zf-C4,Nuclear hormone receptor C4 zinc finger
 PF00157,Pou,POU-specific domain
 PF08880,Rrn7,RNA Pol I transcription factor Rrn7-type

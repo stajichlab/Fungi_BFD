@@ -22,7 +22,11 @@ process MERGE_SAMPLES {
     path "species.parquet", emit: species
 
     script:
-    def shrinkFlag = params.merge_all.toBoolean() ? '--enforce-no-shrink' : ''
+    // A full merge refuses a smaller species table unless the new row count
+    // equals the samples.csv LOCUSTAG count (a deliberate suppress/removal), or
+    // allow_shrink is set.
+    def shrinkFlag = !params.merge_all.toBoolean() ? '' :
+        (params.allow_shrink.toBoolean() ? '--enforce-no-shrink --allow-shrink' : '--enforce-no-shrink --expected-rows $EXPECTED')
     """
     python3 ${projectDir}/bin/subset_samples.py \\
         --samples ${samples} \\
@@ -36,6 +40,7 @@ process MERGE_SAMPLES {
     duckdb -c "COPY (SELECT * FROM read_csv_auto('samples.csv.gz', sample_size=-1)) TO 'samples.parquet' (FORMAT PARQUET);"
     duckdb -c "COPY (SELECT * FROM read_csv_auto('species.csv.gz', sample_size=-1)) TO 'species.parquet' (FORMAT PARQUET);"
     rm -f samples.csv.gz species.csv.gz
+    EXPECTED=\$(python3 -c "import csv,sys; print(len({(r.get('LOCUSTAG') or '').strip() for r in csv.DictReader(open(sys.argv[1]))} - {''}))" ${samples})
     python3 ${projectDir}/bin/publish_table.py \\
         --table         species \\
         --local-parquet species.parquet \\

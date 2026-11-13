@@ -28,7 +28,7 @@ include { MERGE_TELOMERES  } from '../../modules/BFD/MERGE_TELOMERES/main.nf'
 include { MERGE_SAMPLES    } from '../../modules/BFD/MERGE_SAMPLES/main.nf'
 include { BUILD_DUCKDB     } from '../../modules/BFD/BUILD_DUCKDB/main.nf'
 
-include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
+include { gatedGlobIn; toManifest; mergeWanted } from '../../modules/common/utils.nf'
 
 // Merge input for one stats table, as a manifest (see toManifest()).
 //   glob mode: every file under params.genome_stats_outdir matching `glob`,
@@ -41,7 +41,15 @@ include { gatedGlobIn; toManifest } from '../../modules/common/utils.nf'
 // `live` emits nothing when every genome was already cached and the producer
 // had no tasks (BATCH_*_FREQ); the glob then never fires and that merge is
 // skipped, the same as before this helper.
-def statsManifest(boolean useGlob, boolean ran, live, runFiles, String glob, String name) {
+//
+// merge_if_stale: `label`, `tables` and `extra` feed mergeWanted() (utils.nf);
+// null (merge skipped) when the producer did not run and no input is newer
+// than the merged table(s).
+def statsManifest(boolean useGlob, boolean ran, live, runFiles, String glob, String name,
+                  String label, List tables, List extra = []) {
+    if (!mergeWanted(ran, label, params.genome_stats_outdir as String, [glob], tables, extra)) {
+        return null
+    }
     if (useGlob) {
         def sync = ran ? live.collect() : Channel.of(true)
         return toManifest(gatedGlobIn(sync, params.genome_stats_outdir, glob), name)
@@ -61,6 +69,7 @@ workflow BFD_MERGE {
     intergenic_csv
     gene_stats
     asm_stats
+    telomeres_cached // genomes whose telomere output predates this run
     telomeres
     busco_genome
     functional_sync // BFD_FUNCTIONAL.out.sync -- gates BUILD_DUCKDB on the
@@ -71,7 +80,10 @@ workflow BFD_MERGE {
     main:
     // Always the full/unscoped master samples+species table now (T-014 §D.2) --
     // no matched-keys input, no per-taxon subset.
-    MERGE_SAMPLES(file(params.samples))
+    // merge_if_stale: rebuilt only when samples.csv is newer than either table.
+    def samples_want = mergeWanted(false, 'MERGE_SAMPLES', params.genome_stats_outdir as String, [],
+        ['samples.parquet', 'species.parquet'], [params.samples])
+    if (samples_want) MERGE_SAMPLES(file(params.samples))
 
     // Gating list for BUILD_DUCKDB: collects one output channel from every
     // MERGE_* process actually invoked below (any single emit suffices -- all
@@ -82,7 +94,9 @@ workflow BFD_MERGE {
     // functional_sync carries the same signal for BFD_FUNCTIONAL's merges
     // (pfam/cazy/merops/swissprot/signalp/tmhmm/targetp/idp/wolfpsort/predgpi)
     // -- without it BUILD_DUCKDB's cache key never depends on those tables.
-    def merge_outs = [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species, functional_sync]
+    def merge_outs = samples_want
+        ? [MERGE_SAMPLES.out.samples, MERGE_SAMPLES.out.species, functional_sync]
+        : [functional_sync]
 
     // In glob mode a table is rebuilt even when its producer did not run this
     // session, so genomes computed earlier still reach the table. The frequency
@@ -93,49 +107,69 @@ workflow BFD_MERGE {
     def run_codon = params.run_codon_freq.toBoolean()
 
     def aa_in = statsManifest(use_glob, run_aa, aa_csv, aa_cached.mix(aa_csv.flatten()),
-        "aa_freq/**/*.aa_freq.csv.gz", 'aa_freq.manifest.txt')
+        "aa_freq/**/*.aa_freq.csv.gz", 'aa_freq.manifest.txt',
+        'MERGE_AA_FREQ', ['aa_freq.parquet'])
     if (aa_in) {
         MERGE_AA_FREQ(aa_in)
         merge_outs << MERGE_AA_FREQ.out.parquet
     }
 
     def codon_in = statsManifest(use_glob, run_codon, codon_csv, codon_cached.mix(codon_csv.flatten()),
-        "codon_freq/**/*.codon_freq.csv.gz", 'codon_freq.manifest.txt')
+        "codon_freq/**/*.codon_freq.csv.gz", 'codon_freq.manifest.txt',
+        'MERGE_CODON_FREQ', ['codon_freq.parquet'])
     if (codon_in) {
         MERGE_CODON_FREQ(codon_in)
         merge_outs << MERGE_CODON_FREQ.out.parquet
     }
 
     def intergenic_in = statsManifest(use_glob, params.run_intergenic.toBoolean(), intergenic_csv, intergenic_csv,
-        "intergenic_stats/**/*.gene_intergenic_distances.csv.gz", 'intergenic.manifest.txt')
+        "intergenic_stats/**/*.gene_intergenic_distances.csv.gz", 'intergenic.manifest.txt',
+        'MERGE_INTERGENIC', ['gene_intergenic_distances.parquet'])
     if (intergenic_in) {
         MERGE_INTERGENIC(intergenic_in)
         merge_outs << MERGE_INTERGENIC.out.parquet
     }
 
     def gene_stats_in = statsManifest(use_glob, params.run_gene_stats.toBoolean(), gene_stats, gene_stats,
-        "gene_stats/**/*.csv.gz", 'gene_stats.manifest.txt')
+        "gene_stats/**/*.csv.gz", 'gene_stats.manifest.txt',
+        'MERGE_GENE_STATS', ['gene_info.parquet', 'gene_exons.parquet', 'gene_CDS.parquet', 'gene_introns.parquet',
+                             'gene_transcripts.parquet', 'gene_trnas.parquet', 'gene_proteins.parquet'])
     if (gene_stats_in) {
         MERGE_GENE_STATS(gene_stats_in)
+        // Every emit, not one: BUILD_DUCKDB waits only for the files in its
+        // input list, and publishDir copies each file separately. With only
+        // gene_info here, run 31866309 (2026-11-08) read gene_proteins.parquet
+        // half-copied ("No magic bytes found").
         merge_outs << MERGE_GENE_STATS.out.gene_info
+        merge_outs << MERGE_GENE_STATS.out.gene_exons
+        merge_outs << MERGE_GENE_STATS.out.gene_CDS
+        merge_outs << MERGE_GENE_STATS.out.gene_introns
+        merge_outs << MERGE_GENE_STATS.out.gene_transcripts
+        merge_outs << MERGE_GENE_STATS.out.gene_trnas
+        merge_outs << MERGE_GENE_STATS.out.gene_proteins
     }
 
     def asm_in = statsManifest(use_glob, params.run_asm_stats.toBoolean(), asm_stats, asm_stats,
-        "asm_stats/**/*.stats.txt", 'asm_stats.manifest.txt')
+        "asm_stats/**/*.stats.txt", 'asm_stats.manifest.txt',
+        'MERGE_ASM_STATS', ['asm_stats.parquet'], [params.samples])
     if (asm_in) {
         MERGE_ASM_STATS(asm_in, file(params.samples))
         merge_outs << MERGE_ASM_STATS.out.parquet
     }
 
-    def telomeres_in = statsManifest(use_glob, params.run_telomeres.toBoolean(), telomeres, telomeres,
-        "telomeres/**/*.telomeres.tsv.gz", 'telomeres.manifest.txt')
+    def telomeres_in = statsManifest(use_glob, params.run_telomeres.toBoolean(), telomeres,
+        telomeres_cached.mix(telomeres.flatten()),
+        "telomeres_v2/**/*.telomeres.tsv.gz", 'telomeres.manifest.txt',
+        'MERGE_TELOMERES', ['telomere_summary.parquet', 'telomere_tracts.parquet'], [params.samples])
     if (telomeres_in) {
         MERGE_TELOMERES(telomeres_in, file(params.samples))
         merge_outs << MERGE_TELOMERES.out.summary_parquet
+        merge_outs << MERGE_TELOMERES.out.tracts_parquet
     }
 
     def busco_in = statsManifest(use_glob, params.run_busco_genome.toBoolean(), busco_genome, busco_genome,
-        "BUSCO_genome/**/*.BUSCO_summary.*.txt", 'busco_genome.manifest.txt')
+        "BUSCO_genome/**/*.BUSCO_summary.*.txt", 'busco_genome.manifest.txt',
+        'MERGE_BUSCO_GENOME', ['busco_genome.parquet'])
     if (busco_in) {
         MERGE_BUSCO_GENOME(busco_in)
         merge_outs << MERGE_BUSCO_GENOME.out.parquet
