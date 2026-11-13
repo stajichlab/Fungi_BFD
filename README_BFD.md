@@ -133,7 +133,9 @@ SETUP_INPUT              Create symlinks in input/ pointing to funannotate predi
  │                                    freq_batch_size=50 genomes/job)       │
  │  CALC_INTERGENIC, CALC_GENE_STATS  intergenic distances, gene structure  │
  │  CALC_ASM_STATS                    assembly QC stats (keyed by ASMID)   │
- │  FIND_TELOMERES     (--run_telomeres, default false)                    │
+ │  BATCH_TELOMERES    (--run_telomeres, default false; batched,          │
+ │                       telomere_batch_size=100 genomes/job, ASMID-keyed,│
+ │                       store telomeres_v2/)                             │
  │  BUSCO_GENOME       (--run_busco_genome, default false, ASMID-keyed)    │
  │  BUSCO_PEP          (--run_busco_pep,    default false, LOCUSTAG-keyed,│
  │                       post-annotation QC — NOT used for representative- │
@@ -202,7 +204,7 @@ results/function/                ← per-species per-tool outputs (storeDir), *.
 
 results/genome_stats/             ← per-genome outputs (storeDir), hash-bucketed by
   aa_freq/  codon_freq/  intergenic/  gene_stats/  asm_stats/  BUSCO_genome/
-  BUSCO_protein/  telomeres/           ASMID or LOCUSTAG per T-014 (not by species name;
+  BUSCO_protein/  telomeres_v2/        ASMID or LOCUSTAG per T-014 (not by species name;
                                        a generated read-only symlink tree,
                                        results/genome_stats_by_name/, keeps human-browsable
                                        access without making it the canonical store)
@@ -331,6 +333,7 @@ PROTEIN_DB_PATH=/path/to/Malassezia.duckdb python MCP/BFD_mcp_server.py
 | `--run_busco_genome` / `--run_busco_pep` | `false` / `false` | BUSCO steps (assembly / protein set) |
 | `--run_telomeres` | `false` | Telomere finder |
 | `--freq_batch_size` | `50` | Genomes per SLURM job for AA/codon frequency batching |
+| `--telomere_batch_size` | `100` | Genomes per SLURM job for `BATCH_TELOMERES` (about 36 s per genome on average, so about 1 h per job). Set it in a params file, as for `n_test`. A failure in any genome fails the whole batch (`set -euo pipefail`), so no genome is dropped silently |
 | `--busco_lineages_dir` | `/srv/projects/db/BUSCO/v12/` (BFD profile) | BUSCO lineage datasets (`BUSCO_LINEAGES`) for `BUSCO_GENOME` / `BUSCO_PEP` |
 | `--merge_all` | `false` | MERGE from all files in results/ (not just current run) |
 | `--skip_merge` | `true` | Skip all MERGE steps |
@@ -373,7 +376,7 @@ re-runs every BFD step that reads the changed files the next time `BFD.nf` is su
 | `BATCH_AA_FREQ` / `BATCH_CODON_FREQ` | proteins / CDS |
 | `CALC_INTERGENIC` | GFF3 |
 | `CALC_GENE_STATS`, `RUN_ANTISMASH`, `RUN_TRNASCAN` | GFF3 and genome FASTA |
-| `RUN_INFERNAL`, `CALC_ASM_STATS`, `FIND_TELOMERES`, `BUSCO_GENOME` | genome FASTA |
+| `RUN_INFERNAL`, `CALC_ASM_STATS`, `BATCH_TELOMERES`, `BUSCO_GENOME` | genome FASTA |
 | `RUN_CAZY_CGC` | GFF3 and proteins |
 
 The DB setup steps (`SETUP_TCDB_DB`, `SETUP_DBCAN_DB`) are not checked. To force a re-run
