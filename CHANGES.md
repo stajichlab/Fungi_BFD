@@ -487,11 +487,12 @@ batched `BATCH_TELOMERES`, `telomere_batch_size = 100`, store `telomeres_v2/`).
 
 ## Bug fixes
 
-- **`BATCH_TELOMERES` could drop a genome silently.** The process shell is
-  `/bin/bash -l` without `-e`. A genome that failed in the middle of a batch did not
-  stop the task: the exit status came from the last genome, and the output glob still
-  matched the other genomes. `coverageCheck` in `MERGE_TELOMERES` compares row counts
-  with a minimum fraction, so it does not catch a few missing genomes. The script now
+- **`BATCH_TELOMERES` could store a failed genome as "no telomeres".** The process
+  shell is `/bin/bash -l` without `-e`. A genome that failed in the middle of a batch
+  did not stop the task: the exit status came from the last genome. Test with a corrupt
+  genome 2 of 7: `find_telomeres.py` raised `EOFError` but left a header-only output,
+  and the task exited 0 with 7 of 7 files. `coverageCheck` in `MERGE_TELOMERES`
+  compares row counts with a minimum fraction, so it does not catch this. The script now
   runs `set -euo pipefail` after `module load biopython`. A failure in any genome fails
   the task. storeDir keeps nothing from a failed task, `errorStrategy` retries it, and a
   later run plans the missing genomes again.
@@ -511,3 +512,9 @@ batched `BATCH_TELOMERES`, `telomere_batch_size = 100`, store `telomeres_v2/`).
   compute is in exactly one batch. Current outputs are skipped and emitted on the cached
   channel. A stale output is deleted and recomputed. An output in the wrong bucket is not
   treated as cached.
+- Failure test (batch 1's `.command.sh`, genome 2 of 7 replaced by a corrupt gzip):
+  with `set -euo pipefail` exit 1 after 1 file; without it exit 0 with 7 files.
+- Nextflow run on epyc, `n_test: 20`, `telomere_batch_size: 7`: 3 `BATCH_TELOMERES`
+  tasks (7, 7, 6 genomes; 52.7 s, 2 m 5 s, 8 m 7 s), 0 failed. All 20
+  `telomeres.tsv.gz` files are byte-identical (gzip bytes and content) to the
+  `FIND_TELOMERES` outputs in `results/genome_stats/telomeres/` from the same code.
