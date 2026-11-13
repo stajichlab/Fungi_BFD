@@ -83,6 +83,7 @@ run_swissprot: true
 run_signalp: true
 run_tmhmm: false
 run_targetp: false
+run_deeploc: false
 run_idp: true
 run_wolfpsort: true
 run_predgpi: false
@@ -115,7 +116,8 @@ SETUP_INPUT              Create symlinks in input/ pointing to funannotate predi
  │  RUN_SWISSPROT   blastp vs SwissProt (BUILD_SWISSPROT_ANNOT)            │
  │  RUN_SIGNALP     SignalP 6 (GPU, fast mode)                             │
  │  RUN_TMHMM       TMHMM short format                                     │
- │  RUN_TARGETP     TargetP 2 non-plant                                    │
+ │  RUN_TARGETP     TargetP 2 non-plant (off; replaced by RUN_DEEPLOC)     │
+ │  RUN_DEEPLOC     DeepLoc 2.1 Fast, Apptainer SIF (GPU; opt-in)          │
  │  RUN_IDP         AIUPred disorder prediction (GPU)                      │
  │  RUN_WOLFPSORT   runWolfPsortSummary fungi                              │
  │  RUN_PREDGPI     predgpi.py GFF3 mode                                   │
@@ -172,7 +174,9 @@ BUILD_DUCKDB   wraps bin/build_BFD_duckDB.sh — full rebuild of db/BFD.duckdb
 | `run_build_duckdb` | `false` | `db/BFD.duckdb` is not rebuilt automatically — separate opt-in step |
 | `run_busco_genome` / `run_busco_pep` | `false` / `false` | BUSCO steps are off by default in the BFD pipeline |
 | `run_telomeres` | `false` | Telomere finder is off by default |
-| all functional `run_*` (pfam/cazy/merops/swissprot/signalp/tmhmm/targetp/idp/wolfpsort/predgpi) | `true` | On by default in `-profile BFD` |
+| all functional `run_*` (pfam/cazy/merops/swissprot/signalp/tmhmm/idp/wolfpsort/predgpi) | `true` | On by default in `-profile BFD` |
+| `run_targetp` | `false` | TargetP 2.0 is replaced by DeepLoc 2.1. Existing TargetP results still merge. |
+| `run_deeploc` | `false` | DeepLoc 2.1 (`deeploc_model` Fast, `deeploc_gpu` true). Opt-in until a full GPU run is checked. |
 | `run_aa_freq` / `run_codon_freq` / `run_intergenic` / `run_gene_stats` | `true` | On by default |
 
 If you want a run that both merges everything on disk into `tables/` **and** rebuilds
@@ -198,7 +202,7 @@ input/                          ← populated by SETUP_INPUT (symlinks into geno
 
 results/function/                ← per-species per-tool outputs (storeDir), *.gz
   pfam_hmmscan/  cazy/<name>/  merops/  swissprot/  signalp/  tmhmm/  targetP/
-  aiupred/  wolfpsort/  predgpi/
+  deeploc/  aiupred/  wolfpsort/  predgpi/
 
 results/genome_stats/             ← per-genome outputs (storeDir), hash-bucketed by
   aa_freq/  codon_freq/  intergenic/  gene_stats/  asm_stats/  BUSCO_genome/
@@ -214,7 +218,7 @@ tables/                          ← master merged Parquet (MERGE_* output), one
   telomere_summary.parquet / telomere_tracts.parquet
   busco_genome.parquet
   pfam.parquet  cazy.parquet  cazy_overview.parquet  merops.parquet  swissprot.parquet
-  signalp.parquet  tmhmm.parquet  targetp.parquet  idp.parquet  idp_summary.parquet
+  signalp.parquet  tmhmm.parquet  targetp.parquet  deeploc.parquet  idp.parquet  idp_summary.parquet
   wolfpsort.parquet  predgpi.parquet
   aa_freq.parquet  codon_freq.parquet  gene_intergenic_distances.parquet
   gene_info.parquet  gene_transcripts.parquet  gene_exons.parquet  gene_CDS.parquet
@@ -260,7 +264,7 @@ of the script rather than assumed):
 | Telomeres | `telomere_summary`, `telomere_tracts`, view `v_telomere_both_ends` |
 | BUSCO | `busco_genome` |
 | Gene structure | `gene_info`, `gene_proteins`, `gene_transcripts`, `gene_exons`, `gene_CDS`, `gene_introns`, `gene_trna`, `gene_intergenic_distances` |
-| Functional annotation | `pfam`, `cazy`, `cazy_overview`, `merops`, `signalp`, `tmhmm`, `targetp`, `idp`, `idp_summary`, `wolfpsort`, `predgpi` |
+| Functional annotation | `pfam`, `cazy`, `cazy_overview`, `merops`, `signalp`, `tmhmm`, `targetp`, `deeploc` (view over `deeploc.parquet`), `idp`, `idp_summary`, `wolfpsort`, `predgpi` |
 | Sequence composition | `aa_frequency`, `codon_frequency` |
 | Comparative genomics (from `--pipeline paralogoscope`, not BFD) | `wgd_ks`, `wgd_ks_summary` |
 | Views | `v_species_summary`, `v_protein_annotation`, `v_telomere_both_ends` |
@@ -326,7 +330,9 @@ PROTEIN_DB_PATH=/path/to/Malassezia.duckdb python MCP/BFD_mcp_server.py
 | `--n_test` | `0` (all) | Limit to first N samples after taxon filter |
 | `--suppress` | `suppress.txt` | ASMID suppress list applied across BFD/funannotate/ANI |
 | `--run_setup` | `true` | Run SETUP_INPUT symlink step |
-| `--run_pfam` / `--run_cazy` / `--run_merops` / `--run_swissprot` / `--run_signalp` / `--run_tmhmm` / `--run_targetp` / `--run_idp` / `--run_wolfpsort` / `--run_predgpi` | `true` (each) | Per-tool functional-annotation toggles (params-file only, see [Running it](#running-it)) |
+| `--run_pfam` / `--run_cazy` / `--run_merops` / `--run_swissprot` / `--run_signalp` / `--run_tmhmm` / `--run_idp` / `--run_wolfpsort` / `--run_predgpi` | `true` (each) | Per-tool functional-annotation toggles (params-file only, see [Running it](#running-it)) |
+| `--run_targetp` / `--run_deeploc` | `false` / `false` | TargetP 2.0 (replaced) / DeepLoc 2.1 |
+| `--deeploc_model` / `--deeploc_gpu` / `--deeploc_sif` | `Fast` / `true` / `${singularity_cache}/deeploc-2.1.sif` | DeepLoc model, device, and image |
 | `--run_aa_freq` / `--run_codon_freq` / `--run_intergenic` / `--run_gene_stats` | `true` (each) | Genome-stats toggles |
 | `--run_busco_genome` / `--run_busco_pep` | `false` / `false` | BUSCO steps (assembly / protein set) |
 | `--run_telomeres` | `false` | Telomere finder |
@@ -425,7 +431,8 @@ rebuilt) once all batches are done.
 | SwissProt | `ncbi-blast/2.16.0+`, `db-swissprot` |
 | Signal peptides | `signalp/6-gpu` (A100 GPU) |
 | TM helices | `tmhmm` |
-| Subcellular targeting | `targetp` |
+| Subcellular targeting (replaced) | `targetp` |
+| Subcellular localization + sorting signals | `apptainer` + lab SIF `deeploc-2.1.sif` (GPU), built from `~/projects/containers/deeploc_container` |
 | Disorder prediction | `aiupred` (A100 GPU) |
 | Subcellular localization | `wolfpsort` |
 | GPI anchors | `predgpi` |

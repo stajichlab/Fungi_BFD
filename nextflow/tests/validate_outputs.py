@@ -33,6 +33,10 @@ EXPECTED_BIGQUERY = {
     "targetP.parquet": [
         "species_prefix", "protein_id", "prediction",
     ],
+    "deeploc.parquet": [
+        "species_prefix", "protein_id", "model", "localizations", "signals",
+        "has_signal_peptide", "has_mito_transit_peptide", "p_mitochondrion",
+    ],
     "idp.parquet": [
         "protein_id",
     ],

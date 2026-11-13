@@ -156,7 +156,37 @@ check_unique cazy_overview protein_id
 
 # ─── subcellular localisation / secretome ─────────────────────────────────────
 mkview signalp   signalp.signal_peptide.parquet 1
+
+# TargetP 2.0 is replaced by DeepLoc 2.1 (run_targetp=false in -profile BFD),
+# so targetP.parquet may be absent. Create an empty typed table then, so
+# v_protein_annotation still binds.
+if [ -f "$SRC/targetP.parquet" ]; then
 mkview targetp   targetP.parquet                1
+else
+duckdb -c "
+CREATE TABLE targetp(species_prefix VARCHAR, protein_id VARCHAR, prediction VARCHAR,
+    probability DOUBLE, cleavage_position_start BIGINT, cleavage_position_end BIGINT,
+    cleavage_probability DOUBLE, motif VARCHAR);
+" "$DB"
+fi
+
+# DeepLoc 2.1: one row per protein (~200 M rows at full scale), so this is a
+# VIEW over the Parquet file, not a copy. Empty typed table when
+# deeploc.parquet does not exist yet.
+if [ -f "$SRC/deeploc.parquet" ]; then
+mkview deeploc   deeploc.parquet                1
+else
+duckdb -c "
+CREATE TABLE deeploc(species_prefix VARCHAR, protein_id VARCHAR, model VARCHAR,
+    localizations VARCHAR, signals VARCHAR, membrane_types VARCHAR,
+    has_signal_peptide BOOLEAN, has_mito_transit_peptide BOOLEAN,
+    p_cytoplasm FLOAT, p_nucleus FLOAT, p_extracellular FLOAT, p_cell_membrane FLOAT,
+    p_mitochondrion FLOAT, p_plastid FLOAT, p_endoplasmic_reticulum FLOAT,
+    p_lysosome_vacuole FLOAT, p_golgi FLOAT, p_peroxisome FLOAT, p_peripheral FLOAT,
+    p_transmembrane FLOAT, p_lipid_anchor FLOAT, p_soluble FLOAT);
+" "$DB"
+fi
+
 mkview wolfpsort wolfpsort.parquet              1
 mkview predgpi   predgpi.parquet                1
 mkview tmhmm     tmhmm.parquet                  1
@@ -301,6 +331,9 @@ SELECT
     COALESCE(merops_p.peptidase, FALSE)AS has_merops,
     COALESCE(sp.has_signal, FALSE)     AS has_signal_peptide,
     COALESCE(tp.prediction, 'OTHER')   AS targetp_class,
+    dl.localizations                   AS deeploc_localizations,
+    dl.signals                         AS deeploc_signals,
+    dl.membrane_types                  AS deeploc_membrane_types,
     wp.localization                    AS wolfpsort_loc,
     COALESCE(tm.PredHel, 0)            AS tmhmm_helices,
     COALESCE(gpi.is_gpi, FALSE)        AS is_gpi_anchored,
@@ -311,6 +344,7 @@ LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS cazyme FROM cazy_overview) cazy_p
 LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS peptidase FROM merops) merops_p USING(protein_id)
 LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS has_signal FROM signalp) sp USING(protein_id)
 LEFT JOIN (SELECT protein_id, prediction FROM targetp) tp USING(protein_id)
+LEFT JOIN (SELECT protein_id, localizations, signals, membrane_types FROM deeploc) dl USING(protein_id)
 LEFT JOIN (SELECT protein_id, localization FROM wolfpsort) wp USING(protein_id)
 LEFT JOIN (SELECT protein_id, PredHel FROM tmhmm) tm USING(protein_id)
 LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi FROM predgpi) gpi USING(protein_id)

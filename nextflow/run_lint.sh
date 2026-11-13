@@ -45,6 +45,7 @@ python3 -m py_compile ${NXFDIR}/bin/merge_merops.py   && echo "  OK  merge_merop
 python3 -m py_compile ${NXFDIR}/bin/merge_signalp.py  && echo "  OK  merge_signalp.py"
 python3 -m py_compile ${NXFDIR}/bin/merge_tmhmm.py    && echo "  OK  merge_tmhmm.py"
 python3 -m py_compile ${NXFDIR}/bin/merge_targetp.py  && echo "  OK  merge_targetp.py"
+python3 -m py_compile ${NXFDIR}/bin/merge_deeploc.py  && echo "  OK  merge_deeploc.py"
 python3 -m py_compile ${NXFDIR}/bin/merge_wolfpsort.py && echo "  OK  merge_wolfpsort.py"
 python3 -m py_compile ${NXFDIR}/bin/merge_predgpi.py  && echo "  OK  merge_predgpi.py"
 python3 -m py_compile ${NXFDIR}/tests/validate_outputs.py && echo "  OK  validate_outputs.py"
