@@ -65,8 +65,18 @@ process BATCH_TELOMERES {
             --ends-out ${bucket}/${asmid}.telomere_denovo_ends.tsv.gz
         """.stripIndent()
     }.join('\n')
+    // Fail the whole task when any genome fails. The process shell is
+    // `/bin/bash -l` without -e (nextflow.config), so without this line a
+    // failed genome in the middle of a batch is skipped silently: the task
+    // exits with the status of the last genome, the output glob still matches
+    // the other genomes, and the merge's coverage check (a minimum fraction of
+    // the old table) does not catch a few missing rows. On failure storeDir
+    // keeps nothing from the batch; errorStrategy retries it, and a later run
+    // plans the missing genomes again. Set after `module load`, which is not
+    // safe under `set -u`.
     """
     module load biopython
+    set -euo pipefail
     ${cmds}
     """
 
