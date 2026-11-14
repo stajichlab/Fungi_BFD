@@ -971,7 +971,7 @@
                 },
                 "telomere_both_ends": {
                     "type": "boolean",
-                    "default": false,
+                    "default": true,
                     "description": "Search every pattern at both 5' and 3' ends (default: canonical orientation only)."
                 },
                 "telomere_allow_internal": {
@@ -984,6 +984,12 @@
                     "minimum": 0,
                     "description": "A tract is 'terminal' if within this many bp of the literal scaffold edge (assemblies often carry a few non-canonical bases before the repeat locks into register).",
                     "default": 10
+                },
+                "telomere_batch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 100,
+                    "description": "Genomes per BATCH_TELOMERES task (SLURM job). About 36 s per genome on average, so 100 is about 1 h per job."
                 },
                 "run_busco_genome": {
                     "type": "boolean",

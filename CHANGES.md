@@ -477,3 +477,44 @@ In glob mode the aa/codon merges now run only when a batch ran in that run.
 - Frequency fix: 3 consecutive stub runs on one store (1 genome, then 2, then rerun)
   computed 1, then only the new genome, then nothing.
 - Not yet run with the real tools.
+
+---
+
+# `main` — 2026-11-13: BATCH_TELOMERES fails loudly; batch plan test
+
+Branch `telomere-batch`. Follows PR #70 (`d7ea96f`: `FIND_TELOMERES` replaced by the
+batched `BATCH_TELOMERES`, `telomere_batch_size = 100`, store `telomeres_v2/`).
+
+## Bug fixes
+
+- **`BATCH_TELOMERES` could store a failed genome as "no telomeres".** The process
+  shell is `/bin/bash -l` without `-e`. A genome that failed in the middle of a batch
+  did not stop the task: the exit status came from the last genome. Test with a corrupt
+  genome 2 of 7: `find_telomeres.py` raised `EOFError` but left a header-only output,
+  and the task exited 0 with 7 of 7 files. `coverageCheck` in `MERGE_TELOMERES`
+  compares row counts with a minimum fraction, so it does not catch this. The script now
+  runs `set -euo pipefail` after `module load biopython`. A failure in any genome fails
+  the task. storeDir keeps nothing from a failed task, `errorStrategy` retries it, and a
+  later run plans the missing genomes again.
+
+## Other changes
+
+- `telomere_batch_size` added to `nextflow_schema.json` (integer, minimum 1, default 100).
+- `nextflow_schema.json`: `telomere_both_ends` default corrected to `true` (matches
+  `nextflow.config` since `d7ea96f`).
+- `README_BFD.md`: `FIND_TELOMERES` entries changed to `BATCH_TELOMERES`; new row for
+  `--telomere_batch_size`; store folder is `telomeres_v2/`.
+
+## Test status
+
+- New `nextflow/tests/test_telomere_batch_plan.py` (with `telomere_plan_probe.nf`) runs
+  the real `planFreq()` / `batchFreq()` on 23 fake genomes, batch size 5. Each genome to
+  compute is in exactly one batch. Current outputs are skipped and emitted on the cached
+  channel. A stale output is deleted and recomputed. An output in the wrong bucket is not
+  treated as cached.
+- Failure test (batch 1's `.command.sh`, genome 2 of 7 replaced by a corrupt gzip):
+  with `set -euo pipefail` exit 1 after 1 file; without it exit 0 with 7 files.
+- Nextflow run on epyc, `n_test: 20`, `telomere_batch_size: 7`: 3 `BATCH_TELOMERES`
+  tasks (7, 7, 6 genomes; 52.7 s, 2 m 5 s, 8 m 7 s), 0 failed. All 20
+  `telomeres.tsv.gz` files are byte-identical (gzip bytes and content) to the
+  `FIND_TELOMERES` outputs in `results/genome_stats/telomeres/` from the same code.
