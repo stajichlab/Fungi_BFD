@@ -1,4 +1,12 @@
-tests/
+# `tests/` ignored the whole directory, yet the Python suite is tracked (12
+# files, each force-added). Every new test therefore had to be `git add -f`-ed
+# or it silently never reached the repo -- which is how a test written
+# alongside the is_gpi_anchored fix nearly shipped without its test.
+# Ignore the directory's CONTENTS rather than the directory, so test sources
+# are tracked by default while fixture data, output/ and real_clean/ stay out.
+tests/*
+!tests/*.py
+!tests/*.nf
 legacy/
 lib/
 misc/
