@@ -347,7 +347,12 @@ LEFT JOIN (SELECT protein_id, prediction FROM targetp) tp USING(protein_id)
 LEFT JOIN (SELECT protein_id, localizations, signals, membrane_types FROM deeploc) dl USING(protein_id)
 LEFT JOIN (SELECT protein_id, localization FROM wolfpsort) wp USING(protein_id)
 LEFT JOIN (SELECT protein_id, PredHel FROM tmhmm) tm USING(protein_id)
-LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi FROM predgpi) gpi USING(protein_id)
+-- PredGPI emits a 'Chain' feature row for EVERY protein it reads and a 'GPI-anchor'
+-- row only for the ones it predicts an anchor on (223,938,474 vs 3,299,703 rows in
+-- the 2026-11 build). Without the feature filter this join marked all 223.9 M
+-- proteins is_gpi_anchored = TRUE instead of the 3.3 M (1.5 %) that are.
+LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi
+           FROM predgpi WHERE feature = 'GPI-anchor') gpi USING(protein_id)
 LEFT JOIN (SELECT protein_id, IDP_fraction FROM idp_summary) idps USING(protein_id);
 " "$DB"
 
