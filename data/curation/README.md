@@ -59,7 +59,7 @@ python3 scripts/audit_strain_changes.py           # writes the SPECIES/STRAIN au
 |---|---|---|
 | GCA_026225675.1, GCA_051107375.1 | SPECIES_IN, GENUS, SPECIES, NCBI_TAXONID | renamed to *Nakaseomyces glabratus* (see CHANGES.md) |
 | GCA_050707135.1, GCA_050707155.1, GCA_965643365.1 | STRAIN | hand-edited strains pinned (commit 06a9035) |
-| GCA_054471075.1 (FF90B97F), GCA_054471015.1 (F6EB82EF) | PHYLUM, CLASS | NCBI calls both "Saccharomycotina sp. YJ-2025a/b"; they are Pucciniomycotina (Basidiomycota): YJ-2025a Cystobasidiomycetes, YJ-2025b Microbotryomycetes. Phylogenomics plus AAI, `analysis/yj2025_taxonomy_check/YJ2025_TAXONOMY_CHECK.md` (2026-11-18). Remove when NCBI corrects the taxids 3475847 / 3476451 |
+| GCA_054471075.1 (FF90B97F), GCA_054471015.1 (F6EB82EF) | PHYLUM, SUBPHYLUM, CLASS | NCBI calls both "Saccharomycotina sp. YJ-2025a/b"; they are Pucciniomycotina (Basidiomycota): YJ-2025a Cystobasidiomycetes, YJ-2025b Microbotryomycetes. Phylogenomics plus AAI, `analysis/yj2025_taxonomy_check/YJ2025_TAXONOMY_CHECK.md` (2026-11-18). SUBPHYLUM added 2026-11-18 because the NCBI_fungi taxonomy rebuild fills SUBPHYLUM (it would otherwise read Saccharomycotina from NCBI's lineage); both classes sit in Pucciniomycotina in the NCBI taxdump. Remove when NCBI corrects the taxids 3475847 / 3476451 |
 
 **Pick the right file**: drop a genome → `exclude_asmids.txt`; keep a *specific*
 assembly of a duplicated isolate → `preferred_asmids.txt`; keep *several* →
