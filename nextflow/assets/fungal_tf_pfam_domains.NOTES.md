@@ -36,3 +36,30 @@ Existing tables do not change until MERGE_TF runs again.
 Run MERGE_TF with `--force_merges MERGE_TF`.
 Then rebuild tables and views made from `tf_inventory` (for example `tf_genome`, `v_tf_family_counts`)
 and reload the DuckDB views (`nextflow/bin/build_BFD_duckDB.sh`).
+
+## Added families used in the BFD TF survey
+
+Rows added for the TF survey (BFD_dashboard `config/tf_family_map.tsv`).
+The `tf_family` text is the `family` column of that file.
+`pfam_name` is the Pfam 38.2 ID from the dat file.
+
+| pfam_acc | pfam_name | tf_family |
+|---|---|---|
+| PF02319 | WHD_E2F_TDP | E2F_TDP |
+| PF01167 | Tub | Tub |
+| PF02257 | RFX_DNA_binding | RFX_DNA_binding |
+| PF03106 | WRKY | WRKY |
+| PF04516 | CP2 | CP2 |
+| PF00808 | CBFD_NFYB_HMF | CBFD_NFYB_HMF |
+| PF00649 | Copper-fist | Copper-fist |
+| PF01285 | TEA | TEA |
+| PF01017 | STAT_alpha | STAT |
+| PF02864 | STAT_bind | STAT |
+| PF21354 | STAT_linker | STAT |
+
+Adding rows changes the size of `tf_inventory`.
+The TF survey builder already counted these families from the full `pfam` table.
+`tf_inventory` in BFD does not have them yet.
+PF00808 is a histone-fold domain. It also occurs in proteins that are not CBF/NF-Y TFs.
+Its counts are an upper bound (23,334 genomes in the survey).
+This block is a separate commit. Drop that commit to keep only the accession fixes.
