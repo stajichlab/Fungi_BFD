@@ -790,3 +790,16 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Consequences**: The path is in the script text of ANNOTATE, TRINITY_STANDALONE, RNASEQ_PREPARE, TRAIN, UPDATE and PREDICT, so `-resume` reruns their cached work-dir tasks (storeDir outputs are not affected by the hash). The SIF is not built yet; build it before the next run: `apptainer build $SINGULARITY_CACHE/funannotate-1.9.1.sif docker://ghcr.io/nextgenusfs/funannotate:v1.9.1`. Feature gates in TRAIN/PREDICT probe the image `--help`, not the file name, so no gate code changed. Not yet run on BFD with 1.9.1.
 
 **Tags**: funannotate, apptainer, sif, container, version-pin, resume, decision
+
+## 2026-11-18 — Override the lineage of "Saccharomycotina sp. YJ-2025a/b" to Basidiomycota
+
+**Context**: NCBI places taxids 3475847 and 3476451 in Saccharomycotina. Phylogenomics (antarctolithica V18) puts both in Basidiomycota; an AAI panel (`analysis/yj2025_taxonomy_check/`) puts YJ-2025a in Cystobasidiomycetes and YJ-2025b in Microbotryomycetes.
+
+**Decision**: set PHYLUM=Basidiomycota and CLASS per genome through `data/curation/overrides.csv`; leave SUBPHYLUM (empty for every BFD row), ORDER, FAMILY, GENUS empty, and keep SPECIES / NCBI_TAXONID as NCBI has them.
+
+**Alternatives considered**: fixing only in BFD_dashboard (rejected: every consumer reads `species`, and the samples.csv chain is the source); PopSeq (holds species-level labels only, spec 009); setting order/genus (rejected: AAI does not resolve them).
+
+**Consequences**: the run copy of samples.csv and tables/species.parquet must be updated and rebuilt by the owner. Remove the rows when NCBI corrects the taxids.
+
+**Tags**: taxonomy, curation, overrides, samples.csv, ncbi, mislabel, decision
+

@@ -20343,8 +20343,8 @@ GCA_031124935.1_ASM3112493v1,Saccharomycopsis vini,CBS 4097,PRJNA977123,44085,di
 GCA_031124825.1_ASM3112482v1,Saccharomycopsis vini,CBS 4110,PRJNA977123,44085,dikarya,Ascomycota,,Saccharomycetes,,Ascoideales,Saccharomycopsidaceae,Saccharomycopsis,Saccharomycopsis vini,1,F78D666B
 GCA_031124845.1_ASM3112484v1,Saccharomycopsis vini,CBS 8420,PRJNA977123,44085,dikarya,Ascomycota,,Saccharomycetes,,Ascoideales,Saccharomycopsidaceae,Saccharomycopsis,Saccharomycopsis vini,1,F56DDD90
 GCA_022457085.1_ASM2245708v1,Saccharomycotina sp. CBS 16003,CBS 16003,PRJNA783499,2898426,dikarya,Ascomycota,,,,,,,Saccharomycotina sp. CBS 16003,1,F6D26FE0
-GCA_054471075.1_ASM5447107v1,Saccharomycotina sp. YJ-2025a,BHBT-Y41,PRJNA1338122,3475847,dikarya,Ascomycota,,,,,,,Saccharomycotina sp. YJ-2025a,1,FF90B97F
-GCA_054471015.1_ASM5447101v1,Saccharomycotina sp. YJ-2025b,S2A6,PRJNA1338043,3476451,dikarya,Ascomycota,,,,,,,Saccharomycotina sp. YJ-2025b,1,F6EB82EF
+GCA_054471075.1_ASM5447107v1,Saccharomycotina sp. YJ-2025a,BHBT-Y41,PRJNA1338122,3475847,dikarya,Basidiomycota,,Cystobasidiomycetes,,,,,Saccharomycotina sp. YJ-2025a,1,FF90B97F
+GCA_054471015.1_ASM5447101v1,Saccharomycotina sp. YJ-2025b,S2A6,PRJNA1338043,3476451,dikarya,Basidiomycota,,Microbotryomycetes,,,,,Saccharomycotina sp. YJ-2025b,1,F6EB82EF
 GCA_051599425.1_Sai_col_YB2330_v1,Saitoella coloradoensis,NRRL_YB-2330,PRJDB20263,1099800,dikarya,Ascomycota,,Saitoellomycetes,,Saitoellales,Saitoellaceae,Saitoella,Saitoella coloradoensis,1,F64935A0
 GCF_001661265.1_Saico1,Saitoella complicata NRRL Y-17804,NRRL Y-17804,PRJNA62119,698492,dikarya,Ascomycota,,Saitoellomycetes,,Saitoellales,Saitoellaceae,Saitoella,Saitoella complicata,1,F6365D46
 GCA_902500855.1_C2-3,Saitozyma podzolica,,PRJEB34750,1890683,dikarya,Basidiomycota,,Tremellomycetes,,Tremellales,Trimorphomycetaceae,Saitozyma,Saitozyma podzolica,1,F35C3965

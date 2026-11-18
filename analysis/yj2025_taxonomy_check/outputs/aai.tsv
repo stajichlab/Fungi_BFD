@@ -1,0 +1,214 @@
+query	query_species	rank	ref	ref_role	ref_species	ref_class	ref_order	ref_family	ref_genus	n_counted	frac_hit	aai
+F6EB82EF	Saccharomycotina sp. YJ-2025b	1	F1B8EB63	pucciniomycotina	Leucosporidium creatinivorum	Microbotryomycetes	Leucosporidiales	Leucosporidiaceae	Leucosporidium	5783	0.8532	59.45
+F6EB82EF	Saccharomycotina sp. YJ-2025b	2	F71490B2	pucciniomycotina	Glaciozyma antarctica	Microbotryomycetes	Kriegeriales	Camptobasidiaceae	Glaciozyma	5198	0.7669	56.33
+F6EB82EF	Saccharomycotina sp. YJ-2025b	3	F9A13FDA	pucciniomycotina	Microbotryum lychnidis-dioicae	Microbotryomycetes	Microbotryales	Microbotryaceae	Microbotryum	5383	0.7942	55.68
+F6EB82EF	Saccharomycotina sp. YJ-2025b	4	F0B95F20	pucciniomycotina	Phenoliferia psychrophenolica	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Phenoliferia	5427	0.8007	55.53
+F6EB82EF	Saccharomycotina sp. YJ-2025b	5	FEEC3D92	pucciniomycotina	Sporobolomyces salmonicolor	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Sporobolomyces	5293	0.7809	55.43
+F6EB82EF	Saccharomycotina sp. YJ-2025b	6	F06B2AB8	rhodotorula	Rhodotorula paludigena	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5392	0.7955	54.7
+F6EB82EF	Saccharomycotina sp. YJ-2025b	7	F2DD6D01	rhodotorula	Rhodotorula kratochvilovae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5396	0.7961	54.7
+F6EB82EF	Saccharomycotina sp. YJ-2025b	8	F609CFF7	rhodotorula	Rhodotorula sp. CP72-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5402	0.797	54.65
+F6EB82EF	Saccharomycotina sp. YJ-2025b	9	F4105AA8	rhodotorula	Rhodotorula sp. PL61-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5399	0.7965	54.64
+F6EB82EF	Saccharomycotina sp. YJ-2025b	10	F7D9855F	pucciniomycotina	Meredithblackwellia eburnea	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Meredithblackwellia	5348	0.789	54.64
+F6EB82EF	Saccharomycotina sp. YJ-2025b	11	FC8A05C6	rhodotorula	Rhodotorula toruloides	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5356	0.7902	54.6
+F6EB82EF	Saccharomycotina sp. YJ-2025b	12	FCD1CDA4	rhodotorula	Rhodotorula sp. HGY1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5397	0.7963	54.54
+F6EB82EF	Saccharomycotina sp. YJ-2025b	13	FE4CD00B	rhodotorula	Rhodotorula sp. HGY2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5396	0.7961	54.51
+F6EB82EF	Saccharomycotina sp. YJ-2025b	14	F60D5670	pucciniomycotina	Pseudohyphozyma bogoriensis	Microbotryomycetes		Chrysozymaceae	Pseudohyphozyma	4991	0.7364	54.44
+F6EB82EF	Saccharomycotina sp. YJ-2025b	15	FC471836	rhodotorula	Rhodotorula sp. BUB8	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5319	0.7847	54.39
+F6EB82EF	Saccharomycotina sp. YJ-2025b	16	F2343080	pucciniomycotina	Rhodosporidiobolus fluvialis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodosporidiobolus	5443	0.803	54.38
+F6EB82EF	Saccharomycotina sp. YJ-2025b	17	FD738BD6	rhodotorula	Rhodotorula sp. S30-09	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5206	0.7681	54.38
+F6EB82EF	Saccharomycotina sp. YJ-2025b	18	FA00C0F6	rhodotorula	Rhodotorula araucariae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5269	0.7774	54.37
+F6EB82EF	Saccharomycotina sp. YJ-2025b	19	F38A1400	rhodotorula	Rhodotorula diobovata	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5361	0.7909	54.31
+F6EB82EF	Saccharomycotina sp. YJ-2025b	20	F8C932C2	rhodotorula	Rhodotorula sp. ZM1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5235	0.7724	54.3
+F6EB82EF	Saccharomycotina sp. YJ-2025b	21	F63E8300	pucciniomycotina	Curvibasidium rogersii	Microbotryomycetes			Curvibasidium	4883	0.7204	54.22
+F6EB82EF	Saccharomycotina sp. YJ-2025b	22	F3D59DF9	rhodotorula	Rhodotorula mucilaginosa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5198	0.7669	54.12
+F6EB82EF	Saccharomycotina sp. YJ-2025b	23	F3E8DEF6	rhodotorula	Rhodotorula babjevae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5409	0.798	54.09
+F6EB82EF	Saccharomycotina sp. YJ-2025b	24	FD3C52D4	rhodotorula	Rhodotorula sp. CCFEE 5036	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5036	0.743	54.01
+F6EB82EF	Saccharomycotina sp. YJ-2025b	25	F5EF8781	rhodotorula	Rhodotorula sp. VS67	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5183	0.7647	53.99
+F6EB82EF	Saccharomycotina sp. YJ-2025b	26	F8663704	rhodotorula	Rhodotorula graminis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5357	0.7904	53.96
+F6EB82EF	Saccharomycotina sp. YJ-2025b	27	F5E48ABB	rhodotorula	Rhodotorula sp. CC01	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5177	0.7638	53.95
+F6EB82EF	Saccharomycotina sp. YJ-2025b	28	F8C33FE9	rhodotorula	Rhodotorula sp. JG-1b	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5186	0.7651	53.92
+F6EB82EF	Saccharomycotina sp. YJ-2025b	29	FBBC614A	query	Rhodotorula pacifica	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5227	0.7712	53.87
+F6EB82EF	Saccharomycotina sp. YJ-2025b	30	FE672C2F	rhodotorula	Rhodotorula dairenensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5106	0.7533	53.86
+F6EB82EF	Saccharomycotina sp. YJ-2025b	31	FE4BBF15	rhodotorula	Rhodotorula glutinis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5253	0.775	53.84
+F6EB82EF	Saccharomycotina sp. YJ-2025b	32	FE6A7FE5	rhodotorula	Rhodotorula taiwanensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5230	0.7716	53.83
+F6EB82EF	Saccharomycotina sp. YJ-2025b	33	F22EC48F	rhodotorula	Rhodotorula sphaerocarpa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5104	0.753	53.71
+F6EB82EF	Saccharomycotina sp. YJ-2025b	34	FBE2CBDC	rhodotorula	Rhodotorula sp. M30-05A-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5009	0.739	53.47
+F6EB82EF	Saccharomycotina sp. YJ-2025b	35	FA9AF733	rhodotorula	Rhodotorula sp. FNED7-22	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	3221	0.4752	51.18
+F6EB82EF	Saccharomycotina sp. YJ-2025b	36	FC4529B7	pucciniomycotina	Heterogastridium pycnidioideum	Microbotryomycetes	Heterogastridiales	Heterogastridiaceae	Heterogastridium	4549	0.6711	49.94
+F6EB82EF	Saccharomycotina sp. YJ-2025b	37	FD343C0D	pucciniomycotina	Trigonosporomyces sp. YL-2025a	Microbotryomycetes		Chrysozymaceae	Trigonosporomyces	4110	0.6064	49.7
+F6EB82EF	Saccharomycotina sp. YJ-2025b	38	FF90B97F	query	Saccharomycotina sp. YJ-2025a					4302	0.6347	47.54
+F6EB82EF	Saccharomycotina sp. YJ-2025b	39	F2784966	pucciniomycotina	Erythrobasidium hasegawianum	Cystobasidiomycetes	Erythrobasidiales	Erythrobasidiaceae	Erythrobasidium	4616	0.681	47.47
+F6EB82EF	Saccharomycotina sp. YJ-2025b	40	F36687D7	pucciniomycotina	Mixia osmundae	Mixiomycetes	Mixiales	Mixiaceae	Mixia	4288	0.6326	47.43
+F6EB82EF	Saccharomycotina sp. YJ-2025b	41	F9136DAA	pucciniomycotina	Symmetrospora coprosmae	Cystobasidiomycetes		Symmetrosporaceae	Symmetrospora	4439	0.6549	47.15
+F6EB82EF	Saccharomycotina sp. YJ-2025b	42	FE289278	pucciniomycotina	Naohidea sebacea	Cystobasidiomycetes	Naohideales	Naohideaceae	Naohidea	4335	0.6396	47.14
+F6EB82EF	Saccharomycotina sp. YJ-2025b	43	F2E00E46	pucciniomycotina	Cystobasidium pallidum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystobasidium	4292	0.6332	47.12
+F6EB82EF	Saccharomycotina sp. YJ-2025b	44	F9FDEFE1	pucciniomycotina	Kondoa malvinella	Agaricostilbomycetes	Agaricostilbales	Kondoaceae	Kondoa	4451	0.6567	46.97
+F6EB82EF	Saccharomycotina sp. YJ-2025b	45	F7B103CA	pucciniomycotina	Cystobasidiopsis lactophilus	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Cystobasidiopsis	4448	0.6562	46.94
+F6EB82EF	Saccharomycotina sp. YJ-2025b	46	F80D5443	pucciniomycotina	Cystastrum externum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystastrum	3902	0.5757	46.83
+F6EB82EF	Saccharomycotina sp. YJ-2025b	47	FDB08AFC	pucciniomycotina	Phyllozyma linderae	Spiculogloeomycetes	Spiculogloeales	Spiculogloeaceae	Phyllozyma	4478	0.6607	46.77
+F6EB82EF	Saccharomycotina sp. YJ-2025b	48	FB950F4F	pucciniomycotina	Kurtzmanomyces sp. YL-2025a	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Kurtzmanomyces	4415	0.6514	46.7
+F6EB82EF	Saccharomycotina sp. YJ-2025b	49	F7CEB1BD	pucciniomycotina	Reniforma strues	Microbotryomycetes			Reniforma	3510	0.5179	46.37
+F6EB82EF	Saccharomycotina sp. YJ-2025b	50	FF98D398	pucciniomycotina	Atractiella rhizophila	Atractiellomycetes	Atractiellales	Hoehnelomycetaceae	Atractiella	4145	0.6115	46.23
+F6EB82EF	Saccharomycotina sp. YJ-2025b	51	FBBE50E5	pucciniomycotina	Sterigmatomyces hyphaenes	Agaricostilbomycetes	Agaricostilbales	Agaricostilbaceae	Sterigmatomyces	4289	0.6328	46.13
+F6EB82EF	Saccharomycotina sp. YJ-2025b	52	F0320CB2	pucciniomycotina	Phakopsora pachyrhizi	Pucciniomycetes	Pucciniales	Phakopsoraceae	Phakopsora	3587	0.5292	46.1
+F6EB82EF	Saccharomycotina sp. YJ-2025b	53	FB682192	pucciniomycotina	Puccinia graminis	Pucciniomycetes	Pucciniales	Pucciniaceae	Puccinia	4006	0.591	45.94
+F6EB82EF	Saccharomycotina sp. YJ-2025b	54	F272F6E1	pucciniomycotina	Melampsora americana	Pucciniomycetes	Pucciniales	Melampsoraceae	Melampsora	3863	0.5699	45.91
+F6EB82EF	Saccharomycotina sp. YJ-2025b	55	F9E4744C	pucciniomycotina	Hemileia vastatrix	Pucciniomycetes	Pucciniales	Zaghouaniaceae	Hemileia	4168	0.6149	45.75
+F6EB82EF	Saccharomycotina sp. YJ-2025b	56	F4909EF4	pucciniomycotina	Classicula fluitans	Classiculomycetes	Classiculales	Classiculaceae	Classicula	4118	0.6076	45.61
+F6EB82EF	Saccharomycotina sp. YJ-2025b	57	F7368166	control	Pleurotus djamor	Agaricomycetes	Agaricales	Pleurotaceae	Pleurotus	4183	0.6171	45.6
+F6EB82EF	Saccharomycotina sp. YJ-2025b	58	F90996AD	pucciniomycotina	Tritirachium sp. CBS 265.96	Tritirachiomycetes	Tritirachiales	Tritirachiaceae	Tritirachium	3895	0.5747	45.42
+F6EB82EF	Saccharomycotina sp. YJ-2025b	59	F878B385	control	Agaricus bisporus	Agaricomycetes	Agaricales	Agaricaceae	Agaricus	4232	0.6244	45.36
+F6EB82EF	Saccharomycotina sp. YJ-2025b	60	FEA0C093	pucciniomycotina	Cronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Cronartium	3980	0.5872	45.27
+F6EB82EF	Saccharomycotina sp. YJ-2025b	61	FB7EFA92	control	Sporisorium graminicola	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Sporisorium	4115	0.6071	45.15
+F6EB82EF	Saccharomycotina sp. YJ-2025b	62	FD157492	control	Ustilago crameri	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Ustilago	4083	0.6024	45.01
+F6EB82EF	Saccharomycotina sp. YJ-2025b	63	FDF24B2E	control	Trichosporon ovoides	Tremellomycetes	Trichosporonales	Trichosporonaceae	Trichosporon	4019	0.5929	44.8
+F6EB82EF	Saccharomycotina sp. YJ-2025b	64	FC20AD55	pucciniomycotina	Uromyces viciae-fabae	Pucciniomycetes	Pucciniales	Pucciniaceae	Uromyces	3291	0.4855	44.72
+F6EB82EF	Saccharomycotina sp. YJ-2025b	65	FACB5838	control	Phaeotremella skinneri	Tremellomycetes	Tremellales	Phaeotremellaceae	Phaeotremella	4034	0.5952	44.66
+F6EB82EF	Saccharomycotina sp. YJ-2025b	66	F7FF3227	control	Meira miltonrushii	Exobasidiomycetes	Exobasidiales	Brachybasidiaceae	Meira	3961	0.5844	44.48
+F6EB82EF	Saccharomycotina sp. YJ-2025b	67	F90F14B6	pucciniomycotina	Endocronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Endocronartium	1827	0.2695	44.22
+F6EB82EF	Saccharomycotina sp. YJ-2025b	68	F7B62D90	control	Debaryomycetaceae sp. 2NR914	Pichiomycetes	Serinales	Debaryomycetaceae		3466	0.5114	41.6
+F6EB82EF	Saccharomycotina sp. YJ-2025b	69	F7A8D739	control	Nothofagozyma chilensis	Pichiomycetes	Serinales	Cephaloascaceae	Nothofagozyma	2963	0.4371	41.26
+F6EB82EF	Saccharomycotina sp. YJ-2025b	70	FCA4EAF0	control	Hansenula subpelliculosa	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Hansenula	2841	0.4192	41.12
+F6EB82EF	Saccharomycotina sp. YJ-2025b	71	F29CB415	control	Wickerhamomyces sp. HHY24-4	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Wickerhamomyces	2972	0.4385	41.05
+FBBC614A	Rhodotorula pacifica	1	F3D59DF9	rhodotorula	Rhodotorula mucilaginosa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6715	0.9096	77.1
+FBBC614A	Rhodotorula pacifica	2	F8C33FE9	rhodotorula	Rhodotorula sp. JG-1b	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6642	0.8998	77.08
+FBBC614A	Rhodotorula pacifica	3	F5EF8781	rhodotorula	Rhodotorula sp. VS67	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6692	0.9065	77.01
+FBBC614A	Rhodotorula pacifica	4	F5E48ABB	rhodotorula	Rhodotorula sp. CC01	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6666	0.903	76.79
+FBBC614A	Rhodotorula pacifica	5	FD3C52D4	rhodotorula	Rhodotorula sp. CCFEE 5036	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6529	0.8844	76.75
+FBBC614A	Rhodotorula pacifica	6	FE672C2F	rhodotorula	Rhodotorula dairenensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6518	0.883	76.62
+FBBC614A	Rhodotorula pacifica	7	FBE2CBDC	rhodotorula	Rhodotorula sp. M30-05A-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6516	0.8827	76.38
+FBBC614A	Rhodotorula pacifica	8	FE6A7FE5	rhodotorula	Rhodotorula taiwanensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6693	0.9067	71.54
+FBBC614A	Rhodotorula pacifica	9	FE4BBF15	rhodotorula	Rhodotorula glutinis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6774	0.9176	71.31
+FBBC614A	Rhodotorula pacifica	10	F22EC48F	rhodotorula	Rhodotorula sphaerocarpa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6267	0.849	70.84
+FBBC614A	Rhodotorula pacifica	11	FD738BD6	rhodotorula	Rhodotorula sp. S30-09	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	5894	0.7984	63.2
+FBBC614A	Rhodotorula pacifica	12	FC8A05C6	rhodotorula	Rhodotorula toruloides	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6235	0.8446	62.94
+FBBC614A	Rhodotorula pacifica	13	F8C932C2	rhodotorula	Rhodotorula sp. ZM1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6026	0.8163	62.74
+FBBC614A	Rhodotorula pacifica	14	F609CFF7	rhodotorula	Rhodotorula sp. CP72-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6191	0.8387	62.56
+FBBC614A	Rhodotorula pacifica	15	F4105AA8	rhodotorula	Rhodotorula sp. PL61-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6194	0.8391	62.53
+FBBC614A	Rhodotorula pacifica	16	F06B2AB8	rhodotorula	Rhodotorula paludigena	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6199	0.8397	62.44
+FBBC614A	Rhodotorula pacifica	17	F2DD6D01	rhodotorula	Rhodotorula kratochvilovae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6270	0.8494	62.3
+FBBC614A	Rhodotorula pacifica	18	FCD1CDA4	rhodotorula	Rhodotorula sp. HGY1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6225	0.8433	62.24
+FBBC614A	Rhodotorula pacifica	19	FE4CD00B	rhodotorula	Rhodotorula sp. HGY2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6235	0.8446	62.22
+FBBC614A	Rhodotorula pacifica	20	FC471836	rhodotorula	Rhodotorula sp. BUB8	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6131	0.8305	62.03
+FBBC614A	Rhodotorula pacifica	21	F38A1400	rhodotorula	Rhodotorula diobovata	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6127	0.83	61.98
+FBBC614A	Rhodotorula pacifica	22	FA00C0F6	rhodotorula	Rhodotorula araucariae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6030	0.8169	61.94
+FBBC614A	Rhodotorula pacifica	23	F3E8DEF6	rhodotorula	Rhodotorula babjevae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6191	0.8387	61.52
+FBBC614A	Rhodotorula pacifica	24	F8663704	rhodotorula	Rhodotorula graminis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	6122	0.8293	61.42
+FBBC614A	Rhodotorula pacifica	25	F2343080	pucciniomycotina	Rhodosporidiobolus fluvialis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodosporidiobolus	6213	0.8416	60.33
+FBBC614A	Rhodotorula pacifica	26	FEEC3D92	pucciniomycotina	Sporobolomyces salmonicolor	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Sporobolomyces	5762	0.7805	60.33
+FBBC614A	Rhodotorula pacifica	27	F1B8EB63	pucciniomycotina	Leucosporidium creatinivorum	Microbotryomycetes	Leucosporidiales	Leucosporidiaceae	Leucosporidium	5612	0.7602	55.73
+FBBC614A	Rhodotorula pacifica	28	F71490B2	pucciniomycotina	Glaciozyma antarctica	Microbotryomycetes	Kriegeriales	Camptobasidiaceae	Glaciozyma	5196	0.7039	54.91
+FBBC614A	Rhodotorula pacifica	29	F0B95F20	pucciniomycotina	Phenoliferia psychrophenolica	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Phenoliferia	5472	0.7413	54.32
+FBBC614A	Rhodotorula pacifica	30	FA9AF733	rhodotorula	Rhodotorula sp. FNED7-22	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	3597	0.4873	54.31
+FBBC614A	Rhodotorula pacifica	31	F6EB82EF	query	Saccharomycotina sp. YJ-2025b					5332	0.7223	54.01
+FBBC614A	Rhodotorula pacifica	32	F63E8300	pucciniomycotina	Curvibasidium rogersii	Microbotryomycetes			Curvibasidium	4908	0.6649	53.86
+FBBC614A	Rhodotorula pacifica	33	F9A13FDA	pucciniomycotina	Microbotryum lychnidis-dioicae	Microbotryomycetes	Microbotryales	Microbotryaceae	Microbotryum	5229	0.7083	53.85
+FBBC614A	Rhodotorula pacifica	34	F60D5670	pucciniomycotina	Pseudohyphozyma bogoriensis	Microbotryomycetes		Chrysozymaceae	Pseudohyphozyma	5011	0.6788	53.7
+FBBC614A	Rhodotorula pacifica	35	F7D9855F	pucciniomycotina	Meredithblackwellia eburnea	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Meredithblackwellia	5318	0.7204	53.62
+FBBC614A	Rhodotorula pacifica	36	FC4529B7	pucciniomycotina	Heterogastridium pycnidioideum	Microbotryomycetes	Heterogastridiales	Heterogastridiaceae	Heterogastridium	4464	0.6047	49.91
+FBBC614A	Rhodotorula pacifica	37	FD343C0D	pucciniomycotina	Trigonosporomyces sp. YL-2025a	Microbotryomycetes		Chrysozymaceae	Trigonosporomyces	4085	0.5534	49.77
+FBBC614A	Rhodotorula pacifica	38	FF90B97F	query	Saccharomycotina sp. YJ-2025a					4304	0.583	47.43
+FBBC614A	Rhodotorula pacifica	39	F2784966	pucciniomycotina	Erythrobasidium hasegawianum	Cystobasidiomycetes	Erythrobasidiales	Erythrobasidiaceae	Erythrobasidium	4586	0.6212	47.42
+FBBC614A	Rhodotorula pacifica	40	F36687D7	pucciniomycotina	Mixia osmundae	Mixiomycetes	Mixiales	Mixiaceae	Mixia	4235	0.5737	47.29
+FBBC614A	Rhodotorula pacifica	41	F9136DAA	pucciniomycotina	Symmetrospora coprosmae	Cystobasidiomycetes		Symmetrosporaceae	Symmetrospora	4434	0.6007	47.28
+FBBC614A	Rhodotorula pacifica	42	FE289278	pucciniomycotina	Naohidea sebacea	Cystobasidiomycetes	Naohideales	Naohideaceae	Naohidea	4300	0.5825	47.18
+FBBC614A	Rhodotorula pacifica	43	F7B103CA	pucciniomycotina	Cystobasidiopsis lactophilus	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Cystobasidiopsis	4363	0.591	47.04
+FBBC614A	Rhodotorula pacifica	44	F9FDEFE1	pucciniomycotina	Kondoa malvinella	Agaricostilbomycetes	Agaricostilbales	Kondoaceae	Kondoa	4392	0.595	46.97
+FBBC614A	Rhodotorula pacifica	45	F2E00E46	pucciniomycotina	Cystobasidium pallidum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystobasidium	4272	0.5787	46.86
+FBBC614A	Rhodotorula pacifica	46	FDB08AFC	pucciniomycotina	Phyllozyma linderae	Spiculogloeomycetes	Spiculogloeales	Spiculogloeaceae	Phyllozyma	4438	0.6012	46.81
+FBBC614A	Rhodotorula pacifica	47	FB950F4F	pucciniomycotina	Kurtzmanomyces sp. YL-2025a	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Kurtzmanomyces	4396	0.5955	46.62
+FBBC614A	Rhodotorula pacifica	48	F80D5443	pucciniomycotina	Cystastrum externum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystastrum	3902	0.5286	46.6
+FBBC614A	Rhodotorula pacifica	49	F0320CB2	pucciniomycotina	Phakopsora pachyrhizi	Pucciniomycetes	Pucciniales	Phakopsoraceae	Phakopsora	3514	0.476	46.48
+FBBC614A	Rhodotorula pacifica	50	F7CEB1BD	pucciniomycotina	Reniforma strues	Microbotryomycetes			Reniforma	3508	0.4752	46.45
+FBBC614A	Rhodotorula pacifica	51	FF98D398	pucciniomycotina	Atractiella rhizophila	Atractiellomycetes	Atractiellales	Hoehnelomycetaceae	Atractiella	4100	0.5554	46.42
+FBBC614A	Rhodotorula pacifica	52	FB682192	pucciniomycotina	Puccinia graminis	Pucciniomycetes	Pucciniales	Pucciniaceae	Puccinia	3940	0.5337	46.27
+FBBC614A	Rhodotorula pacifica	53	FBBE50E5	pucciniomycotina	Sterigmatomyces hyphaenes	Agaricostilbomycetes	Agaricostilbales	Agaricostilbaceae	Sterigmatomyces	4298	0.5822	46.23
+FBBC614A	Rhodotorula pacifica	54	F272F6E1	pucciniomycotina	Melampsora americana	Pucciniomycetes	Pucciniales	Melampsoraceae	Melampsora	3815	0.5168	46.12
+FBBC614A	Rhodotorula pacifica	55	F9E4744C	pucciniomycotina	Hemileia vastatrix	Pucciniomycetes	Pucciniales	Zaghouaniaceae	Hemileia	4113	0.5572	46.01
+FBBC614A	Rhodotorula pacifica	56	F7368166	control	Pleurotus djamor	Agaricomycetes	Agaricales	Pleurotaceae	Pleurotus	4134	0.56	45.98
+FBBC614A	Rhodotorula pacifica	57	FEA0C093	pucciniomycotina	Cronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Cronartium	3907	0.5293	45.67
+FBBC614A	Rhodotorula pacifica	58	F4909EF4	pucciniomycotina	Classicula fluitans	Classiculomycetes	Classiculales	Classiculaceae	Classicula	4133	0.5599	45.57
+FBBC614A	Rhodotorula pacifica	59	F878B385	control	Agaricus bisporus	Agaricomycetes	Agaricales	Agaricaceae	Agaricus	4212	0.5706	45.53
+FBBC614A	Rhodotorula pacifica	60	F90996AD	pucciniomycotina	Tritirachium sp. CBS 265.96	Tritirachiomycetes	Tritirachiales	Tritirachiaceae	Tritirachium	3828	0.5186	45.5
+FBBC614A	Rhodotorula pacifica	61	FB7EFA92	control	Sporisorium graminicola	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Sporisorium	4105	0.5561	45.31
+FBBC614A	Rhodotorula pacifica	62	FDF24B2E	control	Trichosporon ovoides	Tremellomycetes	Trichosporonales	Trichosporonaceae	Trichosporon	3978	0.5389	45.26
+FBBC614A	Rhodotorula pacifica	63	FD157492	control	Ustilago crameri	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Ustilago	4068	0.5511	45.25
+FBBC614A	Rhodotorula pacifica	64	FACB5838	control	Phaeotremella skinneri	Tremellomycetes	Tremellales	Phaeotremellaceae	Phaeotremella	4028	0.5457	45.24
+FBBC614A	Rhodotorula pacifica	65	FC20AD55	pucciniomycotina	Uromyces viciae-fabae	Pucciniomycetes	Pucciniales	Pucciniaceae	Uromyces	3228	0.4373	45.22
+FBBC614A	Rhodotorula pacifica	66	F90F14B6	pucciniomycotina	Endocronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Endocronartium	1794	0.243	44.75
+FBBC614A	Rhodotorula pacifica	67	F7FF3227	control	Meira miltonrushii	Exobasidiomycetes	Exobasidiales	Brachybasidiaceae	Meira	3963	0.5368	44.63
+FBBC614A	Rhodotorula pacifica	68	F7A8D739	control	Nothofagozyma chilensis	Pichiomycetes	Serinales	Cephaloascaceae	Nothofagozyma	2942	0.3985	41.84
+FBBC614A	Rhodotorula pacifica	69	F7B62D90	control	Debaryomycetaceae sp. 2NR914	Pichiomycetes	Serinales	Debaryomycetaceae		3459	0.4686	41.84
+FBBC614A	Rhodotorula pacifica	70	F29CB415	control	Wickerhamomyces sp. HHY24-4	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Wickerhamomyces	2948	0.3993	41.81
+FBBC614A	Rhodotorula pacifica	71	FCA4EAF0	control	Hansenula subpelliculosa	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Hansenula	2837	0.3843	41.75
+FF90B97F	Saccharomycotina sp. YJ-2025a	1	F2784966	pucciniomycotina	Erythrobasidium hasegawianum	Cystobasidiomycetes	Erythrobasidiales	Erythrobasidiaceae	Erythrobasidium	6143	0.7991	58.09
+FF90B97F	Saccharomycotina sp. YJ-2025a	2	F9136DAA	pucciniomycotina	Symmetrospora coprosmae	Cystobasidiomycetes		Symmetrosporaceae	Symmetrospora	5827	0.758	56.67
+FF90B97F	Saccharomycotina sp. YJ-2025a	3	F2E00E46	pucciniomycotina	Cystobasidium pallidum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystobasidium	5644	0.7342	56.0
+FF90B97F	Saccharomycotina sp. YJ-2025a	4	F80D5443	pucciniomycotina	Cystastrum externum	Cystobasidiomycetes	Cystobasidiales	Cystobasidiaceae	Cystastrum	5287	0.6878	55.86
+FF90B97F	Saccharomycotina sp. YJ-2025a	5	FE289278	pucciniomycotina	Naohidea sebacea	Cystobasidiomycetes	Naohideales	Naohideaceae	Naohidea	4552	0.5922	48.71
+FF90B97F	Saccharomycotina sp. YJ-2025a	6	F71490B2	pucciniomycotina	Glaciozyma antarctica	Microbotryomycetes	Kriegeriales	Camptobasidiaceae	Glaciozyma	4437	0.5772	47.74
+FF90B97F	Saccharomycotina sp. YJ-2025a	7	F1B8EB63	pucciniomycotina	Leucosporidium creatinivorum	Microbotryomycetes	Leucosporidiales	Leucosporidiaceae	Leucosporidium	4604	0.5989	47.55
+FF90B97F	Saccharomycotina sp. YJ-2025a	8	F0B95F20	pucciniomycotina	Phenoliferia psychrophenolica	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Phenoliferia	4719	0.6139	47.47
+FF90B97F	Saccharomycotina sp. YJ-2025a	9	F9FDEFE1	pucciniomycotina	Kondoa malvinella	Agaricostilbomycetes	Agaricostilbales	Kondoaceae	Kondoa	4555	0.5926	47.33
+FF90B97F	Saccharomycotina sp. YJ-2025a	10	F7D9855F	pucciniomycotina	Meredithblackwellia eburnea	Microbotryomycetes	Kriegeriales	Kriegeriaceae	Meredithblackwellia	4605	0.5991	47.25
+FF90B97F	Saccharomycotina sp. YJ-2025a	11	F36687D7	pucciniomycotina	Mixia osmundae	Mixiomycetes	Mixiales	Mixiaceae	Mixia	4201	0.5465	47.18
+FF90B97F	Saccharomycotina sp. YJ-2025a	12	F7B103CA	pucciniomycotina	Cystobasidiopsis lactophilus	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Cystobasidiopsis	4503	0.5858	47.09
+FF90B97F	Saccharomycotina sp. YJ-2025a	13	FEEC3D92	pucciniomycotina	Sporobolomyces salmonicolor	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Sporobolomyces	4440	0.5776	47.08
+FF90B97F	Saccharomycotina sp. YJ-2025a	14	F2DD6D01	rhodotorula	Rhodotorula kratochvilovae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4535	0.59	47.04
+FF90B97F	Saccharomycotina sp. YJ-2025a	15	F60D5670	pucciniomycotina	Pseudohyphozyma bogoriensis	Microbotryomycetes		Chrysozymaceae	Pseudohyphozyma	4320	0.562	46.99
+FF90B97F	Saccharomycotina sp. YJ-2025a	16	F06B2AB8	rhodotorula	Rhodotorula paludigena	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4535	0.59	46.94
+FF90B97F	Saccharomycotina sp. YJ-2025a	17	FA00C0F6	rhodotorula	Rhodotorula araucariae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4417	0.5746	46.94
+FF90B97F	Saccharomycotina sp. YJ-2025a	18	F4105AA8	rhodotorula	Rhodotorula sp. PL61-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4542	0.5909	46.93
+FF90B97F	Saccharomycotina sp. YJ-2025a	19	F609CFF7	rhodotorula	Rhodotorula sp. CP72-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4545	0.5913	46.93
+FF90B97F	Saccharomycotina sp. YJ-2025a	20	FC8A05C6	rhodotorula	Rhodotorula toruloides	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4492	0.5844	46.92
+FF90B97F	Saccharomycotina sp. YJ-2025a	21	F63E8300	pucciniomycotina	Curvibasidium rogersii	Microbotryomycetes			Curvibasidium	4161	0.5413	46.88
+FF90B97F	Saccharomycotina sp. YJ-2025a	22	FE4CD00B	rhodotorula	Rhodotorula sp. HGY2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4525	0.5887	46.85
+FF90B97F	Saccharomycotina sp. YJ-2025a	23	FCD1CDA4	rhodotorula	Rhodotorula sp. HGY1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4525	0.5887	46.84
+FF90B97F	Saccharomycotina sp. YJ-2025a	24	F8C932C2	rhodotorula	Rhodotorula sp. ZM1	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4397	0.572	46.78
+FF90B97F	Saccharomycotina sp. YJ-2025a	25	F6EB82EF	query	Saccharomycotina sp. YJ-2025b					4496	0.5849	46.77
+FF90B97F	Saccharomycotina sp. YJ-2025a	26	FD738BD6	rhodotorula	Rhodotorula sp. S30-09	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4397	0.572	46.76
+FF90B97F	Saccharomycotina sp. YJ-2025a	27	FC471836	rhodotorula	Rhodotorula sp. BUB8	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4476	0.5823	46.75
+FF90B97F	Saccharomycotina sp. YJ-2025a	28	F2343080	pucciniomycotina	Rhodosporidiobolus fluvialis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodosporidiobolus	4608	0.5995	46.73
+FF90B97F	Saccharomycotina sp. YJ-2025a	29	F38A1400	rhodotorula	Rhodotorula diobovata	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4473	0.5819	46.71
+FF90B97F	Saccharomycotina sp. YJ-2025a	30	FB950F4F	pucciniomycotina	Kurtzmanomyces sp. YL-2025a	Agaricostilbomycetes	Agaricostilbales	Chionosphaeraceae	Kurtzmanomyces	4523	0.5884	46.71
+FF90B97F	Saccharomycotina sp. YJ-2025a	31	F9A13FDA	pucciniomycotina	Microbotryum lychnidis-dioicae	Microbotryomycetes	Microbotryales	Microbotryaceae	Microbotryum	4412	0.574	46.7
+FF90B97F	Saccharomycotina sp. YJ-2025a	32	F3D59DF9	rhodotorula	Rhodotorula mucilaginosa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4417	0.5746	46.64
+FF90B97F	Saccharomycotina sp. YJ-2025a	33	F3E8DEF6	rhodotorula	Rhodotorula babjevae	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4533	0.5897	46.59
+FF90B97F	Saccharomycotina sp. YJ-2025a	34	F5E48ABB	rhodotorula	Rhodotorula sp. CC01	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4400	0.5724	46.58
+FF90B97F	Saccharomycotina sp. YJ-2025a	35	FDB08AFC	pucciniomycotina	Phyllozyma linderae	Spiculogloeomycetes	Spiculogloeales	Spiculogloeaceae	Phyllozyma	4516	0.5875	46.58
+FF90B97F	Saccharomycotina sp. YJ-2025a	36	F22EC48F	rhodotorula	Rhodotorula sphaerocarpa	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4332	0.5635	46.56
+FF90B97F	Saccharomycotina sp. YJ-2025a	37	F8C33FE9	rhodotorula	Rhodotorula sp. JG-1b	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4400	0.5724	46.56
+FF90B97F	Saccharomycotina sp. YJ-2025a	38	F8663704	rhodotorula	Rhodotorula graminis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4491	0.5842	46.52
+FF90B97F	Saccharomycotina sp. YJ-2025a	39	FBBC614A	query	Rhodotorula pacifica	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4450	0.5789	46.52
+FF90B97F	Saccharomycotina sp. YJ-2025a	40	FD3C52D4	rhodotorula	Rhodotorula sp. CCFEE 5036	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4284	0.5573	46.52
+FF90B97F	Saccharomycotina sp. YJ-2025a	41	F5EF8781	rhodotorula	Rhodotorula sp. VS67	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4421	0.5751	46.49
+FF90B97F	Saccharomycotina sp. YJ-2025a	42	FE4BBF15	rhodotorula	Rhodotorula glutinis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4471	0.5816	46.49
+FF90B97F	Saccharomycotina sp. YJ-2025a	43	FE6A7FE5	rhodotorula	Rhodotorula taiwanensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4438	0.5773	46.46
+FF90B97F	Saccharomycotina sp. YJ-2025a	44	FE672C2F	rhodotorula	Rhodotorula dairenensis	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4350	0.5659	46.36
+FF90B97F	Saccharomycotina sp. YJ-2025a	45	FBE2CBDC	rhodotorula	Rhodotorula sp. M30-05A-2	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	4254	0.5534	46.04
+FF90B97F	Saccharomycotina sp. YJ-2025a	46	FBBE50E5	pucciniomycotina	Sterigmatomyces hyphaenes	Agaricostilbomycetes	Agaricostilbales	Agaricostilbaceae	Sterigmatomyces	4399	0.5723	45.98
+FF90B97F	Saccharomycotina sp. YJ-2025a	47	FD343C0D	pucciniomycotina	Trigonosporomyces sp. YL-2025a	Microbotryomycetes		Chrysozymaceae	Trigonosporomyces	3681	0.4789	45.6
+FF90B97F	Saccharomycotina sp. YJ-2025a	48	F0320CB2	pucciniomycotina	Phakopsora pachyrhizi	Pucciniomycetes	Pucciniales	Phakopsoraceae	Phakopsora	3496	0.4548	45.49
+FF90B97F	Saccharomycotina sp. YJ-2025a	49	FC4529B7	pucciniomycotina	Heterogastridium pycnidioideum	Microbotryomycetes	Heterogastridiales	Heterogastridiaceae	Heterogastridium	3985	0.5184	45.4
+FF90B97F	Saccharomycotina sp. YJ-2025a	50	F272F6E1	pucciniomycotina	Melampsora americana	Pucciniomycetes	Pucciniales	Melampsoraceae	Melampsora	3801	0.4945	45.31
+FF90B97F	Saccharomycotina sp. YJ-2025a	51	F90996AD	pucciniomycotina	Tritirachium sp. CBS 265.96	Tritirachiomycetes	Tritirachiales	Tritirachiaceae	Tritirachium	3916	0.5094	45.3
+FF90B97F	Saccharomycotina sp. YJ-2025a	52	FB682192	pucciniomycotina	Puccinia graminis	Pucciniomycetes	Pucciniales	Pucciniaceae	Puccinia	3921	0.5101	45.27
+FF90B97F	Saccharomycotina sp. YJ-2025a	53	FF98D398	pucciniomycotina	Atractiella rhizophila	Atractiellomycetes	Atractiellales	Hoehnelomycetaceae	Atractiella	4144	0.5391	45.26
+FF90B97F	Saccharomycotina sp. YJ-2025a	54	F4909EF4	pucciniomycotina	Classicula fluitans	Classiculomycetes	Classiculales	Classiculaceae	Classicula	4136	0.5381	45.21
+FF90B97F	Saccharomycotina sp. YJ-2025a	55	F9E4744C	pucciniomycotina	Hemileia vastatrix	Pucciniomycetes	Pucciniales	Zaghouaniaceae	Hemileia	4143	0.539	45.04
+FF90B97F	Saccharomycotina sp. YJ-2025a	56	F7368166	control	Pleurotus djamor	Agaricomycetes	Agaricales	Pleurotaceae	Pleurotus	4166	0.542	44.92
+FF90B97F	Saccharomycotina sp. YJ-2025a	57	F878B385	control	Agaricus bisporus	Agaricomycetes	Agaricales	Agaricaceae	Agaricus	4309	0.5606	44.65
+FF90B97F	Saccharomycotina sp. YJ-2025a	58	FDF24B2E	control	Trichosporon ovoides	Tremellomycetes	Trichosporonales	Trichosporonaceae	Trichosporon	3935	0.5119	44.47
+FF90B97F	Saccharomycotina sp. YJ-2025a	59	FEA0C093	pucciniomycotina	Cronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Cronartium	3939	0.5124	44.46
+FF90B97F	Saccharomycotina sp. YJ-2025a	60	FACB5838	control	Phaeotremella skinneri	Tremellomycetes	Tremellales	Phaeotremellaceae	Phaeotremella	3980	0.5178	44.41
+FF90B97F	Saccharomycotina sp. YJ-2025a	61	FD157492	control	Ustilago crameri	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Ustilago	4045	0.5262	44.33
+FF90B97F	Saccharomycotina sp. YJ-2025a	62	FB7EFA92	control	Sporisorium graminicola	Ustilaginomycetes	Ustilaginales	Ustilaginaceae	Sporisorium	4082	0.531	44.26
+FF90B97F	Saccharomycotina sp. YJ-2025a	63	FC20AD55	pucciniomycotina	Uromyces viciae-fabae	Pucciniomycetes	Pucciniales	Pucciniaceae	Uromyces	3230	0.4202	44.25
+FF90B97F	Saccharomycotina sp. YJ-2025a	64	FA9AF733	rhodotorula	Rhodotorula sp. FNED7-22	Microbotryomycetes	Sporidiobolales	Sporidiobolaceae	Rhodotorula	2766	0.3598	43.91
+FF90B97F	Saccharomycotina sp. YJ-2025a	65	F7CEB1BD	pucciniomycotina	Reniforma strues	Microbotryomycetes			Reniforma	3216	0.4184	43.85
+FF90B97F	Saccharomycotina sp. YJ-2025a	66	F90F14B6	pucciniomycotina	Endocronartium harknessii	Pucciniomycetes	Pucciniales	Coleosporiaceae	Endocronartium	1850	0.2407	43.67
+FF90B97F	Saccharomycotina sp. YJ-2025a	67	F7FF3227	control	Meira miltonrushii	Exobasidiomycetes	Exobasidiales	Brachybasidiaceae	Meira	3958	0.5149	43.63
+FF90B97F	Saccharomycotina sp. YJ-2025a	68	F7B62D90	control	Debaryomycetaceae sp. 2NR914	Pichiomycetes	Serinales	Debaryomycetaceae		3576	0.4652	41.21
+FF90B97F	Saccharomycotina sp. YJ-2025a	69	FCA4EAF0	control	Hansenula subpelliculosa	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Hansenula	2791	0.3631	40.91
+FF90B97F	Saccharomycotina sp. YJ-2025a	70	F29CB415	control	Wickerhamomyces sp. HHY24-4	Saccharomycetes	Phaffomycetales	Wickerhamomycetaceae	Wickerhamomyces	2927	0.3808	40.85
+FF90B97F	Saccharomycotina sp. YJ-2025a	71	F7A8D739	control	Nothofagozyma chilensis	Pichiomycetes	Serinales	Cephaloascaceae	Nothofagozyma	2937	0.3821	40.76
