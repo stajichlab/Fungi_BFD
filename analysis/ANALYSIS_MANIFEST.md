@@ -428,3 +428,26 @@ their SIB counterparts), with outliers flagged by OLS residual per facet rather 
 eyeballed. Intended as a durable, re-runnable data layer + figure set for the funannotate
 benchmarking paper. See Open Questions in the report for what's unconfirmed (the
 2-second-PREDICT outlier mechanism, near-instant FAILED bucket, RNASEQ_PREPARE tagging).
+
+### yj2025_taxonomy_check
+
+```yaml
+name: yj2025-taxonomy-check
+type: taxonomic-placement
+status: complete
+created: 2026-11-18
+last_updated: 2026-11-18
+datasets: [Fungi_BFD_runs/tables/species.parquet, asm_stats.parquet, busco_genome.parquet, Fungi_BFD_runs/input/pep (72 proteomes)]
+algorithms: [DIAMOND 2.1.7 blastp --sensitive, one-way AAI (evalue <= 1e-5, qcov >= 50%)]
+parent_analysis: null
+key_findings:
+  - "'Saccharomycotina sp. YJ-2025a' (FF90B97F) is Cystobasidiomycetes: AAI 56-58 to 4 Cystobasidiomycetes genera, <= 47.7 to every other class."
+  - "'Saccharomycotina sp. YJ-2025b' (F6EB82EF) is Microbotryomycetes: top 12 references all Microbotryomycetes (54.5-59.5), <= 47.5 to other classes."
+  - "The two are different classes (AAI 47 to each other); order and genus unresolved (no reference >= 60)."
+  - "Saccharomycotina controls are the most distant references (about 41)."
+report: analysis/yj2025_taxonomy_check/YJ2025_TAXONOMY_CHECK.md
+tags: [taxonomy, curation, overrides, aai, diamond, pucciniomycotina, mislabel]
+```
+
+Why BFD's PHYLUM/CLASS for the two genomes were overridden in `data/curation/overrides.csv`.
+
