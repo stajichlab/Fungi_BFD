@@ -12,15 +12,24 @@ PF00046,Homeodomain,Homeodomain
 PF05920,Homeobox_KN,Homeobox KN domain
 PF00447,HSF_DNA-bind,Heat shock factor DNA-binding domain
 PF00319,SRF-TF,MADS-box (SRF-type)
-PF11951,zf-C6H2,C6H2-type zinc finger
+PF11951,Fungal_trans_2,Fungal-specific transcription factor domain 2 (Fungal_trans_2)
 PF00250,Forkhead,Forkhead / winged-helix domain
 PF00505,HMG_box,High mobility group box
-PF00446,SBP,SBP zinc finger
+PF03110,SBP,SBP zinc finger
 PF00249,Myb_DNA-binding,Myb-like DNA-binding domain
 PF13921,Myb_DNA-bind_6,Myb-like DNA-binding domain variant
-PF04844,DNA_binding_1,Fungal APSES-type DNA-binding domain (e.g. Swi4/Mbp1)
-PF11955,WOPR,"WOPR DNA-binding domain (fungal, e.g. Wor1/Ryp1)"
+PF04383,KilA-N,APSES-type DNA-binding domain (KilA-N)
 PF00105,zf-C4,Nuclear hormone receptor C4 zinc finger
 PF00157,Pou,POU-specific domain
-PF08880,Rrn7,RNA Pol I transcription factor Rrn7-type
 PF00642,zf-CCCH,CCCH zinc finger
+PF02319,WHD_E2F_TDP,E2F_TDP
+PF01167,Tub,Tub
+PF02257,RFX_DNA_binding,RFX_DNA_binding
+PF03106,WRKY,WRKY
+PF04516,CP2,CP2
+PF00808,CBFD_NFYB_HMF,CBFD_NFYB_HMF
+PF00649,Copper-fist,Copper-fist
+PF01285,TEA,TEA
+PF01017,STAT_alpha,STAT
+PF02864,STAT_bind,STAT
+PF21354,STAT_linker,STAT
