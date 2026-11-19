@@ -49,3 +49,28 @@ def test_overlapping_patterns_report_one_tract(tmp_path):
     seq = "CCCTAA" * 10 + "ACGT" * 100
     rows = run(tmp_path, seq, ["CCCTAA", "CCC[C]+TAA"], True)
     assert len(rows) == 1
+
+
+def _degenerate_5prime():
+    # CCCTAA copies interrupted by CCTAA variants and a 1-bp insertion: an
+    # exact run is only 3 copies (18 bp) so no tract reaches --min-length 36.
+    tract = "CCCTAA" * 3 + "CCTAA" + "CCCTAA" * 3 + "CCCCTAA" + "CCCTAA" * 3
+    return tract + "G" * 4 + "ACGTTGCA" * 40
+
+
+def test_merge_gap_bridges_degenerate_tract(tmp_path):
+    seq = _degenerate_5prime()
+    assert run(tmp_path, seq, ["CCCTAA"], False) == []
+    fa = tmp_path / "g.fa"
+    fa.write_text(f">s1\n{seq}\n")
+    out = tmp_path / "m.tsv"
+    ft.main([str(fa), "-o", str(out), "-p", "CCCTAA", "-n", "3", "-l", "36",
+             "-s", "5000", "--merge-gap", "8"])
+    rows = [l.split("\t") for l in out.read_text().splitlines()[1:]]
+    assert len(rows) == 1
+    assert rows[0][1] == "5prime" and rows[0][8] == "True"
+
+
+def test_terminal_tolerance_default_is_30(tmp_path):
+    seq = "ACGTA" * 5 + "TTAGGG" * 10 + "ACGTTGCA" * 40   # tract starts 25 bp in
+    assert len(run(tmp_path, seq, ["TTAGGG"], False)) == 1

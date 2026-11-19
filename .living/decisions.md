@@ -803,3 +803,14 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 
 **Tags**: taxonomy, curation, overrides, samples.csv, ncbi, mislabel, decision
 
+## I: Telomere finder: terminal tolerance 10 -> 30 and new `--merge-gap 8` (2026-11-18)
+
+**Context**: Scored `find_telomeres.py`, `denovo_telomere_repeats.py` and tidk on 38 gap-free chromosome-level genomes against a proxy truth (>= 8 copies of the genome's unit in the terminal 300 bp). Proxy unit comes from denovo, so denovo is favoured. See `analysis/telomere_finder/TIDK_COMPARISON.md`.
+
+**Decision**: Set `telomere_terminal_tolerance = 30` and add `telomere_merge_gap = 8` (`find_telomeres.py --merge-gap`, regex tract merge across <= 8 bp). Not adopted: `--fuzzy` (slow, frame-locked), merge gaps 15/25 (extra calls outside truth not inspected), tidk (windowed counts, no tract coordinates).
+
+**Measured**: all-genome recall 56% (tol 10) -> 65% (tol 30) -> 80% (tol 30 + gap 8). Default-unit genomes 73% -> 83% -> 94%. Calls outside truth 2 -> 4 on those genomes. Units outside `telomere_patterns` stay at 45/112 with gap 8; denovo finds 107/112.
+
+**Re-run**: `storeDir` `telomeres_v2` hides the change; move it aside first. Steps in the analysis doc.
+
+**Tags**: telomeres, find_telomeres, merge-gap, terminal-tolerance, decision

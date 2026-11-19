@@ -47,6 +47,7 @@ process BATCH_TELOMERES {
             --max-mismatch ${params.telomere_max_mismatch} \\
             --max-indel ${params.telomere_max_indel} \\
             --terminal-tolerance ${params.telomere_terminal_tolerance} \\
+            --merge-gap ${params.telomere_merge_gap} \\
             ${both_ends} \\
             ${allow_internal} \\
             ${genome.name} \\

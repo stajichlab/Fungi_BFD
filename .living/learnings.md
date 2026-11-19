@@ -1685,3 +1685,11 @@ New cache rule (`sraQueryCached()` and the matching shell test in SRA_QUERY_BATC
 **mitigation_type**: structural
 
 **structural_mitigation_candidate**: same heap control for genome-guided Trinity, if funannotate train can pass Trinity options.
+
+## `find_telomeres.py` misses were interrupted repeats, not edge distance (2026-11-18)
+
+**Category**: bioinformatics, tool-evaluation
+**What happened**: After raising `--terminal-tolerance` to 30, 57 of 341 default-unit proxy-truth ends were still missed. 44 sat within 30 bp of the edge. The tracts carry variant copies (`CCTAA`, `GGGG`) and 1 bp indels, which break an exact run below `--min-length 36`.
+**Why it matters**: `--fuzzy` is frame-locked, so one indel shifts every later unit. A regex that merges exact copies across a short gap handled this at the same runtime.
+**Resolution**: Added `--merge-gap` (default 0); pipeline uses 8. Also: a `storeDir` keyed by genome hides parameter changes, so a re-run needs the old directory moved aside. Timing on the shared login node with 8 parallel jobs was 4-8x slower than serial; time single jobs serially.
+**Tags**: telomeres, find_telomeres, merge-gap, storeDir, benchmarking
