@@ -1,8 +1,8 @@
 -- REF_DIR=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs
 -- bfd_traits.sql: FungalTraits ecology columns and SUBPHYLUM for the local BFD.duckdb.
 -- Run after bfd_compat_views.sql (needs the `species` view) and BEFORE bfd_extra_views.sql
--- (v_genome_labels joins v_genome_traits). Line 1 is replaced with the real config/refs path by
--- workflows/build_bfd_db.sh. Idempotent. The three ref_* tables are small (about 11,000 rows in total) and are stored
+-- (v_genome_labels joins v_genome_traits). Line 1 is replaced with the real lib/refs path by
+-- nextflow/bin/build_BFD_duckDB.sh. Idempotent. The three ref_* tables are small (about 11,000 rows in total) and are stored
 -- in the database so a dumped copy does not depend on files elsewhere.
 -- Rules are those of bin/atlas/build_labels.py (growth_form, growth_form_source, in_fungaltraits, yeast_origin).
 -- FungalTraits is a GENUS-level label, not a genome trait. Cite: Polme et al. 2020, Fungal Diversity 105:1-16 (verify).
@@ -18,28 +18,28 @@ SELECT GENUS,
 FROM (SELECT *, row_number() OVER (PARTITION BY GENUS ORDER BY jrk_template) AS rn
       FROM read_csv('/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs/fungaltraits_1.2.utf8.csv', header=true, all_varchar=true))
 WHERE rn = 1 AND GENUS IS NOT NULL;
-COMMENT ON TABLE ref_fungaltraits IS 'FungalTraits 1.2, one row per GENUS (first row by jrk_template when a genus is listed twice). Source: config/refs/fungaltraits_1.2.utf8.csv.';
+COMMENT ON TABLE ref_fungaltraits IS 'FungalTraits 1.2, one row per GENUS (first row by jrk_template when a genus is listed twice). Source: lib/refs/fungaltraits_1.2.utf8.csv.';
 
 CREATE OR REPLACE TABLE ref_growth_form_override AS
 SELECT GENUS, max(nullif(growth_form, '')) AS growth_form_ovr
 FROM read_csv('/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs/growth_form_overrides.tsv', header=true, delim='\t', all_varchar=true)
 WHERE GENUS IS NOT NULL
 GROUP BY GENUS;
-COMMENT ON TABLE ref_growth_form_override IS 'Growth form for genera that FungalTraits lacks (config/refs/growth_form_overrides.tsv). An empty growth_form is ignored.';
+COMMENT ON TABLE ref_growth_form_override IS 'Growth form for genera that FungalTraits lacks (lib/refs/growth_form_overrides.tsv). An empty growth_form is ignored.';
 
 CREATE OR REPLACE TABLE ref_class_subphylum AS
 SELECT CLASS, min(SUBPHYLUM) AS SUBPHYLUM, min(source) AS source, min(note) AS note
 FROM read_csv('/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs/class_subphylum.tsv', header=true, delim='\t', all_varchar=true)
 WHERE CLASS IS NOT NULL
 GROUP BY CLASS;
-COMMENT ON TABLE ref_class_subphylum IS 'CLASS to SUBPHYLUM (config/refs/class_subphylum.tsv). source: taxonomy_py, atlas, or proposed (not yet checked). Classes not listed have no subphylum here.';
+COMMENT ON TABLE ref_class_subphylum IS 'CLASS to SUBPHYLUM (lib/refs/class_subphylum.tsv). source: taxonomy_py, atlas, or proposed (not yet checked). Classes not listed have no subphylum here.';
 
 CREATE OR REPLACE TABLE ref_phylum_subphylum AS
 SELECT PHYLUM, min(SUBPHYLUM) AS SUBPHYLUM, min(source) AS source, min(note) AS note
 FROM read_csv('/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs/phylum_subphylum.tsv', header=true, delim='\t', all_varchar=true)
 WHERE PHYLUM IS NOT NULL
 GROUP BY PHYLUM;
-COMMENT ON TABLE ref_phylum_subphylum IS 'PHYLUM to SUBPHYLUM fallback for genomes whose CLASS is missing or not in ref_class_subphylum (config/refs/phylum_subphylum.tsv).';
+COMMENT ON TABLE ref_phylum_subphylum IS 'PHYLUM to SUBPHYLUM fallback for genomes whose CLASS is missing or not in ref_class_subphylum (lib/refs/phylum_subphylum.tsv).';
 
 CREATE OR REPLACE VIEW v_genome_traits AS
 SELECT t.LOCUSTAG, t.growth_form, t.growth_form_source, t.primary_lifestyle, t.secondary_lifestyle,

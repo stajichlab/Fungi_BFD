@@ -1,10 +1,10 @@
 -- TABLES_DIR=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/tables
--- extra_views.sql: helper views for the local BFD.duckdb. Each view removes a join or a trap that
+-- bfd_extra_views.sql: helper views for the local BFD.duckdb. Each view removes a join or a trap that
 -- repeats in the BFD_dashboard analyses (evidence: REPORT.md section 4).
--- Run after build_BFD_duckDB.sh AND after compat_views.sql (v_genome_labels reads the `samples` view):
---     duckdb BFD.duckdb < compat_views.sql
+-- Run after build_BFD_duckDB.sh AND after bfd_compat_views.sql (v_genome_labels reads the `samples` view):
+--     duckdb BFD.duckdb < bfd_compat_views.sql
 --     duckdb BFD.duckdb < bfd_traits.sql     (v_genome_labels reads v_genome_traits)
---     duckdb BFD.duckdb < extra_views.sql
+--     duckdb BFD.duckdb < bfd_extra_views.sql
 -- No statement in this file reads a parquet path directly, so the TABLES_DIR line is informative only.
 -- All statements are idempotent. Nothing is materialized. No view reads swissprot_hits.
 -- Tested 2026-11-11 with DuckDB CLI 1.1.3 and python duckdb 1.5.5 (timings in REPORT.md section 6).
