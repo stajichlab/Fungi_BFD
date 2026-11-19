@@ -356,6 +356,45 @@ LEFT JOIN (SELECT DISTINCT protein_id, TRUE AS is_gpi
 LEFT JOIN (SELECT protein_id, IDP_fraction FROM idp_summary) idps USING(protein_id);
 " "$DB"
 
+
+# ─── compat views, FungalTraits refs, helper views ──────────────────────────
+# Moved here from BFD_dashboard/sql + BFD_dashboard/config/refs (2026-11-19) so
+# that every caller of this builder -- the Nextflow BUILD_DUCKDB process,
+# BFD_function/rebuild_pipeline_duckdb.sh, and anyone running it by hand --
+# produces one identical object set. Before the move, only the dashboard
+# wrapper applied these, so the pipeline DB had 39 views and the dashboard DB
+# had 59, and the two drifted apart between builds.
+#
+# Order matters: bfd_traits.sql defines v_genome_traits, which
+# bfd_extra_views.sql reads.
+#   bfd_compat_views.sql  MotherDuck-compatible aliases the catalog lacks
+#   bfd_traits.sql        ref_fungaltraits / ref_growth_form_override /
+#                         ref_class_subphylum / ref_phylum_subphylum -- the
+#                         only materialized tables besides swissprot_subject --
+#                         and v_genome_traits
+#   bfd_extra_views.sql   v_genome_* helper views and the in_genome() macro
+#
+# Each file's first line carries its own default path, as '-- TABLES_DIR=<p>'
+# or '-- REF_DIR=<p>'. We rewrite that path to the one this build actually
+# uses, which also keeps each file runnable stand-alone against the checkout.
+SQL_DIR="${SQL_DIR:-$BIN_DIR/../../sql}"
+REF_DIR="${REF_DIR:-$BIN_DIR/../../lib/refs}"
+[ -d "$SQL_DIR" ] || { echo "ERROR: SQL_DIR '$SQL_DIR' does not exist" >&2; exit 1; }
+[ -d "$REF_DIR" ] || { echo "ERROR: REF_DIR '$REF_DIR' does not exist" >&2; exit 1; }
+SQL_DIR="$(cd "$SQL_DIR" && pwd)"
+REF_DIR="$(cd "$REF_DIR" && pwd)"
+SQL_STAGE="$(mktemp -d)"
+for f in bfd_compat_views.sql bfd_traits.sql bfd_extra_views.sql; do
+    [ -e "$SQL_DIR/$f" ] || { echo "ERROR: missing $SQL_DIR/$f" >&2; exit 1; }
+    if [ "$f" = bfd_traits.sql ]; then KEY=REF_DIR; NEWPATH="$REF_DIR"; else KEY=TABLES_DIR; NEWPATH="$SRC_ABS"; fi
+    DEFAULT_P="$(sed -n "1s/^-- ${KEY}=//p" "$SQL_DIR/$f")"
+    [ -n "$DEFAULT_P" ] || { echo "ERROR: $f line 1 must be '-- ${KEY}=<path>'" >&2; exit 1; }
+    sed "s#${DEFAULT_P}#${NEWPATH}#g" "$SQL_DIR/$f" > "$SQL_STAGE/$f"
+    echo "Applying $f"
+    duckdb "$DB" < "$SQL_STAGE/$f"
+done
+rm -rf "$SQL_STAGE"
+
 echo "Build complete: $DB ($(du -h "$DB" | cut -f1))"
 duckdb -c "SELECT table_name, estimated_size FROM duckdb_tables() ORDER BY table_name;" "$DB"
 duckdb -c "SELECT view_name FROM duckdb_views() WHERE NOT internal ORDER BY view_name;" "$DB"

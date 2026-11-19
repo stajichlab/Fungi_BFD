@@ -23,7 +23,7 @@ process BUILD_DUCKDB {
     // gene_info/gene_proteins.parquet, "No magic bytes found"). Wait until each
     // published copy has the staged file's size and a Parquet footer ('PAR1').
     """
-    # code md5 (task cache key): ${codeMd5(['bin/build_BFD_duckDB.sh', '../sql/table_schema.json'])}
+    # code md5 (task cache key): ${codeMd5(['bin/build_BFD_duckDB.sh', '../sql/table_schema.json', '../sql/bfd_compat_views.sql', '../sql/bfd_traits.sql', '../sql/bfd_extra_views.sql', '../lib/refs'])}
     set -euo pipefail
     deadline=\$(( \$(date +%s) + 7200 ))
     for f in ${sync}; do
