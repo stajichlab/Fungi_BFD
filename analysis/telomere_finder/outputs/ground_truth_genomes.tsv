@@ -1,0 +1,40 @@
+GCA_014673535.1_ASM1467353v1	Candidozyma auris	input/dna/Candidozyma_auris_CA-AM1.scaffolds.fa.gz	8	Serinales
+GCF_016906535.1_ASM1690653v1	Rhizoctonia solani	input/dna/Rhizoctonia_solani_AG-1_IA.scaffolds.fa.gz	16	Cantharellales
+GCA_029607795.1_ASM2960779v1	Verticillium dahliae	input/dna/Verticillium_dahliae_DAR83143.scaffolds.fa.gz	22	Glomerellales
+GCA_059330365.1_NE20v1	Pyricularia oryzae	input/dna/Pyricularia_oryzae_NE20.scaffolds.fa.gz	9	Magnaporthales
+GCA_059631705.1_ASM5963170v1	Cladosporium sp. BD-128	input/dna/Cladosporium_sp._BD-128_BD-128.scaffolds.fa.gz	18	Cladosporiales
+GCF_002926055.2_CanHae_1.0	Candidozyma haemuli	input/dna/Candidozyma_haemuli_B11899.scaffolds.fa.gz	12	Serinales
+GCF_033458365.1_Neuhi1	Neurospora hispaniola	input/dna/Neurospora_hispaniola_FGSC_10403.scaffolds.fa.gz	23	Sordariales
+GCA_036971675.1_ASM3697167v1	Orbilia ellipsospora	input/dna/Orbilia_ellipsospora_TWF694.scaffolds.fa.gz	27	Orbiliales
+GCA_022828445.1_ASM2282844v1	Graphiopsis chlorocephala	input/dna/Graphiopsis_chlorocephala_PCp021.scaffolds.fa.gz	18	Cladosporiales
+GCA_022023595.1_ASM2202359v1	Sungouiella thailandica	input/dna/Sungouiella_thailandica_CBS_10610.scaffolds.fa.gz	8	Serinales
+GCA_022607105.2_P94-24	Ascochyta lentis	input/dna/Ascochyta_lentis_P9424.scaffolds.fa.gz	24	Pleosporales
+GCA_033807695.1_ASM3380769v1	Daedaleopsis sinensis	input/dna/Daedaleopsis_sinensis_Si85.scaffolds.fa.gz	24	Polyporales
+GCA_021199905.1_ASM2119990v1	Pestalotiopsis sp. MUOB 440515	input/dna/Pestalotiopsis_sp._MUOB_440515_MUOB_440515.scaffolds.fa.gz	10	Amphisphaeriales
+GCA_028828255.1_ASM2882825v1	Penicillium fimorum	input/dna/Penicillium_fimorum_IBT_29495.scaffolds.fa.gz	7	Eurotiales
+GCA_055797575.1_ASM5579757v1	Trichoderma sp. Al-21	input/dna/Trichoderma_sp._Al-21_Al-21.scaffolds.fa.gz	39	Hypocreales
+GCA_041438215.1_C.albicans_101_alt1.0	Candida albicans	input/dna/Candida_albicans_101.scaffolds.fa.gz	10	Serinales
+GCA_056825315.1_ASM5682531v1	Colletotrichum gloeosporioides	input/dna/Colletotrichum_gloeosporioides_SN1.scaffolds.fa.gz	21	Glomerellales
+GCF_028827165.1_ASM2882716v1	Penicillium cosmopolitanum	input/dna/Penicillium_cosmopolitanum_IBT_29677.scaffolds.fa.gz	15	Eurotiales
+GCA_911649645.1_wengan_M_CN63	Thelonectria discophora	input/dna/Thelonectria_discophora.scaffolds.fa.gz	26	Hypocreales
+GCA_029581985.1_ASM2958198v1	Pichia occidentalis	input/dna/Pichia_occidentalis_UCDFST_75-63.scaffolds.fa.gz	27	Pichiales
+GCA_056632915.1_ASM5663291v1	Kwoniella fici	input/dna/Kwoniella_fici_DSM_109064.scaffolds.fa.gz	5	Tremellales
+GCA_051997475.1_ASM5199747v1	Psathyrella hymenocephala	input/dna/Psathyrella_hymenocephala_22TF01218.scaffolds.fa.gz	28	Agaricales
+GCA_022457085.1_ASM2245708v1	Saccharomycotina sp. CBS 16003	input/dna/Saccharomycotina_sp._CBS_16003_CBS_16003.scaffolds.fa.gz	40	None
+GCF_020744255.1_Mictri1	Microdochium trichocladiopsis	input/dna/Microdochium_trichocladiopsis_MPI-CAGE-CH-0230.scaffolds.fa.gz	26	Xylariales
+GCA_023079145.1_ASM2307914v1	Malassezia furfur	input/dna/Malassezia_furfur_PM315.scaffolds.fa.gz	20	Malasseziales
+GCA_050495735.1_Tpan_genome	Tuber panzhihuanense	input/dna/Tuber_panzhihuanense_TPZIS012023.scaffolds.fa.gz	29	Pezizales
+GCA_059628585.1_ASM5962858v1	Sanghuangporus mongolicus	input/dna/Sanghuangporus_mongolicus_MCCJLAU0531.scaffolds.fa.gz	13	Hymenochaetales
+GCF_051103115.1_ASM5110311v1	Cordyceps javanica	input/dna/Cordyceps_javanica_Apopka_97.scaffolds.fa.gz	7	Hypocreales
+GCA_059050905.1_ASM5905090v1	Yarrowia lipolytica	input/dna/Yarrowia_lipolytica_ATCC_18942.scaffolds.fa.gz	33	Dipodascales
+GCF_003426965.1_ASM342696v1	Aspergillus tanneri	input/dna/Aspergillus_tanneri_NIH1004.scaffolds.fa.gz	14	Eurotiales
+GCF_014466165.1_ASM1446616v1	Pleurotus ostreatus	input/dna/Pleurotus_ostreatus_PC9.scaffolds.fa.gz	17	Agaricales
+GCA_047301815.1_ASM4730181v1	Trichoderma citrinoviride	input/dna/Trichoderma_citrinoviride_GF-11.scaffolds.fa.gz	33	Hypocreales
+GCA_029298705.1_OphTri_1.0	Ophiostoma triangulosporum	input/dna/Ophiostoma_triangulosporum_CBS138.77.scaffolds.fa.gz	12	Ophiostomatales
+GCA_027943155.1_CBS815.71-sp3	Podospora tetraspora	input/dna/Podospora_tetraspora_CBS815.71-sp3.scaffolds.fa.gz	16	Sordariales
+GCA_039105305.1_ASM3910530v1	Apiospora arundinis	input/dna/Apiospora_arundinis_AAU_773.scaffolds.fa.gz	10	Amphisphaeriales
+GCA_014706365.1_ASM1470636v1	Colletotrichum australisinense	input/dna/Colletotrichum_australisinense_GX1655.scaffolds.fa.gz	28	Glomerellales
+GCA_029844175.1_Th0179	Trichoderma sp. CBMAI-0179	input/dna/Trichoderma_sp._CBMAI-0179_CBMAI-0179.scaffolds.fa.gz	18	Hypocreales
+GCA_038364125.1_ASM3836412v1	Apiospora kogelbergensis	input/dna/Apiospora_kogelbergensis_CBS_117206.scaffolds.fa.gz	13	Amphisphaeriales
+GCA_019176375.1_ASM1917637v1	Aspergillus sp. GbtcF2	input/dna/Aspergillus_sp._GbtcF2_GbtcF2.scaffolds.fa.gz	16	Eurotiales
+GCA_046622565.1_ASM4662256v1	Beauveria bassiana	input/dna/Beauveria_bassiana_ILB_299.scaffolds.fa.gz	35	Hypocreales

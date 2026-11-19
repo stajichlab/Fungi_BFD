@@ -44,8 +44,16 @@
 set -euo pipefail
 
 # ── Resolve project root ────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Under sbatch, $0 is the spooled copy of this script (/var/spool/slurmd/...),
+# so dirname "$0" is wrong. Submit from the project root; SLURM_SUBMIT_DIR is then
+# the root. Outside SLURM, resolve from the script path.
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    PROJECT_DIR="$SLURM_SUBMIT_DIR"
+else
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
+[ -f "$PROJECT_DIR/nextflow/main.nf" ] || { echo "ERROR: $PROJECT_DIR is not the project root (submit from the project root)" >&2; exit 2; }
 cd "$PROJECT_DIR"
 
 # ── Load Nextflow ───────────────────────────────────────────────────────────

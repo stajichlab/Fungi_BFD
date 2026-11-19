@@ -983,7 +983,13 @@
                     "type": "integer",
                     "minimum": 0,
                     "description": "A tract is 'terminal' if within this many bp of the literal scaffold edge (assemblies often carry a few non-canonical bases before the repeat locks into register).",
-                    "default": 10
+                    "default": 30
+                },
+                "telomere_merge_gap": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Merge monomer copies separated by up to this many bp into one tract, to tolerate variant repeats and indels in degenerate telomeres. 0 disables.",
+                    "default": 8
                 },
                 "telomere_batch_size": {
                     "type": "integer",

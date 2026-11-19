@@ -115,11 +115,15 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--allow-internal", action="store_true",
                    help="Also report telomere-like tracts that do not reach "
                         "the scaffold terminus (default: terminal-only).")
-    p.add_argument("--terminal-tolerance", type=int, default=10,
+    p.add_argument("--merge-gap", type=int, default=0,
+                   help="Exact mode only: merge monomer copies separated by up "
+                        "to this many bp into one tract, to tolerate variant "
+                        "repeats and indels in degenerate telomeres [0 = off].")
+    p.add_argument("--terminal-tolerance", type=int, default=30,
                    help="A tract is considered terminal if it starts (5') or "
                         "ends (3') within this many bp of the literal "
                         "scaffold edge, rather than requiring an exact "
-                        "match at position 0/scaffold_len [10]. Assemblies "
+                        "match at position 0/scaffold_len [30]. Assemblies "
                         "commonly carry a few non-canonical or ambiguous "
                         "bases before the repeat locks into clean register.")
     p.add_argument("--both-ends", action="store_true",
@@ -195,10 +199,19 @@ def reverse_complement_pattern(pattern: str) -> str:
     return "".join(rc_tokens)
 
 
-def compile_pattern(pattern: str) -> re.Pattern:
-    """Compile a single monomer pattern to a regex matching one or more repeats."""
+def compile_pattern(pattern: str, merge_gap: int = 0) -> re.Pattern:
+    """Compile a single monomer pattern to a regex matching one or more repeats.
+
+    With ``merge_gap`` > 0, copies separated by up to that many bp of any
+    sequence are merged into one tract. This bridges variant repeats and
+    indels inside a degenerate telomere (for example ``CCTAA`` between
+    ``CCCTAA`` copies), which break an exact run.
+    """
     regex = iupac_to_regex(pattern)
     try:
+        if merge_gap > 0:
+            return re.compile(f"(?:{regex})(?:[ACGTN]{{0,{merge_gap}}}?(?:{regex}))*",
+                              re.IGNORECASE)
         return re.compile(f"({regex})+", re.IGNORECASE)
     except re.error as exc:
         raise ValueError(f"Cannot compile pattern '{pattern}' -> '{regex}': {exc}")
@@ -500,7 +513,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     regexes: Dict[str, re.Pattern] = {}
     for _canon, search_monomer, _strand in pattern_set:
         if search_monomer not in regexes:
-            regexes[search_monomer] = compile_pattern(search_monomer)
+            regexes[search_monomer] = compile_pattern(search_monomer, args.merge_gap)
 
     out_fh = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
     writer = csv.writer(out_fh, delimiter="\t", lineterminator="\n")
