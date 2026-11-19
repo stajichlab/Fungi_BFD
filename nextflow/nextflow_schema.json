@@ -991,6 +991,48 @@
                     "default": 100,
                     "description": "Genomes per BATCH_TELOMERES task (SLURM job). About 36 s per genome on average, so 100 is about 1 h per job."
                 },
+                "telomere_denovo_window": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "default": 2000,
+                    "description": "De novo telomere repeat finder (denovo_telomere_repeats.py): bp read inward from each scaffold end."
+                },
+                "telomere_denovo_tolerance": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 50,
+                    "description": "De novo finder: maximum distance (bp) of a tandem tract's start from the scaffold edge."
+                },
+                "telomere_denovo_purity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.85,
+                    "description": "De novo finder: minimum match fraction of a tract to itself shifted by the repeat period."
+                },
+                "telomere_denovo_min_length": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 60,
+                    "description": "De novo finder: minimum tract length (bp)."
+                },
+                "telomere_denovo_background": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 300,
+                    "description": "De novo finder: number of random internal windows used to estimate the background rate of each unit (0 disables)."
+                },
+                "telomere_denovo_min_ends": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 2,
+                    "description": "De novo finder: scaffold ends that must carry a unit before it is called a candidate."
+                },
+                "telomere_denovo_args": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Extra command-line arguments appended to denovo_telomere_repeats.py (for example '--no-kmer-fallback')."
+                },
                 "run_busco_genome": {
                     "type": "boolean",
                     "default": false
