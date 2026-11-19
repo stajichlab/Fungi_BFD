@@ -198,10 +198,12 @@ so that editing `lib/refs/README.md` does not force a full rebuild.
 
 ### B. Builder changed, data did not
 
-From `Fungi_BFD_runs/BFD_function/`:
+Run from the run directory, naming the script by its path in the checkout you
+want to build with:
 
 ```bash
-sbatch rebuild_pipeline_duckdb.sh
+cd /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/BFD_function
+sbatch <checkout>/scripts/rebuild_pipeline_duckdb.sh
 ```
 
 Runs the builder alone, no Nextflow, no merges. Builds into a staging directory
