@@ -123,10 +123,14 @@ hits first. On a 2026-11-08 test that ran out of memory on a login node. Use
 `swissprot_model_fungi_for('<LOCUSTAG>')` instead.
 
 **Note on the DuckDB file.** `db/BFD.duckdb` holds views that read
-`tables/*.parquet` by absolute path, plus the small `swissprot_subject` table
-and the macros above. It works only where `tables/` is at the same path. The
-pipeline publishes it to `BFD_function/db/BFD.duckdb`;
-`Fungi_BFD_runs/db/BFD.duckdb` is a link to that file. Lookups are fastest when
+`tables/*.parquet` by absolute path, plus the small `swissprot_subject` table,
+the four `ref_*` FungalTraits tables and the macros above. It works only where
+`tables/` is at the same path. The pipeline publishes it to
+`BFD_function/db/BFD.duckdb`; `Fungi_BFD_runs/db/BFD.duckdb` is a link to that
+file. Since 2026-11 this is the only BFD database: the builder produces the
+full object set, including the `v_genome_*` views that `BFD_dashboard` used to
+add afterwards. How it is built and rebuilt is in
+[`BFD_DATABASE_BUILD.md`](BFD_DATABASE_BUILD.md). Lookups are fastest when
 a table is sorted by the column you filter on (see section 8).
 
 ## 4. Tables
@@ -332,6 +336,7 @@ One-protein lookups through `db/BFD.duckdb` (wall time, DuckDB start-up included
 | `seqdb/` protein and CDS copies. New or re-predicted genomes are not added automatically. | `Fungi_BFD_runs/bin/seqdb_list.py`, then `sbatch --array=... bin/seqdb_build.sh` (skips copies that exist; a re-predicted genome needs its old copy removed first) |
 | bgzip of `scaffolds.fa` written before 2026-11-07 (done once for 23,450 files) | `Fungi_BFD_runs/bin/bgzip_scaffolds.sh` |
 | `Fungi_BFD_runs/db/BFD.duckdb` is a link to `BFD_function/db/BFD.duckdb` | made by hand; keep it |
+| Rebuild `db/BFD.duckdb` after a builder or SQL change, without running any merge | from the run directory: `sbatch <checkout>/scripts/rebuild_pipeline_duckdb.sh` (never while a `MERGE_*` step is writing `tables/`) |
 | `docs/BFD_SCHEMA.md` | `python3 nextflow/bin/schema_doc.py --db <db> --out docs/BFD_SCHEMA.md` |
 | Tables written by the old code before a template change | rerun with `--force_merges` (section 7) |
 
