@@ -10,7 +10,10 @@ process MERGE_BUSCO_GENOME {
     path "busco_genome.parquet", emit: parquet
 
     script:
-    def shrinkFlag = params.merge_all.toBoolean() ? '--enforce-no-shrink' : ''
+    // A full merge refuses a smaller table. allow_shrink overrides that for a known,
+    // deliberate shrink (genomes dropped from samples.csv). Same wiring as MERGE_SAMPLES.
+    def shrinkFlag = !params.merge_all.toBoolean() ? '' :
+        (params.allow_shrink.toBoolean() ? '--enforce-no-shrink --allow-shrink' : '--enforce-no-shrink')
     """
     python3 ${projectDir}/bin/summarize_busco_stats.py \\
         --manifest ${manifest} \\
