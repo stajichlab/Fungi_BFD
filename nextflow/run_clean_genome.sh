@@ -11,7 +11,7 @@
 # run_genome_clean_mask.sh instead.
 #
 # By default genomes are cleaned in BATCHES (GENOME_CLEAN_BATCH): each SLURM job
-# stages the FCS-GX DB into /dev/shm once (~30 min) and then cleans up to
+# stages the FCS-GX DB into $SCRATCH once (~15 min) and then cleans up to
 # clean_batch_size genomes (default 1000) sequentially. Already-cleaned .fa files
 # are skipped, so a killed/retried batch resumes cheaply. Set --clean_batch_size 0
 # to revert to one SLURM job per genome (GENOME_CLEAN).

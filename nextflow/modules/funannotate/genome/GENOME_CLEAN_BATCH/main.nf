@@ -50,7 +50,7 @@ process GENOME_CLEAN_BATCH {
     export FCS_GX_SHM_DIR="\$FCS_GX_STAGE/gxdb"
     STAGE_BIND=""
     [ "\$FCS_GX_STAGE_ROOT" != "\$SCRATCH" ] && STAGE_BIND=",\$FCS_GX_STAGE_ROOT:\$FCS_GX_STAGE_ROOT"
-    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb},/dev/shm:/dev/shm\${STAGE_BIND}"
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb}\${STAGE_BIND}"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
     # taxonkit is not in the AAFTF >= 0.7 image; it runs from params.taxonkit_container.
     TSING="apptainer exec --bind ${taxondb}:${taxondb}:ro ${params.taxonkit_container}"

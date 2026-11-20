@@ -2,8 +2,9 @@
 # the GENOME_CLEAN processes set it to a per-task dir under params.fcsgx_stage_dir, default $SCRATCH).
 #
 # SOURCED (not executed) by the GENOME_CLEAN process before AAFTF fcs_gx_purge,
-# which expects the GX database under  /dev/shm/gxdb/all{.gxi,.gxs,...}.
-# Keeping the DB in /dev/shm (RAM) is required for acceptable FCS-GX performance.
+# which expects the GX database under  $FCS_GX_SHM_DIR/all{.gxi,.gxs,...}.
+# The DB must sit on fast local storage: the GENOME_CLEAN processes use node-local $SCRATCH
+# (params.fcsgx_stage_dir). /dev/shm (RAM) also works but counts against the job memory.
 #
 #   source scripts/setup_fcs_shm.sh
 #   AAFTF fcs_gx_purge --db /dev/shm/gxdb/all ...

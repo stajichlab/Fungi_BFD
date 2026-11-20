@@ -28,13 +28,13 @@ workflow FUNANNOTATE_GENOME_PREP {
 
     // Only clean genomes whose cleaned .fa does not already exist. This keeps batches
     // from being padded with finished genomes — a batch that is entirely cleaned is never
-    // scheduled, so it never pays the ~30-min /dev/shm staging cost. (GENOME_CLEAN_BATCH
+    // scheduled, so it never pays the FCS-GX DB staging cost (~15 min, see GENOME_CLEAN_BATCH). (GENOME_CLEAN_BATCH
     // also re-checks per genome at runtime, which handles partial completion on retry.)
     def jobs_to_clean = jobs.filter { tup ->
         !genomeFile("${launchDir}/input_clean_genomes/${tup[1]}.fa").exists()
     }
 
-    // Genome cleaning. The FCS-GX DB staging into /dev/shm costs ~30 min per task, so by
+    // Genome cleaning. The FCS-GX DB staging into params.fcsgx_stage_dir ($SCRATCH) costs ~15 min per task, so by
     // default we batch genomes (clean_batch_size, default 1000) into single SLURM jobs that
     // stage the DB once and then clean every genome in the batch. Set clean_batch_size = 0
     // to fall back to the original one-SLURM-job-per-genome GENOME_CLEAN process.
