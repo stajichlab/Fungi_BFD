@@ -55,3 +55,15 @@ Ustilaginomycetes	Ustilaginomycotina	taxonomy_py
 Wallemiomycetes	Wallemiomycotina	proposed	Basidiomycota; check
 Xylonomycetes	Pezizomycotina	taxonomy_py	
 Zoopagomycetes	Zoopagomycotina	proposed	Zoopagomycota; check
+Chytridiomycetes	Chytridiomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Entomophthoromycetes	Entomophthoromycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Peribolosporomycetes	Ustilaginomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Novakomycetes	Taphrinomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Xylobotryomycetes	Pezizomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Caulochytriomycetes	Chytridiomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Olpidiomycetes	Olpidiomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Calcarisporiellomycetes	Calcarisporiellomycotina	ncbi	species.SUBPHYLUM from the NCBI taxonomy rebuild of 2026-11-18; added at the user's request 2026-11-19
+Neocallimastigomycetes	Neocallimastigomycotina	proposed	NCBI has no subphylum; added at the user's request 2026-11-19
+Sanchytriomycetes	Sanchytriomycotina	proposed	added at the user's request 2026-11-19
+Monoblepharidomycetes	Monoblepharidomycotina	proposed	added at the user's request 2026-11-19
+Hyaloraphidiomycetes	Hyaloraphidiomycotina	proposed	added at the user's request 2026-11-19

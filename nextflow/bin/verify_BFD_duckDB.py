@@ -21,6 +21,7 @@ Usage:
     verify_BFD_duckDB.py --db DB --tables-dir DIR [--prev-db DB] [--expect-views N]
 """
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -145,6 +146,38 @@ def main():
             if not (n_lab == n_key == n_sp):
                 problems.append(f"v_genome_labels rows {n_lab}, distinct LOCUSTAG {n_key}, "
                                 f"species rows {n_sp} must be equal")
+
+    # G: the predgpi join in v_protein_annotation must filter on `feature`.
+    #
+    # PredGPI writes a `Chain` row for every protein it reads and a
+    # `GPI-anchor` row only for the ones it predicts an anchor on. Without the
+    # filter every protein matches the join and is_gpi_anchored is a constant
+    # TRUE -- 223,938,474 proteins instead of the 3,299,703 that are anchored
+    # in the 2026-11 build. Nothing errors; the column is simply wrong.
+    #
+    # This checks the database that was produced, not the script that produced
+    # it. rebuild_pipeline_duckdb.sh used to grep the builder for the literal
+    # clause, which broke twice over: it passed for a database built by some
+    # other checkout, and it would fail on a correct build if the SQL were
+    # merely reformatted or moved into one of the sql/*.sql files. DuckDB
+    # stores the view's normalised SQL, so the clause is readable here however
+    # it was written. nextflow/tests/test_gpi_anchor_flag.py covers the
+    # behaviour on fixture data; this covers the shipped artefact.
+    if "v_protein_annotation" in present:
+        ok, vsql = duck(db, "SELECT sql FROM duckdb_views() "
+                            "WHERE view_name = 'v_protein_annotation'")
+        if not ok or not vsql:
+            problems.append("could not read the SQL of v_protein_annotation")
+        elif re.search(r"\bpredgpi\b", vsql, re.I):
+            # look at what follows each mention of the table, not the whole view
+            windows = [vsql[m.end():m.end() + 200]
+                       for m in re.finditer(r"\bpredgpi\b", vsql, re.I)]
+            if not any(re.search(r"\bfeature\b", w, re.I) for w in windows):
+                problems.append(
+                    "v_protein_annotation joins predgpi with no filter on `feature`: "
+                    "is_gpi_anchored will be TRUE for every protein (Fungi_BFD PR #75)")
+            else:
+                print("  predgpi join           filtered on feature")
 
     # F: the view set must not shrink against the database being replaced
     if args.prev_db and Path(args.prev_db).exists():
