@@ -90,3 +90,4 @@ GCA_988425405.1_gfSuiVisc1.hap2.1,hap2,haplotype pair; plain name kept by GCA_98
 GCA_987114645.1_gfCorCroa1.hap2.1,hap2,haplotype pair; plain name kept by GCA_987114275.1_gfCorCroa1.hap1.1
 GCA_061237955.1_ASM6123795v1,hap2,haplotype pair; plain name kept by GCA_061237835.1_ASM6123783v1
 GCA_978898735.1_gfTriTerr1.hap2.1,hap2,haplotype pair; plain name kept by GCA_978897505.1_gfTriTerr1.hap1.1
+GCA_000269885.1_ASM26988v1,draft2012,keep_dupes isolate rather than a haplotype pair; 2012 draft superseded by the 2020 complete genome GCA_002571405.2_ASM257140v2 which keeps the plain name. Both are in suppress.txt so neither is annotated; this row only makes the out keys unique.
