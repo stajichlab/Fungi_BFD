@@ -81,6 +81,8 @@ process WGD_PAIR_KS {
             --dnds-method ${params.wgd_dnds_method} ${refine} ${giant} ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
             && [ -s \$out ]; then
             nok=\$((nok+1)); cp \$out.status.txt \${id}.pair_status.txt 2>/dev/null || true
+            # giant-family sampling marker: kept next to the result so sampled genomes can be identified (not a declared output)
+            if [ -s \$out.giant.tsv.gz ]; then mkdir -p "\$STORE" && cp \$out.giant.tsv.gz "\$STORE/"; fi
         else
             echo "\$id: wgd_pair_ks.py failed" >> \$FAILED; rm -f \$out
         fi
