@@ -82,6 +82,10 @@ ap.add_argument("--seed", type=int, default=1, help="seed for node sampling")
 ap.add_argument("--dnds-method", choices=["codeml", "yn00"], default="codeml",
                 help="estimator for dN/dS of the pairs that pass the pre-filter: codeml (pairwise ML, runmode -2) or yn00 (Yang & Nielsen 2000 "
                      "through kaks; about 30x faster per pair, reads lower than codeml above dS about 0.5)")
+ap.add_argument("--refine-codeml-min", type=float, default=0.0,
+                help="with --dnds-method yn00: pairs whose yn00 dS is in [refine-codeml-min, refine-codeml-max] are re-estimated with codeml "
+                     "on the same alignment; dS, dN, dN/dS, t, S, N then hold the codeml values, dS_yn00 the yn00 dS, estimator = codeml")
+ap.add_argument("--refine-codeml-max", type=float, default=0.0, help="upper end of the codeml refinement range; 0 (default) = no refinement")
 ap.add_argument("--kaks", default="kaks", help="kaks executable (subopt-kaks; needed for --dnds-method yn00)")
 ap.add_argument("--max-family-genes", type=int, default=0,
                 help="upper limit for a family in the node-sampling path: a family with more distinct sequences than this keeps a seeded "
@@ -207,7 +211,7 @@ cleandata = 1
 RX = re.compile(r"t=\s*([\d.]+)\s+S=\s*([\d.]+)\s+N=\s*([\d.]+)\s+dN/dS=\s*([\d.]+)\s+dN =\s*([\d.]+)\s+dS =\s*([\d.]+)")
 HDR = ["pair", "family", "g1", "g2", "gene1", "gene2", "N", "S", "dN", "dS", "dN/dS", "t",
        "alignmentlength", "strippedalignmentlength", "alignmentcoverage", "alignmentidentity",
-       "ng_dS", "ng_codons", "status", "node", "copies1", "copies2", "npairs", "node_pairs", "node_sampled"]
+       "ng_dS", "ng_codons", "status", "node", "copies1", "copies2", "npairs", "node_pairs", "node_sampled", "estimator", "dS_yn00"]
 
 
 def fmt(x):
@@ -237,7 +241,8 @@ def _work(job):
     pair = f"{g1}__{g2}"
     row = {"pair": pair, "family": fam, "g1": g1, "g2": g2, "gene1": g1, "gene2": g2,
            "copies1": float(n1), "copies2": float(n2), "node_pairs": float("nan"), "node_sampled": float("nan"),
-           "npairs": float(n1 * (n1 - 1) // 2) if kind == "ident" else float(n1 * n2)}
+           "npairs": float(n1 * (n1 - 1) // 2) if kind == "ident" else float(n1 * n2),
+           "estimator": A.dnds_method, "dS_yn00": float("nan")}
     nan = float("nan")
     for k in ("N", "S", "dN", "dS", "dN/dS", "t", "alignmentlength", "strippedalignmentlength",
               "alignmentcoverage", "alignmentidentity", "ng_dS", "ng_codons"):
@@ -318,9 +323,27 @@ def _work(job):
         if not (dS == dS):
             row["status"] = "no_estimate"
             return row
-        row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS,
+        row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS, "dS_yn00": dS,
                     "strippedalignmentlength": float(3 * n), "status": "ok"})
+        if A.refine_codeml_max > 0 and A.refine_codeml_min <= dS <= A.refine_codeml_max:
+            # second pass: codeml on the same alignment. On codeml failure the yn00 values stay and the estimator stays yn00.
+            st2, v2 = run_codeml(c1, c2, n)
+            if st2 == "ok":
+                t, S, N, w, dN, dS = v2
+                row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS, "estimator": "codeml"})
         return row
+    st, v = run_codeml(c1, c2, n)
+    if st != "ok":
+        row["status"] = st
+        return row
+    t, S, N, w, dN, dS = v
+    row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS,
+                "strippedalignmentlength": float(3 * n), "status": "ok"})
+    return row
+
+
+def run_codeml(c1, c2, n):
+    """Pairwise codeml (runmode -2) on a gap-free codon alignment. Returns (status, values); values = (t, S, N, w, dN, dS) or None."""
     _t = time.perf_counter()
     d = tempfile.mkdtemp(prefix="pk_", dir=A.tmpdir)
     try:
@@ -328,28 +351,22 @@ def _work(job):
             fh.write(f" 2 {3 * n}\ns1  {''.join(c1)}\ns2  {''.join(c2)}\n")
         with open(f"{d}/c.ctl", "w") as fh:
             fh.write(CTL.format(icode=A.icode))
-        TT["io_setup"] = time.perf_counter() - _t
+        TT["io_setup"] = TT.get("io_setup", 0.0) + time.perf_counter() - _t
         try:
             _t = time.perf_counter()
             subprocess.run(["codeml", "c.ctl"], cwd=d, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=60)
-            TT["codeml"] = time.perf_counter() - _t
+            TT["codeml"] = TT.get("codeml", 0.0) + time.perf_counter() - _t
         except subprocess.TimeoutExpired:
-            row["status"] = "timeout"
-            return row
+            return "timeout", None
         try:
             txt = open(f"{d}/out").read()
         except FileNotFoundError:
-            row["status"] = "no_out"
-            return row
+            return "no_out", None
         m = RX.search(txt)
         if not m:
-            row["status"] = "no_estimate"
-            return row
-        t, S, N, w, dN, dS = (float(x) for x in m.groups())
-        row.update({"t": t, "S": S, "N": N, "dN/dS": w, "dN": dN, "dS": dS,
-                    "strippedalignmentlength": float(3 * n), "status": "ok"})
-        return row
+            return "no_estimate", None
+        return "ok", tuple(float(x) for x in m.groups())
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

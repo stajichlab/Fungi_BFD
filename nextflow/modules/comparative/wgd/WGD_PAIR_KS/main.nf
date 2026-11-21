@@ -46,6 +46,7 @@ process WGD_PAIR_KS {
     // node sampling: K pairs per node go to codeml (0 = all pairs). A speed-up: off when wgd_speedups=false.
     def ns      = fast ? (params.wgd_node_sample as int) : 0
     // a node draws pairs in rounds until it has ns pairs inside the gate (dS cut, minimum codons) or wgd_node_max_draws were run
+    def refine  = (params.wgd_dnds_method == 'yn00' && (params.wgd_refine_codeml_max as double) > 0) ? "--refine-codeml-min ${params.wgd_refine_codeml_min} --refine-codeml-max ${params.wgd_refine_codeml_max}" : ''
     def nsflag  = ns > 0 ? "--node-sample ${ns} --node-max-draws ${params.wgd_node_max_draws} --gate-max-ds ${params.wgd_max_ds ?: 0} --gate-min-codons ${params.wgd_min_pair_codons ?: 0}" : ''
     def allow   = params.wgd_allow_untested_table.toString().toBoolean() ? '1' : '0'
     def ids     = metas.collect { it.id }.join(' ')
@@ -76,7 +77,7 @@ process WGD_PAIR_KS {
         if apptainer exec \${SING_BINDS} --env PYTHONNOUSERSITE=1 ${params.wgd_pair_sif} \\
             python3 ${projectDir}/bin/wgd_pair_ks.py --cds \$cds --families \$fam --out \$out \\
             --threads ${task.cpus} --min-identity ${ident} --min-ng-codons ${ngcod} ${maxngds} \\
-            --dnds-method ${params.wgd_dnds_method} ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
+            --dnds-method ${params.wgd_dnds_method} ${refine} ${nsflag} ${nocoll} --table \$table --icode \$icode --tmpdir \$TMPDIR < /dev/null \\
             && [ -s \$out ]; then
             nok=\$((nok+1)); cp \$out.status.txt \${id}.pair_status.txt 2>/dev/null || true
         else
