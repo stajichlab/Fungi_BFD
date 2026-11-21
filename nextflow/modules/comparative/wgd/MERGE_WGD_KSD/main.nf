@@ -49,7 +49,7 @@ process MERGE_WGD_KSD {
     def max_ds   = (fast && params.wgd_max_ds) ? "--max-ds ${params.wgd_max_ds}" : ''
     def min_cod  = params.wgd_min_codons ? "--min-codons ${params.wgd_min_codons}" : ''
     def min_pcod = (fast && params.wgd_min_pair_codons) ? "--min-pair-codons ${params.wgd_min_pair_codons}" : ''
-    def sub      = [pair: (fast ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full'), ksd_pairwise: 'wgd_ksd_pw', ksd: 'wgd_ksd'][params.wgd_ks_method]
+    def sub      = [pair: (fast ? 'wgd_ksd_pp' : 'wgd_ksd_pp_full') + (params.wgd_dnds_method == 'yn00' ? '_yn00' : ''), ksd_pairwise: 'wgd_ksd_pw', ksd: 'wgd_ksd'][params.wgd_ks_method]
     // per-node table: only for the pair method with node sampling (wgd_pair_ks.py writes the nodes files)
     def nodes    = (params.wgd_ks_method == 'pair' && fast && (params.wgd_node_sample as int) > 0) ? '--nodes-out wgd.ks.nodes.parquet' : ''
     def drop_nul = (fast && params.wgd_drop_null_ds.toString().toBoolean()) ? '--drop-null-ds' : ''
