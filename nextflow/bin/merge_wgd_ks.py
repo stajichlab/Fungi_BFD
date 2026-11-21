@@ -93,6 +93,18 @@ def identical_stats(path):
     return int(len(idn)), int(copies.sum()), int(copies.max()), float(idn.sum() / tot) if tot else float("nan")
 
 
+def giant_info(path):
+    """Giant-family sampling of a genome, from <path>.giant.tsv.gz written by wgd_pair_ks.py --giant-genes.
+    Returns (set of sampled families, aligned pairs / all pairs of those families). Empty set when the genome was not sampled."""
+    gpath = path + ".giant.tsv.gz"
+    if not os.path.exists(gpath):
+        return set(), float("nan")
+    g = pd.read_csv(gpath, sep="\t", dtype={"family": str})
+    if g.empty:
+        return set(), float("nan")
+    return set(g["family"]), float(g["pairs_aligned"].sum() / g["pairs_total"].sum())
+
+
 def species_prefix_of(gene):
     s = str(gene).split("_", 1)
     return s[0] if s else ""
@@ -149,7 +161,7 @@ def main():
     for pat in args.glob:
         files.extend(glob.glob(pat))
     # side files of wgd_pair_ks.py live in the same folder and match *.ks.tsv*
-    files = sorted(f for f in files if not f.endswith((".nodes.tsv.gz", ".groups.tsv.gz", ".status.txt", ".failed.txt")))
+    files = sorted(f for f in files if not f.endswith((".nodes.tsv.gz", ".groups.tsv.gz", ".giant.tsv.gz", ".status.txt", ".failed.txt")))
     if not files:
         print(f"ERROR: no *.tsv.ks.tsv files matched {args.glob}; "
               f"refusing to write an empty merged table", file=sys.stderr)
@@ -161,7 +173,7 @@ def main():
     schema = pa.schema(
         [("genome", string_type)] + [("species_prefix", string_type)] +
         [(c, string_type) for c in STR_COLS] +
-        [(c, float_type) for c in FLOAT_COLS]
+        [(c, float_type) for c in FLOAT_COLS] + [("giant_family", pa.int64())]
     )
 
     summaries = []  # (genome, species_prefix, n_pairs_raw, n_pairs, n_pairs_with_ds, n_families, n_nodes, n_nodes_with_ds, hybrid, identical stats x4)
@@ -169,7 +181,7 @@ def main():
     node_schema = pa.schema(
         [("genome", string_type), ("species_prefix", string_type), ("family", string_type), ("node", string_type),
          ("kind", string_type)] + [(c, pa.int64()) for c in NODE_INT[:5]] + [("n_valid", pa.int64())] +
-        [(c, float_type) for c in NODE_FLOAT])
+        [(c, float_type) for c in NODE_FLOAT] + [("giant_family", pa.int64())])
     nodes_writer = (pq.ParquetWriter(args.nodes_out, node_schema, compression="zstd", use_dictionary=True,
                                      version="2.6", data_page_version="2.0") if args.nodes_out else None)
     n_nodes_total = 0
@@ -178,6 +190,7 @@ def main():
                           use_dictionary=True, version="2.6", data_page_version="2.0") as w:
         for path in files:
             genome = genome_of(path)
+            gfams, gshare = giant_info(path)
             try:
                 df = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False,
                                  na_values=["NaN", "nan", ""])
@@ -225,6 +238,7 @@ def main():
                         df[c] = float("nan")
                     df[c] = pd.to_numeric(df[c], errors="coerce")
                 df["genome"] = genome
+                df["giant_family"] = df["family"].isin(gfams).astype("int64")
                 # species_prefix: LOCUSTAG from the first token of gene1
                 df["species_prefix"] = df["gene1"].map(species_prefix_of)
                 table = pa.Table.from_pandas(df[schema.names], schema=schema,
@@ -237,6 +251,7 @@ def main():
                 if nt is None:
                     no_nodes_file += 1
                 else:
+                    nt["giant_family"] = nt["family"].isin(gfams).astype("int64")
                     n_nodes = len(nt)
                     n_nodes_ds = int((nt["n_valid"] > 0).sum())
                     n_nodes_total += n_nodes
@@ -257,7 +272,7 @@ def main():
                     n_nodes,
                     n_nodes_ds,
                     int(" x " in genome.replace("_", " ")),
-                ) + identical_stats(path))
+                ) + identical_stats(path) + (int(len(gfams) > 0), len(gfams), gshare))
             print(f"  {genome}: {n_raw:,} raw -> {len(df):,} rows", file=sys.stderr)
 
     # per-genome summary
@@ -275,6 +290,9 @@ def main():
         ("n_genes_in_identical_groups", pa.int64()),
         ("largest_identical_group", pa.int64()),
         ("identical_pair_share", pa.float64()),        # identical gene pairs / all gene pairs of the families
+        ("giant_sampled", pa.int64()),                 # 1 when giant families were sampled (--giant-genes): their dS is biased high
+        ("n_giant_families", pa.int64()),
+        ("giant_pairs_aligned_share", pa.float64()),   # aligned pairs / all pairs of the giant families
     ])
     if summaries:
         sum_df = pd.DataFrame(summaries, columns=[f.name for f in sum_schema])
