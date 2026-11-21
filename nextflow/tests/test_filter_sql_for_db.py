@@ -119,3 +119,41 @@ def test_real_files_survive_intact_when_everything_exists(name, tmp_path):
     assert p.returncode == 0, p.stderr
     assert "SKIP" not in p.stderr, p.stderr
     assert p.stdout == text
+
+
+def test_cte_names_are_not_missing_sources(tmp_path):
+    """FROM/JOIN of a WITH name inside the same statement is not a catalog lookup.
+    Before 2026-11-20 these views were skipped: v_genome_labels (base),
+    v_cazy_family_counts (u), v_genome_function_counts (sp), v_genome_truncation (t)."""
+    sql = ("CREATE OR REPLACE VIEW v1 AS\nWITH base AS (SELECT * FROM real_t),\n"
+           "u AS (SELECT * FROM base)\nSELECT * FROM u JOIN base USING (k);\n"
+           "COMMENT ON VIEW v1 IS 'x';\n"
+           "CREATE OR REPLACE VIEW v2 AS WITH RECURSIVE r(n) AS (SELECT 1) SELECT * FROM r;\n")
+    out, err = run(sql, ["real_t"], tmp_path)
+    assert "SKIP" not in err, err
+    assert "CREATE OR REPLACE VIEW v1" in out and "CREATE OR REPLACE VIEW v2" in out
+
+
+def test_cte_does_not_hide_a_truly_missing_table(tmp_path):
+    sql = "CREATE OR REPLACE VIEW v AS WITH a AS (SELECT 1) SELECT * FROM a JOIN absent USING (k);\n"
+    out, err = run(sql, [], tmp_path)
+    assert "CREATE OR REPLACE VIEW v" not in out
+    assert "absent" in err
+
+
+def test_extra_views_unchanged_against_a_catalog_of_real_tables_only(tmp_path):
+    """Catalog = names the file creates plus the parquet-backed tables it reads, but NOT
+    its CTE names. The filter must change nothing."""
+    import re
+    text = (SQL_DIR / "bfd_extra_views.sql").read_text()
+    first = text.splitlines()[0]
+    m = re.fullmatch(r"-- TABLES_DIR=(\S+)", first)
+    text = text.replace(m.group(1), "/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/tables")
+    created = set(re.findall(r"(?:COMMENT ON (?:VIEW|TABLE)|CREATE (?:OR REPLACE )?(?:VIEW|TABLE))\s+(\w+)", text))
+    ctes = {n.lower() for n in re.findall(
+        r"(?:\bWITH(?:\s+RECURSIVE)?|,)\s+([A-Za-z_]\w*)\s*AS\s*\(", text, re.I)}
+    sources = {n for n in re.findall(r"\b(?:FROM|JOIN)\s+([a-z_][\w]*)", text)} - ctes
+    names = sorted(created | sources)
+    out, err = run(text, names, tmp_path)
+    assert "SKIP" not in err, err
+    assert out == text
