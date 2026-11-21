@@ -67,6 +67,8 @@ python3 scripts/audit_strain_changes.py           # writes the SPECIES/STRAIN au
 | GCA_022578605.1 | FAMILY | Graphostromataceae; NCBI lineage says Xylariaceae. Same source. Reason not documented: CONFIRM |
 | GCA_903819665.1 | SPECIES | *Aureobasidium musti*; NCBI says *A. mustum*. Same source. Reason not documented: CONFIRM |
 
+| GCA_057558295.1, GCA_057558075.1, GCA_057558275.1, GCA_057558195.1, GCA_057558155.1, GCA_057558035.1, GCA_057558045.1, GCA_057558165.1 | SUBPHYLUM | *Ascomycota sp. Antarctolithica obscura* (8 MAGs, PRJNA1448026). NCBI gives PHYLUM Ascomycota but no CLASS, so neither class_subphylum.tsv nor phylum_subphylum.tsv can place them and SUBPHYLUM came out empty. Antarctolithicomycotina is a placeholder name given by the user 2026-11-21; BFD_dashboard carries the same value in config/refs/species_subphylum.tsv for the labels database. Remove these rows when the taxonomy is fixed upstream. |
+
 | GCA_024343405.1 | SPECIES | pinned to *Tremella fuciformis* on 2026-11-19. NCBI renamed the taxon (taxid 64657 to 2292393, *Tremella basidiomaticola*). The old name keeps the existing results folder name. NCBI_TAXONID and SPECIES_IN follow NCBI; the BFD dashboard takes final names from a table. Chosen by user |
 
 The four rows above this one were recovered automatically, not chosen today. Each is logged with the
