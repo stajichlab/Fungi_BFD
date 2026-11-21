@@ -167,6 +167,12 @@ _CREATE = re.compile(r"^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(VIEW|TABLE)\s+([A-Za-z_
 _FROM_IDENT = re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_][\w]*)\s*(?:AS\s+\w+\s*)?(?=[,);\s]|$)", re.I)
 _READ_PATH = re.compile(r"read_(?:parquet|csv|csv_auto|json|json_auto)\(\s*'([^']+)'", re.I)
 
+# A common table expression: "WITH name AS (", "WITH RECURSIVE name AS (" or ", name AS (".
+# Its name is a valid FROM source inside the same statement, not a catalog table.
+_CTE_NAME = re.compile(
+    r"(?:\bWITH(?:\s+RECURSIVE)?|,)\s+([A-Za-z_]\w*)\s*(?:\([^()]*\)\s*)?AS\s*(?:NOT\s+MATERIALIZED\s*|MATERIALIZED\s*)?\(",
+    re.I)
+
 SQL_KEYWORDS = {"select", "values", "lateral", "unnest", "generate_series", "range"}
 
 
@@ -215,8 +221,9 @@ def main():
         if reason is None:
             mc = _CREATE.match(bare)
             if mc and not _READ_PATH.search(paths_src):
+                ctes = {n.lower() for n in _CTE_NAME.findall(bare)}
                 for src in _FROM_IDENT.findall(bare):
-                    if src.lower() in SQL_KEYWORDS:
+                    if src.lower() in SQL_KEYWORDS or src.lower() in ctes:
                         continue
                     if src in will_exist:
                         continue

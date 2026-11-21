@@ -15,15 +15,17 @@ Two artefacts, in this order:
 | `tables/*.parquet` | `Fungi_BFD_runs/tables/` | one unpartitioned Parquet file per table, the real data |
 | `db/BFD.duckdb` | `Fungi_BFD_runs/BFD_function/db/` | **views** over those Parquet files, by absolute path |
 
-The database is almost entirely views. Normally five objects hold data:
+The database is almost entirely views. Normally one object holds data:
 
 - `swissprot_subject` (575,503 rows), materialized by the builder
-- `ref_fungaltraits`, `ref_growth_form_override`, `ref_class_subphylum`,
-  `ref_phylum_subphylum`, copied in from `lib/refs/` by `sql/bfd_traits.sql`
 
 Two more can appear: when `targetP.parquet` or `deeploc.parquet` is absent the
 builder creates an empty typed **table** in place of the view, so a build
-missing those inputs lists six or seven tables rather than five.
+missing those inputs lists two or three tables rather than one.
+
+The labels layer (`v_genome_labels`, `v_genome_traits`, the FungalTraits and
+SUBPHYLUM reference tables) is not built here. It moved to `BFD_dashboard` on
+2026-11-20 and is built into the dashboard's own `db/BFD_labels.duckdb`.
 
 Two consequences worth internalising:
 
@@ -118,13 +120,11 @@ It builds in three passes:
 2. **`v_protein_annotation`** — the per-protein join. Note the
    `WHERE feature = 'GPI-anchor'` filter on `predgpi`: without it every protein
    PredGPI read is flagged `is_gpi_anchored` (223.9 M instead of 3.3 M).
-3. **Compat, traits and helper SQL** — `sql/bfd_compat_views.sql`,
-   `sql/bfd_traits.sql`, `sql/bfd_extra_views.sql`, applied in that order
-   (`bfd_traits.sql` defines `v_genome_traits`, which `bfd_extra_views.sql`
-   reads). Each file is passed through `bin/filter_sql_for_db.py` first, which
+3. **Compat and helper SQL** — `sql/bfd_compat_views.sql` and
+   `sql/bfd_extra_views.sql`, applied in that order. Each file is passed through `bin/filter_sql_for_db.py` first, which
    drops statements whose target view, table or Parquet file is absent.
 
-   Without that filter these three files make roughly ten optional tables
+   Without that filter these files make roughly ten optional tables
    mandatory: `COMMENT ON VIEW` and `CREATE VIEW … read_parquet()` both raise
    on a missing target, and the duckdb CLI then exits 1 with the file half
    applied. A release directory built with `params_merge_only.yaml` has no
@@ -134,16 +134,19 @@ It builds in three passes:
    here rather than leaving a wrong database for a caller to publish.
 
 Pass 3 moved here from `BFD_dashboard` on 2026-11-19. Before that only the
-dashboard wrapper applied it, so the pipeline database had 39 views and the
-dashboard's had 59, and they drifted between builds.
+dashboard wrapper applied it, so the two databases drifted between builds.
+
+The filter reads every `FROM`/`JOIN` identifier as a catalog table, except
+names defined by a `WITH` clause in the same statement. Before 2026-11-20 it
+did not exclude CTE names, so `v_cazy_family_counts`, `v_genome_function_counts`
+and `v_genome_truncation` were skipped in build job 32335990.
 
 ### The line-1 path contract
 
-Each of the three SQL files begins with its own default data path:
+Each SQL file begins with its own default data path:
 
 ```sql
 -- TABLES_DIR=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/tables
--- REF_DIR=/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD/lib/refs
 ```
 
 That line is **not documentation — it is a substitution key.** The builder runs
@@ -165,15 +168,13 @@ other views — so its header is inert. The builder still requires it.)
 | `DBDIR` | `db` | where `BFD.duckdb` is written |
 | `BIN_DIR` | *required* | absolute path to `nextflow/bin` |
 | `SCHEMA` | *required* | absolute path to `sql/table_schema.json` |
-| `BFD_SQL_DIR` | `$BIN_DIR/../../sql` | the three SQL files |
-| `BFD_REF_DIR` | `$BIN_DIR/../../lib/refs` | FungalTraits reference data |
+| `BFD_SQL_DIR` | `$BIN_DIR/../../sql` | the two SQL files |
 | `PREV_DB` | unset | the database this build replaces; enables the shrink check |
 
 `BIN_DIR` must be `nextflow/bin` **inside a complete checkout**: the defaults
-above resolve `sql/` and `lib/refs/` relative to it. The two overrides are
-namespaced because a bare `REF_DIR` is a common variable name and this script
-runs under `bash -l`, where a profile could otherwise redirect the trait tables
-silently.
+above resolve `sql/` relative to it. The override is namespaced because
+this script runs under `bash -l`, where a profile could otherwise redirect the
+SQL silently.
 
 ## 5. The three ways it gets launched
 
@@ -188,13 +189,10 @@ Off by default, because it is a full rebuild every time.
 Its Nextflow cache key covers every file the builder reads or executes:
 `bin/build_BFD_duckDB.sh`, `bin/generate_bfd_catalog_sql.py`,
 `bin/filter_sql_for_db.py`, `bin/verify_BFD_duckDB.py`,
-`sql/table_schema.json`, the three SQL files and the four files in `lib/refs/`
-by name. **Change any of them and the next `-resume` rebuilds.**
+`sql/table_schema.json` and the two SQL files. **Change any of them and the next `-resume` rebuilds.**
 
 Add anything new the builder reads to that list in
 `modules/BFD/BUILD_DUCKDB/main.nf`, or `-resume` will serve a stale database.
-The four reference files are listed individually rather than as the directory
-so that editing `lib/refs/README.md` does not force a full rebuild.
 
 ### B. Builder changed, data did not
 
@@ -227,7 +225,7 @@ use B, which stages.
 ## 6. Where things live
 
 **`Fungi_BFD`** (this repo) — the pipeline, and everything version-controlled
-that defines *how* a build happens: `nextflow/`, `sql/`, `lib/refs/`,
+that defines *how* a build happens: `nextflow/`, `sql/`,
 `nextflow/tests/`.
 
 **`Fungi_BFD_runs`** — *this* instance of the build. Everything that says
@@ -254,22 +252,16 @@ python3 nextflow/bin/verify_BFD_duckDB.py \
 
 It checks that every view binds, that the core views exist, that
 `species`/`asm_stats`/`busco_genome` match their Parquet row counts, that the
-four `ref_*` tables exist **and are non-empty**, that `v_genome_labels` has one
-row per genome, and that no view was lost against `--prev-db`.
+`v_protein_annotation` GPI filter is correct, and that no view was lost against
+`--prev-db`. The labels and traits checks moved to `BFD_dashboard` with the
+labels layer (2026-11-20).
 
-The two checks that matter most are the ones easiest to lose. `read_csv` on a
-truncated or empty file returns zero rows **without raising**, so an empty
-`ref_fungaltraits` would give every genome NULL traits in a build that
-otherwise succeeds. And a duplicate `LOCUSTAG` in `species` silently multiplies
-`v_genome_labels`, which the row-count equality catches.
-
-**Run it in a job, not on a login node.** Counting `v_genome_labels` over
-24,000 genomes is killed for memory on the head node; 64 GB in a job takes
-about 25 seconds.
+**Run it in a job, not on a login node.** Heavy counts over the full tables are
+killed for memory on the head node.
 
 A full view count is not a fixed number: with the filter in §4, a build from an
 incomplete `tables/` legitimately has fewer views. Compare against `--prev-db`
-instead. A complete 2026-11 build has 59 views and five tables.
+instead.
 
 Cross-check the manifest after a merge:
 
@@ -277,18 +269,13 @@ Cross-check the manifest after a merge:
 cat tables/_manifest/species.json      # row_count must match SELECT count(*) FROM species
 ```
 
-`nextflow/bin/check_traits_vs_atlas.py` compares `v_genome_labels` traits
-against an atlas Parquet and the FungalTraits CSV; it exits 1 on a mismatch.
-
 Run the tests after any change to the builder or SQL. Use a Python that has
 pytest — `/usr/bin/python3` on this cluster is 3.6.8 and does not:
 
 ```bash
 module load duckdb          # the tests and the builder both need the CLI
 python3 -m pytest nextflow/tests/test_sql_path_headers.py \
-                  nextflow/tests/test_filter_sql_for_db.py \
-                  nextflow/tests/test_traits_sql.py \
-                  nextflow/tests/test_traits_refs.py -q
+                  nextflow/tests/test_filter_sql_for_db.py -q
 ```
 
 ## 8. Troubleshooting
@@ -303,20 +290,8 @@ against a different `tables/` directory. Check the path baked into the view:
 **`is_gpi_anchored` is true for almost every protein** — the database predates
 the `feature = 'GPI-anchor'` filter. Rebuild with B.
 
-**Traits columns are null, or `subphylum_source` is unexpected** — check
-`lib/refs/` is present and `sql/bfd_traits.sql`'s line-1 `REF_DIR` matches the
-paths in its body (§4).
-
 **`-resume` served a stale database** — something the builder reads is missing
 from `BUILD_DUCKDB`'s cache key (§5A).
-
-**`VERIFY FAILED: table ref_* is empty`** — `BFD_REF_DIR` points somewhere with
-a truncated or empty file. `read_csv` does not raise on that, which is why the
-check exists.
-
-**`VERIFY FAILED: v_genome_labels rows N, distinct LOCUSTAG M`** — `species`
-has duplicate `LOCUSTAG` values and the labels join has multiplied rows. Fix
-the upstream table; do not rebuild over it.
 
 **`SKIP:` lines during the SQL passes** — expected when `tables/` is
 incomplete; the filter is dropping statements for data that is not there (§4).

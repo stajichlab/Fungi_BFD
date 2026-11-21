@@ -2,13 +2,11 @@
 """Check a freshly built BFD database before it is published.
 
 Ported from BFD_dashboard/workflows/build_bfd_db.sh (2026-11-19), which ran
-these checks only for the dashboard copy. When the SQL layer moved into the
-pipeline the checks did not come with it, which left two silent-wrong-build
-paths open: a REF_DIR holding a truncated or empty CSV makes read_csv return
-zero rows with no error, so every genome gets NULL traits; and a duplicate
-LOCUSTAG in species silently multiplies v_genome_labels. Both produce a build
-that succeeds and is wrong, and both callers publish it -- BUILD_DUCKDB by
-publishDir, rebuild_pipeline_duckdb.sh after only a size check.
+these checks only for the dashboard copy. A build that succeeds and is wrong is
+published by both callers -- BUILD_DUCKDB by publishDir,
+rebuild_pipeline_duckdb.sh after only a size check. The labels and traits
+checks (ref_* tables, v_genome_labels row counts) moved back to BFD_dashboard
+on 2026-11-20 with the labels layer.
 
 Everything runs through the duckdb CLI rather than the Python module, so this
 uses the same binary that built the database and cannot hit a storage-version
@@ -31,10 +29,7 @@ from pathlib import Path
 # else in BFD is optional by design: see the mkview "SKIP:" path in
 # build_BFD_duckDB.sh and filter_sql_for_db.py.
 CORE_VIEWS = ["species", "asm_stats", "busco_genome", "gene_info", "gene_proteins",
-              "v_protein_annotation", "v_genome_labels", "v_genome_traits"]
-
-REF_TABLES = ["ref_fungaltraits", "ref_growth_form_override",
-              "ref_class_subphylum", "ref_phylum_subphylum"]
+              "v_protein_annotation"]
 
 # Views intentionally removed; not a regression if the previous database had them.
 RETIRED = {"v_gene_introns_phase"}   # dropped 2026-11-17 with the gene_introns phase fix
@@ -120,32 +115,6 @@ def main():
         print(f"  {view:14s} view={nv:,d} parquet={npq:,d}")
         if nv != npq:
             problems.append(f"{view}: view {nv} != parquet {npq}")
-
-    # D: the trait tables exist AND hold rows. read_csv on a truncated or empty
-    # file returns zero rows without raising, so "exists" is not enough.
-    for name in REF_TABLES:
-        n, err = scalar(db, f"SELECT count(*) FROM {name}")
-        if n is None:
-            problems.append(f"table {name} missing or unreadable: {(err or '')[:120]}")
-            continue
-        print(f"  {name:26s} {n:,d} rows")
-        if n == 0:
-            problems.append(f"table {name} is empty (check REF_DIR)")
-
-    # E: the labels join must not multiply or lose genomes
-    if {"v_genome_labels", "species"} <= present:
-        n_sp, _ = scalar(db, "SELECT count(*) FROM species")
-        n_lab, _ = scalar(db, "SELECT count(*) FROM v_genome_labels")
-        n_key, _ = scalar(db, "SELECT count(DISTINCT LOCUSTAG) FROM v_genome_labels")
-        n_nosub, _ = scalar(db, "SELECT count(*) FROM v_genome_labels WHERE SUBPHYLUM IS NULL")
-        if None in (n_sp, n_lab, n_key):
-            problems.append("v_genome_labels check failed to run")
-        else:
-            print(f"  v_genome_labels rows={n_lab:,d} distinct LOCUSTAG={n_key:,d} "
-                  f"species={n_sp:,d}; SUBPHYLUM NULL for {n_nosub if n_nosub is not None else '?'}")
-            if not (n_lab == n_key == n_sp):
-                problems.append(f"v_genome_labels rows {n_lab}, distinct LOCUSTAG {n_key}, "
-                                f"species rows {n_sp} must be equal")
 
     # G: the predgpi join in v_protein_annotation must filter on `feature`.
     #
