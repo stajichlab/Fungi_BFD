@@ -833,14 +833,14 @@ GCA_029300195.1_ASM2930019v1,Ascomycota sp.,CTeuk-1845,PRJNA810309,1709939,dikar
 GCA_029303315.1_ASM2930331v1,Ascomycota sp.,CTeuk-1847,PRJNA810309,1709939,dikarya,Ascomycota,,,,,,,Ascomycota sp.,1,FF431332
 GCA_029300035.1_ASM2930003v1,Ascomycota sp.,CTeuk-1848,PRJNA810309,1709939,dikarya,Ascomycota,,,,,,,Ascomycota sp.,1,FB143EFD
 GCA_029300015.1_ASM2930001v1,Ascomycota sp.,CTeuk-1849,PRJNA810309,1709939,dikarya,Ascomycota,,,,,,,Ascomycota sp.,1,FC1F834B
-GCA_057558295.1_FM_MARS-14.71_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-14.71,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,F1D0D74C
-GCA_057558075.1_FM_MARS-17.30_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-17.30,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,F46C92EF
-GCA_057558275.1_FM_MARS-19.38_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-19.38,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,F3948469
-GCA_057558195.1_FM_MARS-52.25_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-52.25,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,F7B4B958
-GCA_057558155.1_FM_MARS-55.28_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-55.28,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,FA7C05DE
-GCA_057558035.1_FM_MARS-62.17_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-62.17,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,F7E47E53
-GCA_057558045.1_FM_MARS-82.9_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-82.9,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,FF1FC3B3
-GCA_057558165.1_FM_MARS-9.1_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-9.1,PRJNA1448026,3698444,dikarya,Ascomycota,,,,,,,Ascomycota sp. Antarctolithica obscura,1,FD4728EA
+GCA_057558295.1_FM_MARS-14.71_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-14.71,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,F1D0D74C
+GCA_057558075.1_FM_MARS-17.30_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-17.30,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,F46C92EF
+GCA_057558275.1_FM_MARS-19.38_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-19.38,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,F3948469
+GCA_057558195.1_FM_MARS-52.25_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-52.25,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,F7B4B958
+GCA_057558155.1_FM_MARS-55.28_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-55.28,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,FA7C05DE
+GCA_057558035.1_FM_MARS-62.17_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-62.17,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,F7E47E53
+GCA_057558045.1_FM_MARS-82.9_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-82.9,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,FF1FC3B3
+GCA_057558165.1_FM_MARS-9.1_MAG_AntObs_1.0,Ascomycota sp. Antarctolithica obscura,Mars-9.1,PRJNA1448026,3698444,dikarya,Ascomycota,Antarctolithicomycotina,,,,,,Ascomycota sp. Antarctolithica obscura,1,FD4728EA
 GCA_024244165.1_UCR_Aace_1.0,Ascosphaera acerosa,ATCC 201316,PRJNA725040,51565,dikarya,Ascomycota,Pezizomycotina,Eurotiomycetes,Eurotiomycetidae,Onygenales,Ascosphaeraceae,Ascosphaera,Ascosphaera acerosa,1,FA9E2146
 GCA_024244195.1_UCR_Aagg_1.0,Ascosphaera aggregata,USDA-ARS PIBMSR Wild2,PRJNA725042,51564,dikarya,Ascomycota,Pezizomycotina,Eurotiomycetes,Eurotiomycetidae,Onygenales,Ascosphaeraceae,Ascosphaera,Ascosphaera aggregata,1,FD2F0C02
 GCA_001636715.1_AAP_1.0,Ascosphaera apis ARSEF 7405,ARSEF 7405,PRJNA72725,392613,dikarya,Ascomycota,Pezizomycotina,Eurotiomycetes,Eurotiomycetidae,Onygenales,Ascosphaeraceae,Ascosphaera,Ascosphaera apis,1,FCA5E144
