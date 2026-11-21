@@ -90,7 +90,7 @@ def test_unrecognised_statements_pass_through(tmp_path):
     assert "SET threads=4" in out
 
 
-@pytest.mark.parametrize("name", ["bfd_compat_views.sql", "bfd_traits.sql", "bfd_extra_views.sql"])
+@pytest.mark.parametrize("name", ["bfd_compat_views.sql", "bfd_extra_views.sql"])
 def test_real_files_survive_intact_when_everything_exists(name, tmp_path):
     """With every name present and every path readable, the filter must be a
     no-op -- otherwise it would quietly thin a correct production build.

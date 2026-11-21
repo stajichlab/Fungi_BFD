@@ -58,12 +58,10 @@ BUILDER=$PIPELINE/nextflow/bin/build_BFD_duckDB.sh
 # GPI-anchor filter used to be grepped out of $BUILDER here; it is now asserted
 # against the database that was actually built, in verify_BFD_duckDB.py, so the
 # check survives reformatting and also covers a database built elsewhere.
-# PR #81 moved the compat/traits/helper SQL and the FungalTraits reference data
-# into the pipeline. Without them the builder produces 39 views instead of 59,
-# and the result silently lacks every v_genome_* view.
-for f in sql/bfd_compat_views.sql sql/bfd_traits.sql sql/bfd_extra_views.sql \
-         lib/refs/fungaltraits_1.2.utf8.csv lib/refs/growth_form_overrides.tsv \
-         lib/refs/class_subphylum.tsv lib/refs/phylum_subphylum.tsv \
+# PR #81 moved the compat and helper SQL into the pipeline. Without them the
+# builder produces far fewer views and silently lacks every v_genome_* helper.
+# The labels and traits layer lives in BFD_dashboard (2026-11-20).
+for f in sql/bfd_compat_views.sql sql/bfd_extra_views.sql \
          nextflow/bin/filter_sql_for_db.py nextflow/bin/verify_BFD_duckDB.py; do
     [ -s "$PIPELINE/$f" ] \
         || { echo "ERROR: $PIPELINE/$f missing or empty (Fungi_BFD PR #81); update the checkout" >&2; exit 1; }

@@ -1,5 +1,5 @@
-"""The three SQL files applied by build_BFD_duckDB.sh declare their own default
-data path on line 1, as '-- TABLES_DIR=<path>' or '-- REF_DIR=<path>'.
+"""The SQL files applied by build_BFD_duckDB.sh declare their own default
+data path on line 1, as '-- TABLES_DIR=<path>'.
 
 The builder rewrites that path to the one the build actually uses with a global
 substitution of the line-1 string:
@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
-FILES = ["bfd_compat_views.sql", "bfd_traits.sql", "bfd_extra_views.sql"]
-KEYS = {"bfd_traits.sql": "REF_DIR"}  # the rest use TABLES_DIR
+FILES = ["bfd_compat_views.sql", "bfd_extra_views.sql"]
+KEYS = {}  # all use TABLES_DIR
 
 # read_parquet('/abs/path/...'), read_csv('/abs/path/...'), read_csv_auto(...)
 _READ = re.compile(r"read_(?:parquet|csv|csv_auto)\(\s*'([^']+)'")

@@ -357,63 +357,48 @@ LEFT JOIN (SELECT protein_id, IDP_fraction FROM idp_summary) idps USING(protein_
 " "$DB"
 
 
-# ─── compat views, FungalTraits refs, helper views ──────────────────────────
-# Moved here from BFD_dashboard/sql + BFD_dashboard/config/refs (2026-11-19) so
-# that every caller of this builder -- the Nextflow BUILD_DUCKDB process,
+# ─── compat views and helper views ──────────────────────────────────────────
+# Moved here from BFD_dashboard/sql (2026-11-19) so that every caller of this
+# builder -- the Nextflow BUILD_DUCKDB process,
 # BFD_function/rebuild_pipeline_duckdb.sh, and anyone running it by hand --
-# produces one identical object set. Before the move, only the dashboard
-# wrapper applied these, so the pipeline DB had 39 views and the dashboard DB
-# had 59, and the two drifted apart between builds.
+# produces one identical object set.
 #
-# Order matters: bfd_traits.sql defines v_genome_traits, which
-# bfd_extra_views.sql reads.
+# The pipeline owns build FACTS. Analysis judgements (v_genome_labels,
+# v_genome_traits, the FungalTraits and SUBPHYLUM reference tables) belong to
+# BFD_dashboard and are built into its own db/BFD_labels.duckdb (2026-11-20).
+#
 #   bfd_compat_views.sql  MotherDuck-compatible aliases the catalog lacks
-#   bfd_traits.sql        ref_fungaltraits / ref_growth_form_override /
-#                         ref_class_subphylum / ref_phylum_subphylum -- the
-#                         only materialized tables besides swissprot_subject --
-#                         and v_genome_traits
 #   bfd_extra_views.sql   v_genome_* helper views and the in_genome() macro
 #
-# Each file's first line carries its own default path, as '-- TABLES_DIR=<p>'
-# or '-- REF_DIR=<p>'. We rewrite that path to the one this build actually
-# uses, which also keeps each file runnable stand-alone against the checkout.
+# Each file's first line carries its own default path, as '-- TABLES_DIR=<p>'.
+# We rewrite that path to the one this build actually uses, which also keeps
+# each file runnable stand-alone against the checkout.
 #
-# BFD_SQL_DIR / BFD_REF_DIR are namespaced on purpose: a bare REF_DIR is a
-# common name and this script is invoked as `bash "$BUILDER"` from login-shell
-# SLURM scripts, where a profile or `module load` could otherwise point the
-# trait tables at someone else's reference data without a word.
+# BFD_SQL_DIR is namespaced on purpose: this script is invoked as
+# `bash "$BUILDER"` from login-shell SLURM scripts, where a profile or
+# `module load` could otherwise point the build at someone else's SQL.
 SQL_DIR="${BFD_SQL_DIR:-$BIN_DIR/../../sql}"
-REF_DIR="${BFD_REF_DIR:-$BIN_DIR/../../lib/refs}"
 [ -d "$SQL_DIR" ] || { echo "ERROR: SQL dir '$SQL_DIR' not found (set BFD_SQL_DIR)" >&2; exit 1; }
-[ -d "$REF_DIR" ] || { echo "ERROR: ref dir '$REF_DIR' not found (set BFD_REF_DIR)" >&2; exit 1; }
 SQL_DIR="$(cd "$SQL_DIR" && pwd)"
-REF_DIR="$(cd "$REF_DIR" && pwd)"
 
-# Fail here, by name, rather than as a DuckDB IO error fifteen statements into
-# bfd_traits.sql with bfd_compat_views.sql already applied to $DB.
-for f in fungaltraits_1.2.utf8.csv growth_form_overrides.tsv class_subphylum.tsv phylum_subphylum.tsv; do
-    [ -s "$REF_DIR/$f" ] || { echo "ERROR: missing or empty $REF_DIR/$f (set BFD_REF_DIR)" >&2; exit 1; }
-done
-
-# The rewrite below is `sed "s#old#new#g"`, so a '#' in either path breaks the
+# The rewrite below is `sed "s#old#new#g"`, so a '#' in the path breaks the
 # command, a '&' in the replacement expands to the whole match, and a '\' is an
 # escape. Any of the three corrupts every path in the generated SQL silently.
-case "$SRC_ABS$REF_DIR" in
-    *[\#\&\\]*) echo "ERROR: paths must not contain '#', '&' or a backslash: '$SRC_ABS' '$REF_DIR'" >&2; exit 1 ;;
+case "$SRC_ABS" in
+    *[\#\&\\]*) echo "ERROR: path must not contain '#', '&' or a backslash: '$SRC_ABS'" >&2; exit 1 ;;
 esac
 
 SQL_STAGE="$(mktemp -d)"
 trap 'rm -rf "$SQL_STAGE"' EXIT
 mkdir -p "$SQL_STAGE/raw"
-for f in bfd_compat_views.sql bfd_traits.sql bfd_extra_views.sql; do
+for f in bfd_compat_views.sql bfd_extra_views.sql; do
     [ -e "$SQL_DIR/$f" ] || { echo "ERROR: missing $SQL_DIR/$f" >&2; exit 1; }
-    if [ "$f" = bfd_traits.sql ]; then KEY=REF_DIR; NEWPATH="$REF_DIR"; else KEY=TABLES_DIR; NEWPATH="$SRC_ABS"; fi
-    DEFAULT_P="$(sed -n "1s/^-- ${KEY}=//p" "$SQL_DIR/$f")"
-    [ -n "$DEFAULT_P" ] || { echo "ERROR: $f line 1 must be '-- ${KEY}=<path>'" >&2; exit 1; }
-    sed "s#${DEFAULT_P}#${NEWPATH}#g" "$SQL_DIR/$f" > "$SQL_STAGE/raw/$f"
-    # These three files carry no "is the table there?" guards -- the dashboard
-    # only ever ran them against a complete production tables/. Applied as-is
-    # they make ~10 optional tables mandatory, because COMMENT ON VIEW and
+    DEFAULT_P="$(sed -n "1s/^-- TABLES_DIR=//p" "$SQL_DIR/$f")"
+    [ -n "$DEFAULT_P" ] || { echo "ERROR: $f line 1 must be '-- TABLES_DIR=<path>'" >&2; exit 1; }
+    sed "s#${DEFAULT_P}#${SRC_ABS}#g" "$SQL_DIR/$f" > "$SQL_STAGE/raw/$f"
+    # These files carry no "is the table there?" guards -- the dashboard only
+    # ever ran them against a complete production tables/. Applied as-is they
+    # make ~10 optional tables mandatory, because COMMENT ON VIEW and
     # CREATE VIEW ... read_parquet() both raise on a missing target and the
     # duckdb CLI then exits 1 with the file half applied. Drop the statements
     # whose targets are absent, matching the "SKIP:" behaviour of mkview and
