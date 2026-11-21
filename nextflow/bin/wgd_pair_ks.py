@@ -91,6 +91,11 @@ ap.add_argument("--max-family-genes", type=int, default=0,
                 help="upper limit for a family in the node-sampling path: a family with more distinct sequences than this keeps a seeded "
                      "random subset of this many (0 = no limit). Cost grows with the square of the family size. Recent duplicate pairs are "
                      "lost first (both genes must be kept), so a capped family is biased toward older nodes")
+ap.add_argument("--giant-genes", type=int, default=0,
+                help="node-sampling path: a family with more distinct sequences than this is a giant family (0 = none). Its first pass aligns only "
+                     "--giant-k random partners per gene instead of every pair; unaligned distances for the NJ tree come from the shortest "
+                     "two-step path through common partners. Rows of such families are listed in <out>.giant.tsv.gz")
+ap.add_argument("--giant-k", type=int, default=200, help="random partners per gene in a giant family (pairs are unique, so a gene has about 2K)")
 ap.add_argument("--no-collapse", action="store_true", help="do not collapse identical CDS")
 ap.add_argument("--max-pairs", type=int, default=0, help="debug: stop after this many pairs")
 A = ap.parse_args()
@@ -514,6 +519,7 @@ def assign_nodes(fam_rows):
 
 
 GROUPS = []  # (family, member genes) of collapsed groups, filled by jobs()
+GIANTS = []  # (family, distinct sequences, pairs total, pairs aligned) of giant families sampled with --giant-genes
 CAPPED = []  # (family, distinct sequences, kept, genes, genes kept) of families limited by --max-family-genes
 
 
@@ -782,9 +788,25 @@ def run_sampled():
 
     def process_block(block):
         # 1. cheap pass over every pair of the block (identity, usable codons)
+        obs_of = {}  # family -> sorted triu indexes of the pairs aligned in the first pass (giant families only)
+        for fam, R, C in block:
+            n = len(R)
+            if A.giant_genes > 0 and n > A.giant_genes and n - 1 > A.giant_k:
+                rg = np.random.default_rng((A.seed * 3000017 + zlib.crc32(fam.encode())) & 0xFFFFFFFF)
+                a_ = np.repeat(np.arange(n), A.giant_k)
+                b_ = np.concatenate([rg.choice(np.delete(np.arange(n), i), size=A.giant_k, replace=False) for i in range(n)])
+                lo, hi = np.minimum(a_, b_), np.maximum(a_, b_)
+                obs_of[fam] = np.unique(lo * n - lo * (lo + 1) // 2 + (hi - lo - 1))
+                GIANTS.append((fam, n, n * (n - 1) // 2, len(obs_of[fam])))
+
         def gen():
             for fam, R, C in block:
                 n = len(R)
+                if fam in obs_of:
+                    ia_, ib_ = np.triu_indices(n, 1)
+                    for t_ in obs_of[fam].tolist():
+                        yield R[ia_[t_]], R[ib_[t_]]
+                    continue
                 for a_ in range(n):
                     for b_ in range(a_ + 1, n):
                         yield R[a_], R[b_]
@@ -795,24 +817,50 @@ def run_sampled():
             n = len(R)
             ia, ib = np.triu_indices(n, 1)
             P = len(ia)
-            ident = np.empty(P)
-            ncod = np.empty(P, dtype=np.int32)
+            obs = obs_of.get(fam)
+            ident = np.full(P, np.nan) if obs is not None else np.empty(P)
+            ncod = np.zeros(P, dtype=np.int32) if obs is not None else np.empty(P, dtype=np.int32)
             _t = time.perf_counter()
-            for t in range(P):
+            for t in (obs.tolist() if obs is not None else range(P)):
                 ident[t], ncod[t], ta, tt_ = next(res)
                 ACC["p1_worker_align"] = ACC.get("p1_worker_align", 0.0) + ta
                 ACC["p1_worker_total"] = ACC.get("p1_worker_total", 0.0) + tt_
             acc("p1_wall", time.perf_counter() - _t)
-            acc("pairs_phase1", P)
+            acc("pairs_phase1", P if obs is None else len(obs))
             _t = time.perf_counter()
             passed = (ident >= A.min_identity) & (ncod >= A.min_ng_codons)
             # 2. identity-distance NJ tree -> node of every pair
             D = np.zeros((n, n))
             dist = 1.0 - ident
             fill = np.nanmax(dist) if np.isfinite(dist).any() else 1.0
-            dist = np.where(np.isnan(dist), fill, dist)
-            D[ia, ib] = dist
-            D[ib, ia] = dist
+            if obs is not None:
+                # giant family: most distances are not aligned. Fill each by the shortest two-step path through common partners.
+                O = np.full((n, n), np.inf)
+                ok_ = np.isfinite(dist)
+                O[ia[ok_], ib[ok_]] = dist[ok_]
+                O[ib[ok_], ia[ok_]] = dist[ok_]
+                # two-step path through common partners; always at least the true distance for a metric, so it is rescaled by the median
+                # ratio (aligned distance / two-step path) measured on aligned pairs, with the direct edge left out of the path
+                P2 = np.full((n, n), np.inf)
+                for i_ in range(n):
+                    nb = np.nonzero(np.isfinite(O[i_]))[0]
+                    if len(nb):
+                        P2[i_] = (O[nb] + O[i_, nb][:, None]).min(axis=0)
+                P2 = np.minimum(P2, P2.T)
+                rr = np.nonzero(ok_)[0]
+                rr = rr[np.random.default_rng(1).permutation(len(rr))[:20000]]
+                a2, b2 = ia[rr], ib[rr]
+                good = np.isfinite(P2[a2, b2]) & (P2[a2, b2] > 0)
+                scale = float(np.median(dist[rr][good] / P2[a2, b2][good])) if good.any() else 1.0
+                print("giant family %s: two-step path scale %.3f from %d aligned pairs" % (fam, scale, int(good.sum())), file=sys.stderr)
+                F = np.where(np.isfinite(O), O, np.where(np.isfinite(P2), P2 * min(scale, 1.0), fill))
+                np.fill_diagonal(F, 0.0)
+                D = np.minimum(F, F.T)
+                dist = None
+            else:
+                dist = np.where(np.isnan(dist), fill, dist)
+                D[ia, ib] = dist
+                D[ib, ia] = dist
             lab = nj_label_matrix(D)
             nid = lab[ia, ib].astype(np.int64)
             nnode = int(nid.max()) + 1
@@ -827,7 +875,8 @@ def run_sampled():
             first = np.maximum.accumulate(np.where(start, np.arange(len(cn)), 0)) if len(cn) else np.zeros(0, dtype=np.int64)
             rank = np.arange(len(cn)) - first
             states.append({"fam": fam, "R": R, "C": C, "ia": ia, "ib": ib, "nid": nid, "nnode": nnode, "w": w,
-                           "passed": passed, "cand": cand, "cn": cn, "rank": rank,
+                           "passed": passed, "unobs": (~np.isin(np.arange(P), obs)) if obs is not None else np.zeros(P, dtype=bool),
+                           "cand": cand, "cn": cn, "rank": rank,
                            "npass": np.bincount(nid[passed], minlength=nnode),
                            "nrep": np.bincount(nid, minlength=nnode),
                            "npairs": np.bincount(nid, weights=w, minlength=nnode).astype(np.int64),
@@ -877,7 +926,10 @@ def run_sampled():
                 bump(r["status"], 1, int(r["npairs"]))
                 out.write("\t".join(fmt(r[k]) for k in HDR) + "\n")
             sw = int(sum(r["npairs"] for r, _ in st["rows"]))
-            bump("prefiltered", int((~st["passed"]).sum()), int(st["w"][~st["passed"]].sum()))
+            unobs = st["unobs"]
+            bump("prefiltered", int((~st["passed"] & ~unobs).sum()), int(st["w"][~st["passed"] & ~unobs].sum()))
+            if unobs.any():
+                bump("giant_unaligned", int(unobs.sum()), int(st["w"][unobs].sum()))
             bump("not_sampled", int(st["passed"].sum()) - len(st["rows"]), int(st["w"][st["passed"]].sum()) - sw)
             for k_ in range(st["nnode"]):
                 nout.write(f"{fam}\tn{k_}\ttree\t{int(st['npairs'][k_])}\t{int(st['nrep'][k_])}\t{int(st['npass'][k_])}\t{int(st['drawn'][k_])}\t{int(st['gated'][k_])}\n")
@@ -953,6 +1005,12 @@ if CAPPED:
         for _r in CAPPED:
             _fh.write("\t".join(str(x) for x in _r) + "\n")
     print("families limited by --max-family-genes %d: %d (genes dropped: %d)" % (A.max_family_genes, len(CAPPED), sum(r[3] - r[4] for r in CAPPED)), file=sys.stderr)
+if GIANTS:
+    with gzip.open(A.out + ".giant.tsv.gz", "wt") as _fh:
+        _fh.write("family\tdistinct_sequences\tpairs_total\tpairs_aligned\n")
+        for _r in GIANTS:
+            _fh.write("\t".join(str(x) for x in _r) + "\n")
+    print("giant families (> %d sequences, %d partners per gene): %d" % (A.giant_genes, A.giant_k, len(GIANTS)), file=sys.stderr)
 _report = "dnds_method=%s%s\n" % (A.dnds_method, " kaks=" + (subprocess.run([A.kaks, "--version"], capture_output=True, text=True).stdout.strip() or "?") if A.dnds_method == "yn00" else "") + timing_report(time.perf_counter() - _T0)
 print(_report, file=sys.stderr)
 if A.node_sample > 0:

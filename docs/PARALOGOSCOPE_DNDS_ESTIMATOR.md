@@ -33,3 +33,20 @@ Giant families. Five genomes were skipped in `nf_full/tables_yn00` (Ambispora le
 
 ## Test of the refinement pass (2026-11-20, `eval/refine_test`)
 Allomyces macrogynus, node sampling, 16 CPUs, one run each. Without refinement: 132 s wall, 19,933 ok rows. With range 0.5 to 2: 219 s wall (1.7x), 20,513 ok rows, 8,183 rows refined with codeml (every refined row has yn00 dS from 0.5 to 2.0; none left unrefined inside the range). Median codeml/yn00 dS ratio in refined rows: 1.07. The row count differs because node sampling gates on the refined dS, so different pairs are drawn. `dS_yn00` is filled in all rows. Not tested: a full Nextflow run with the new parameters.
+
+## Giant families: K random partners per gene (2026-11-20, `eval/giant_k200`, `giant_kvar`, `giant_scaled`)
+Implemented as `--giant-genes N` and `--giant-k K` (params `wgd_giant_genes`, default 0 = off; `wgd_giant_k`, default 200). In a family with more than N distinct sequences the first pass aligns K random partners per gene, not every pair. The NJ tree needs a full matrix. Each unaligned distance is the shortest two-step path through common partners, multiplied by the median ratio (aligned distance / two-step path) measured on 20,000 aligned pairs (0.69 to 0.78 here). Node sampling then draws only among aligned pairs. Unaligned pairs are counted as status `giant_unaligned`. The family list is written to `<out>.giant.tsv.gz`.
+
+Test: first 1,800 genes of the largest Jimgerdemannia lactiflua family (1,619,100 pairs), yn00, 16 CPUs, one run per setting. Reference is the full all-pairs run (1,808 s). Median and quantiles are of the node-mean dS (gated pairs, dS <= 2.5, >= 30 codons).
+
+| Run | Wall | Nodes | 10% | 25% | 50% | 75% | 90% |
+|---|---|---|---|---|---|---|---|
+| full | 1,808 s | 1,797 | 0.157 | 0.294 | 0.488 | 0.762 | 1.055 |
+| K=100, scaled fill | 136 s | 1,771 | 0.216 | 0.370 | 0.560 | 0.840 | 1.170 |
+| K=200, scaled fill | 250 s | 1,794 | 0.192 | 0.347 | 0.553 | 0.841 | 1.190 |
+| K=400, scaled fill | 449 s | 1,792 | 0.170 | 0.324 | 0.522 | 0.815 | 1.163 |
+| K=200, no scaling (first version) | 312 s | 1,794 | 0.207 | 0.382 | 0.608 | 0.935 | 1.257 |
+
+Result: the sampled runs are 7 to 13 times faster (K=200: 7x) but read high. At K=200 with scaling the median is 13% above the full run and the 10% quantile is 22% above. At K=400 the median is 7% above. Bias falls as K rises. The fill scaling removed about half of the unscaled bias. A 600-gene family at K=200 (unscaled) gave a median of 0.540 against 0.505 (+7%). I did not test the cause of the remaining bias (tree topology from the filled distances is my hypothesis). Not tested: other giant families, a full Nextflow run, the five skipped genomes.
+
+Use: the feature is off by default. For the five skipped genomes, treat the dS distribution of their giant families as biased high by about 10 to 15% at K=200, and flag them in the results.
