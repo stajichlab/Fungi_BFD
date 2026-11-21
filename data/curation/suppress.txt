@@ -397,3 +397,6 @@ GCA_050916155.1_ASM5091615v1,Saccharomyces cerevisiae SMY63 -- problematic, supp
 GCA_000417025.1_ASM41702v1,Blumeria graminis f. sp. tritici JIW2 -- too small, suppress (user decision 2026-10-05)
 GCA_000441875.1_Bgt_70_1,Blumeria graminis f. sp. tritici Bgt-70 -- too fragmented, suppress (user decision 2026-10-05)
 GCA_000417865.1_Bgt_94202_1,Blumeria graminis f. sp. tritici 94202 -- too fragmented, suppress (user decision 2026-10-05)
+GCA_002571405.2_ASM257140v2,Saccharomyces cerevisiae CEN.PK113-7D -- skip both CEN.PK113-7D assemblies (user decision 2026-11-19); the two assemblies shared one results folder
+GCA_032173475.1_ASM3217347v1,Amanita phalloides -- fragmented older assembly (N50 0.32 Mb); skip, gfAmaPhal2 hap1/hap2 are annotated (user decision 2026-11-19)
+GCA_900068975.1_Hygrocybe_1_8,Hygrocybe conica -- very fragmented (N50 0.01 Mb, 68 Mb); skip, gfHygConi1 hap1/hap2 are annotated (user decision 2026-11-19)
