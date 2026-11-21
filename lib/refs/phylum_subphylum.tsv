@@ -4,6 +4,6 @@ Kickxellomycota	Kickxellomycotina	proposed	fallback for genomes with no CLASS; a
 Mortierellomycota	Mortierellomycotina	proposed	fallback for genomes with no CLASS; added at the user's request 2026-11-18
 Basidiobolomycota	Basidiobolomycotina	proposed	fallback for genomes with no NCBI subphylum; added at the user's request 2026-11-19
 Blastocladiomycota	Blastocladiomycotina	proposed	default for Blastocladiomycetes and Physodermatomycetes; added at the user's request 2026-11-19
-Microsporidia	Microsporidia	proposed	No NCBI subphylum; subphylum set to the phylum name; added at the user's request 2026-11-19
+Microsporidia	Microsporidiomycotina	ncbi	The 2026-11-18 NCBI taxonomy rebuild supplies Microsporidiomycotina, so species.SUBPHYLUM now fills it directly and wins the coalesce; this row only covers genomes NCBI has not placed. Was 'Microsporidia' (the phylum name) 2026-11-19, when NCBI gave no subphylum
 Rozellomycota	Rozellomycotina	proposed	fallback for genomes with no CLASS; added at the user's request 2026-11-19
 Aphelidiomycota	Aphelidiomycotina	proposed	fallback for genomes with no NCBI subphylum (class Aphelidea); added at the user's request 2026-11-19
