@@ -38,6 +38,7 @@ import argparse
 import csv
 import hashlib
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +95,49 @@ def prefix(asmid):
 
 def log(msg):
     print(msg, file=sys.stderr)
+
+
+def clean_strain_tag(raw):
+    """Port of cleanStrain() in nextflow/modules/common/utils.nf, step for step.
+
+    Keep the steps and their ORDER identical to the Groovy. The pipeline names
+    each results folder with the Groovy version; this copy only predicts that
+    name for the clash check. If the two disagree, the check passes and two
+    genomes still land in one folder -- the failure it exists to prevent."""
+    s = (raw or '').strip()
+    s = re.sub(r'[\'"]', '', s)             # .replaceAll(/['"]/, '')
+    s = s.split(';')[0].strip()             # .split(';')[0].trim()
+    s = s.replace(':', ' ')                 # .replace(':', ' ')
+    s = re.sub(r'^\s*\*+', '', s)           # leading '*' -> removed
+    s = re.sub(r'\*+\s*$', '', s)           # trailing '*' -> removed
+    s = re.sub(r'\s*\*+\s*', '-', s)        # '*' between words -> '-'
+    s = re.sub(r'[&`$|<>()]+', ' ', s)      # shell metacharacters -> space
+    return s.strip()
+
+
+def make_sample_tag(species, strain):
+    """Port of makeSampleTag() in nextflow/modules/common/utils.nf.
+
+    This is the per-genome folder key `out` under Fungi_BFD_runs/genome_annotation.
+    Two samples.csv rows with the same tag would share one results folder."""
+    sp = re.sub(r'[\'"]', '', (species or '').strip())
+    st = clean_strain_tag(strain)
+    return re.sub(r'[\s/#\[\]?{}]+', '_', '_'.join(x for x in (sp, st) if x))
+
+
+def load_out_suffix(path):
+    """ASMID -> (SUFFIX, REASON). SUFFIX is appended to STRAIN as '<strain>_<suffix>'
+    (or is the whole strain when it is empty). SUFFIX 'HOLD' keeps the row out of
+    samples.csv until someone picks a real suffix."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    with open(path, newline='') as f:
+        lines = (l for l in f if l.strip() and not l.lstrip().startswith('#'))
+        for row in csv.DictReader(lines):
+            out[row['ASMID'].strip()] = ((row.get('SUFFIX') or '').strip(),
+                                         (row.get('REASON') or '').strip())
+    return out
 
 
 # --- loaders ---------------------------------------------------------------
@@ -188,6 +232,16 @@ def main():
     ap.add_argument('--keep-dupes', default='data/curation/keep_dupes.csv')
     ap.add_argument('--prefer', default='data/curation/preferred_asmids.txt')
     ap.add_argument('--overrides', default='data/curation/overrides.csv')
+    ap.add_argument('--out-suffix', default='data/curation/out_suffix.csv',
+                    help='ASMID,SUFFIX,REASON: disambiguate haplotype/clashing genome folders')
+    ap.add_argument('--clash-report', default=None,
+                    help='write rows whose results-folder key (`out`) is shared (held back) to this CSV')
+    ap.add_argument('--allow-out-clash', action='store_true',
+                    help='keep rows that share an `out` key (default: hold them all back)')
+    ap.add_argument('--allow-missing-haplotype', action='store_true',
+                    help='proceed when the accessions CSV has no HAPLOTYPE column (old '
+                         'snapshots). hap1/hap2 pairs of one isolate may then be collapsed '
+                         'by the dedup rule.')
     ap.add_argument('--outfile', default='samples.csv')
     ap.add_argument('--no-dedup-rule', action='store_true',
                     help='do not auto-resolve uncurated species+strain collisions')
@@ -201,6 +255,8 @@ def main():
     keep_dupes = load_keep_dupes(args.keep_dupes)
     preferred = load_preferred(args.prefer)
     overrides = load_overrides(args.overrides)
+    out_suffix = load_out_suffix(args.out_suffix)
+    held_suffix = []
     tax = load_taxonomy(args.taxonomy)
 
     # ----- read accessions (master), sanitize, apply exclude ---------------
@@ -213,6 +269,18 @@ def main():
         missing = need - set(r.fieldnames or [])
         if missing:
             ap.error(f'accessions file missing columns: {sorted(missing)}')
+        # HAPLOTYPE carries the hap1/hap2 role and is part of the dedup key, so
+        # the two haplotypes of one isolate stay two genomes. Without the column
+        # every row looks like haplotype '', the pair collapses to a single
+        # species+strain group and the tie-breaker drops one half -- silently,
+        # because nothing else in the run distinguishes them. There is no safe
+        # fallback (unlike ASM_FOLDER below, which has one), so refuse instead.
+        # Old snapshots predate the column; extract_hand_edits.py regenerates
+        # against those on purpose and passes --allow-missing-haplotype.
+        if 'HAPLOTYPE' not in (r.fieldnames or []) and not args.allow_missing_haplotype:
+            ap.error('accessions file has no HAPLOTYPE column: hap1/hap2 assemblies of one '
+                     'isolate would be silently collapsed by the dedup rule. Re-export the '
+                     'accessions table, or pass --allow-missing-haplotype to accept that.')
         # ASM_FOLDER is the upstream-sanitized (filesystem-safe; no '#', spaces,
         # commas, parens) '{ACCESSION}_{ASM_NAME}'.  It is the canonical on-disk
         # folder + genome-file prefix and is the join key in the taxonomy table
@@ -257,9 +325,18 @@ def main():
             }
             for c in LINEAGE_COLS:
                 rec[c] = t[c]
+            # haplotype role from the accessions table (hap1/hap2/''); dedup key only
+            rec['HAPLOTYPE'] = (row.get('HAPLOTYPE') or '').strip()
             # per-ASMID overrides
             for fld, val in overrides.get(rec['ASMID'], {}).items():
                 rec[fld] = val
+            # results-folder disambiguation (after overrides, before dedup)
+            suf = out_suffix.get(rec['ASMID'])
+            if suf:
+                if suf[0].upper() == 'HOLD':
+                    held_suffix.append((rec['ASMID'], suf[1]))
+                    continue
+                rec['STRAIN'] = f"{rec['STRAIN']}_{suf[0]}" if rec['STRAIN'] else suf[0]
             records.append(rec)
 
     log(f"[accessions] {n_in} rows -> {len(records)} kept "
@@ -269,14 +346,15 @@ def main():
     if not args.no_dedup_rule:
         groups = {}
         for rec in records:
-            k = (rec['SPECIES'].lower(), rec['STRAIN'].lower())
+            # haplotype role is part of the key: hap1 and hap2 are separate genomes
+            k = (rec['SPECIES'].lower(), rec['STRAIN'].lower(), rec['HAPLOTYPE'])
             groups.setdefault(k, []).append(rec)
         drop = set()
         n_collapsed = 0
         for k, recs in groups.items():
             if not k[1] or len(recs) == 1:
                 continue            # no strain, or singleton -> nothing to resolve
-            if k in keep_dupes:
+            if k[:2] in keep_dupes:
                 continue            # intentional multi-assembly isolate
             # winner selection:
             #   1. an explicitly preferred ASMID, else
@@ -298,6 +376,40 @@ def main():
         if drop:
             records = [x for x in records if id(x) not in drop]
         log(f"[dedup] auto-collapsed {n_collapsed} uncurated duplicate assemblies")
+
+    # ----- results-folder (`out`) clash check -------------------------------
+    # Two rows with the same `out` would share one genome_annotation folder, and
+    # -resume would reuse the first genome's predictions for the second. Hold every
+    # clashing row back (loudly) unless out_suffix.csv has separated them.
+    by_out = {}
+    for rec in records:
+        by_out.setdefault(make_sample_tag(rec['SPECIES'], rec['STRAIN']), []).append(rec)
+    clashes = {o: rs for o, rs in by_out.items() if len(rs) > 1}
+    # keep_dupes isolates are intentionally >1 assembly. They still share a folder,
+    # so warn, but do not hold them back (that would drop rows already in use).
+    for o, rs in list(clashes.items()):
+        if all((x['SPECIES'].lower(), x['STRAIN'].lower()) in keep_dupes for x in rs):
+            log(f"[out-clash] WARNING {o}: keep_dupes isolate, {len(rs)} assemblies share one "
+                f"folder key ({', '.join(x['ASMID'] for x in rs)}); give one an out_suffix.csv row")
+            del clashes[o]
+    clash_rows = []
+    for o, rs in sorted(clashes.items()):
+        for x in rs:
+            clash_rows.append([x['ASMID'], o, x['HAPLOTYPE'], len(rs), x['SPECIES'], x['STRAIN'],
+                               'kept' if args.allow_out_clash else 'held'])
+            log(f"[out-clash] {o}: {x['ASMID']} ({len(rs)} rows share this folder key)")
+    for asmid, reason in held_suffix:
+        clash_rows.append([asmid, '', '', 0, '', '', 'held (out_suffix HOLD): ' + reason])
+        log(f"[out-hold] {asmid}: held by out_suffix.csv ({reason})")
+    if clashes and not args.allow_out_clash:
+        held_ids = {id(r) for rs in clashes.values() for r in rs}
+        records = [r for r in records if id(r) not in held_ids]
+    log(f"[out-clash] {len(clashes)} shared folder keys; {len(held_suffix)} rows on HOLD")
+    if args.clash_report:
+        with open(args.clash_report, 'w', newline='') as f:
+            w = csv.writer(f, lineterminator='\n')
+            w.writerow(['ASMID', 'OUT', 'HAPLOTYPE', 'N_IN_GROUP', 'SPECIES', 'STRAIN', 'STATUS'])
+            w.writerows(clash_rows)
 
     # ----- deterministic LOCUSTAG ------------------------------------------
     records.sort(key=lambda x: x['RAW_ASM_BASE'])

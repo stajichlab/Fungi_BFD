@@ -1,0 +1,10 @@
+DATE,ASMID,FIELD,GENERATED_VALUE,KEPT_VALUE,SOURCE
+2026-11-19,GCA_014462655.1_ASM1446265v1,GENUS,Mycena,Glaucomycena,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_014462655.1_ASM1446265v1,SPECIES,Mycena venus,Glaucomycena venus,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_022578605.1_CtCBS203_1,FAMILY,Xylariaceae,Graphostromataceae,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_048127505.1_ASM4812750v1,GENUS,Xylaria,Pseudoxylaria,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_048127505.1_ASM4812750v1,SPECIES,Xylaria escharoidea,Pseudoxylaria escharoidea,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_048127525.1_ASM4812752v1,GENUS,Xylaria,Pseudoxylaria,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_048127525.1_ASM4812752v1,SPECIES,Xylaria rogersionigripes,Pseudoxylaria rogersionigripes,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_903819665.1_AWRI4233,SPECIES,Aureobasidium mustum,Aureobasidium musti,Fungi_BFD_runs/samples.csv 2026-11-19 vs 20261023 snapshot
+2026-11-19,GCA_024343405.1_Tfnb_1.0,SPECIES,Tremella basidiomaticola,Tremella fuciformis,pinned by user 2026-11-19: NCBI renamed the taxon (taxid 64657 -> 2292393); old name keeps the existing results folder name; dashboard takes names from a table

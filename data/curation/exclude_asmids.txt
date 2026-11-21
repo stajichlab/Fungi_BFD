@@ -150,3 +150,7 @@ GCF_947241705.1_Smik-IFO1815	curation	# Saccharomyces mikatae IFO 1815 | strain=
 GCA_982258805.1_Tp_3378_genome	curation	# Talaromyces proteolyticus NRRL 3378: GCA_055862385.1_ASM5586238v1 preferred
 GCA_004919795.1_ASM491979v1	curation	# Hanseniaspora sp. CRUB 1602: GCA_030573575.1_ASM3057357v1 preferred
 GCA_004919915.1_ASM491991v1	curation	# Hanseniaspora thailandica ZIM 2325: GCA_030573475.1_ASM3057347v1 preferred
+GCA_062046599.1_ASM62046599v1	Stropharia rugosoannulata SR18: 96.5 Mb file looks like hap1 (47.6 Mb) + hap2 (48.5 Mb) combined; drop, hap1/hap2 are annotated (user decision 2026-11-19)
+GCA_060079935.1_ASM6007993v1	Lodderomyces parapsilosis CDC 317: same size and N50 as Hap1 (GCA_053456525.1/GCA_053456535.1 pair); drop (user decision 2026-11-19)
+GCA_032173475.1_ASM3217347v1	Amanita phalloides: skipped/suppressed (user decision 2026-11-19); same species key as gfAmaPhal2 hap1/hap2
+GCA_900068975.1_Hygrocybe_1_8	Hygrocybe conica: skipped/suppressed (user decision 2026-11-19); same species key as gfHygConi1 hap1/hap2
