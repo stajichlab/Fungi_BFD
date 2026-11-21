@@ -184,7 +184,11 @@ TYPE_CONFIG = {
 # a different, pre-existing structure this script does not touch (it only scans
 # top-level files in each type dir). Left as a follow-up, not silently claimed
 # as "nothing to migrate".
-KNOWN_SUBDIRECTORY_LAYOUT_TYPES = {"cazy"}
+# cazy left this set on 2026-11-21, when it was migrated to LOCUSTAG hash
+# buckets by scripts/one-off/migrate_cazy_to_hash_buckets.py. Nothing is in
+# the subdirectory layout any more; the set is kept so the guard below still
+# reports any type that unexpectedly grows subdirectories.
+KNOWN_SUBDIRECTORY_LAYOUT_TYPES = set()
 
 
 def clean_strain(raw_strain: str) -> str:

@@ -73,11 +73,13 @@ def byLocustag(String type, List suffixes) {
 def byId(String type, List suffixes) {
     return { m -> bucketedOutputs(params.outdir as String, type, m.id as String, suffixes) }
 }
-// CAZY keeps its older layout, one subdirectory per genome and no hash bucket
-// (see KNOWN_SUBDIRECTORY_LAYOUT_TYPES in
-// scripts/one-off/reorg_genome_stats_hash_buckets.py).
+// CAZY was the last type on the old one-subdirectory-per-genome layout keyed by
+// meta.id; it moved to LOCUSTAG hash buckets on 2026-11-21 (see
+// modules/BFD/CAZY/main.nf for why, and
+// scripts/one-off/migrate_cazy_to_hash_buckets.py for the migration), so it is
+// now an ordinary byLocustag() type like every other function/* tool.
 def cazyOutputs(m) {
-    ['overview', 'cazymes', 'substrates'].collect { t -> file("${params.outdir}/cazy/${m.id}/${m.id}.${t}.tsv.gz") }
+    byLocustag('cazy', ['.overview.tsv.gz', '.cazymes.tsv.gz', '.substrates.tsv.gz']).call(m)
 }
 
 // Root a gated glob in params.outdir. Globs for the hash-bucketed tools use
@@ -213,15 +215,14 @@ workflow BFD_FUNCTIONAL {
         }
 
         if ((use_glob || run_cazy) && mergeWanted(run_cazy, 'MERGE_CAZY', params.outdir as String,
-                // One scan: overview/cazymes/substrates are written together, and
-                // cazy/ is 23k unbucketed dirs (a full scan takes minutes).
-                ["cazy/*/*.tsv.gz"],
+                // One scan: overview/cazymes/substrates are written together.
+                ["cazy/**/*.tsv.gz"],
                 ['cazy.overview.parquet', 'cazy.cazymes_hmm.parquet'])) {
             def ov_sync = run_cazy ? RUN_CAZY.out.overview.collect() : Channel.of(true)
             def ca_sync = run_cazy ? RUN_CAZY.out.cazymes.collect()  : Channel.of(true)
             MERGE_CAZY(
-                use_glob ? gatedGlob(ov_sync, "cazy/*/*.overview.tsv.gz") : ov_sync,
-                use_glob ? gatedGlob(ca_sync, "cazy/*/*.cazymes.tsv.gz")  : ca_sync
+                use_glob ? gatedGlob(ov_sync, "cazy/**/*.overview.tsv.gz") : ov_sync,
+                use_glob ? gatedGlob(ca_sync, "cazy/**/*.cazymes.tsv.gz")  : ca_sync
             )
             merge_outs << MERGE_CAZY.out.overview_parquet
             merge_outs << MERGE_CAZY.out.hmm_parquet
