@@ -746,8 +746,10 @@ def hashBucket(String key, int width) {
 // Per-type bucket width (todo/genome_stats_storage_reorg.md §A): most
 // genome_stats types get 256 buckets (2 hex chars); gene_stats and
 // intergenic_stats get 4096 buckets (3 hex chars) because they carry ~7x more
-// files per genome than the rest. Unknown types (e.g. any function/* subfolder
-// not yet migrated) default to width 2. Must stay in sync with
+// files per genome than the rest. cazy is listed explicitly rather than left to
+// the default: it was migrated out of a per-genome-subdirectory layout on
+// 2026-11-21 and the entry is what records that it is now bucketed. Unknown
+// types default to width 2. Must stay in sync with
 // nextflow/bin/genome_stats_paths.py::BUCKET_WIDTH.
 def bucketWidthFor(String type) {
     def widths = [
@@ -756,6 +758,7 @@ def bucketWidthFor(String type) {
         BUSCO_protein   : 2,
         aa_freq         : 2,
         codon_freq      : 2,
+        cazy            : 2,
         gene_stats      : 3,
         intergenic_stats: 3,
     ]

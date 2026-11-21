@@ -38,6 +38,7 @@ BUCKET_WIDTH = {
     "BUSCO_protein": 2,
     "aa_freq": 2,
     "codon_freq": 2,
+    "cazy": 2,
     "gene_stats": 3,
     "intergenic_stats": 3,
 }
