@@ -225,7 +225,7 @@ EOF
 #                   never a "missing image" problem -- see
 #                   nextflow/conf/profile_ANI.config's skani_container
 #                   comment for the full incident).
-# funannotate_predict_sif uses the same funannotate-1.9.1.sif as funannotate_sif (since 2026-11-04).
+# The separate funannotate_predict_sif param was removed; all funannotate steps use funannotate_sif (funannotate-1.9.1.sif).
 # The older funannotate-1.9.1-beta.2.sif was a local overlay (funannotate-live
 # scripts/build_overlay_sif.sh), not a registry image, so it is not listed.
 PINNED_SIFS="\
