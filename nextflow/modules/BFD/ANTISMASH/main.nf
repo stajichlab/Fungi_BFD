@@ -20,7 +20,9 @@ include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 //             <LOCUSTAG>.antismash.regions.tsv.gz  location, class, contig edge, core
 //             <LOCUSTAG>.antismash.cds.tsv.gz      genes inside regions (locus tag,
 //                                            coordinates, strand, kind, function)
-//             <LOCUSTAG>.antismash.known.tsv.gz    top-3 MIBiG hits per region
+//             <LOCUSTAG>.antismash.known.tsv.gz    top-3 MIBiG hits per region (with entry size, synteny)
+//             <LOCUSTAG>.antismash.known_pairs.tsv.gz  our gene -> MIBiG gene pairs (identity, coverage)
+//             <LOCUSTAG>.antismash.run.json        antiSMASH and MIBiG versions, mode
 //           ~2 MB per genome for all of the subset tables; the three minimal
 //           tables are smaller (UNVERIFIED size for the minimal set alone).
 //   full -- the original flag set (--fullhmmer --clusterhmmer --cb-general
@@ -44,6 +46,8 @@ process RUN_ANTISMASH {
         path("${meta.locustag}.antismash.regions.tsv.gz"), emit: regions
         path("${meta.locustag}.antismash.cds.tsv.gz"),     emit: cds
         path("${meta.locustag}.antismash.known.tsv.gz"),   emit: known
+        path("${meta.locustag}.antismash.known_pairs.tsv.gz"), emit: known_pairs   // our gene -> MIBiG gene hits
+        path("${meta.locustag}.antismash.run.json"),       emit: run_info          // version, MIBiG data version, mode
         path("${meta.locustag}.antismash.json.gz"), optional: true, emit: json   // full mode only
 
     script:
@@ -81,8 +85,9 @@ process RUN_ANTISMASH {
     J=\$(ls \${OUTD}/*.json | head -1)
     # Fail loudly if antiSMASH wrote no JSON: an empty result must not look like "no clusters".
     test -s "\$J"
-    python3 ${projectDir}/bin/extract_antismash_subset.py "\$J" \${OUTD}/sub ${meta.locustag} --minimal
-    for t in regions cds known; do mv \${OUTD}/sub/${meta.locustag}.\$t.tsv.gz ${meta.locustag}.antismash.\$t.tsv.gz; done
+    python3 ${projectDir}/bin/extract_antismash_subset.py "\$J" \${OUTD}/sub ${meta.locustag} --minimal --mode ${full ? "full" : "lite"}
+    for t in regions cds known known_pairs; do mv \${OUTD}/sub/${meta.locustag}.\$t.tsv.gz ${meta.locustag}.antismash.\$t.tsv.gz; done
+    mv \${OUTD}/sub/${meta.locustag}.run.json ${meta.locustag}.antismash.run.json
     ${full ? "pigz -c \$J > ${meta.locustag}.antismash.json.gz" : ''}
     rm -rf \${OUTD}
     ${genome_rm}
@@ -90,6 +95,7 @@ process RUN_ANTISMASH {
 
     stub:
     """
-    for t in regions cds known; do printf '' | gzip > ${meta.locustag}.antismash.\$t.tsv.gz; done
+    for t in regions cds known known_pairs; do printf '' | gzip > ${meta.locustag}.antismash.\$t.tsv.gz; done
+    echo '{}' > ${meta.locustag}.antismash.run.json
     """
 }

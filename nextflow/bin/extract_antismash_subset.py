@@ -8,8 +8,9 @@ ClusterBlast hits per region.
 Drops: genome sequence, all CDS outside regions, all PFAM_domain/gene/mRNA features, the
 ClusterBlast protein alignments, HTML, per-region GenBank copies, the zip.
 
-Usage: extract_antismash_subset.py INPUT.json[.gz] OUTDIR [GENOME_ID] [--minimal]
---minimal writes only regions, cds (genes in regions) and known (MIBiG top hits): the BFD representation.
+Usage: extract_antismash_subset.py INPUT.json[.gz] OUTDIR [GENOME_ID] [--minimal] [--mode lite|full]
+--minimal writes only regions, cds (genes in regions), known (MIBiG top-3 hits per region), known_pairs
+(which of our genes hit which MIBiG gene) and run.json (provenance): the BFD representation.
 Writes OUTDIR/<GENOME_ID>.{regions,cds,domains,modules,blast_top}.tsv.gz and
 OUTDIR/<GENOME_ID>.biosyn_proteins.faa.gz. Reads plain or gzip JSON.
 """
@@ -40,12 +41,12 @@ def q1(f, key, default=""):
     return default if v is None else v
 
 
-def main(path, outdir, genome=None, minimal=False):
+def main(path, outdir, genome=None, minimal=False, mode=""):
     path = pathlib.Path(path); outdir = pathlib.Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     genome = genome or path.name.split(".")[0]
     with opener(path) as fh:
         data = json.load(fh)
-    keys = ("regions", "cds", "known") if minimal else ("regions", "cds", "domains", "modules", "blast_top", "adomain", "known")
+    keys = ("regions", "cds", "known", "known_pairs") if minimal else ("regions", "cds", "domains", "modules", "blast_top", "adomain", "known", "known_pairs")
     out = {k: gzip.open(outdir / f"{genome}.{k}.tsv.gz", "wt") for k in keys}
     faa = gzip.open(outdir / f"{genome}.biosyn_proteins.faa.gz", "wt") if not minimal else open(os.devnull, "w")
     NULL = open(os.devnull, "w")
@@ -56,8 +57,9 @@ def main(path, outdir, genome=None, minimal=False):
     Z("modules").write("genome\trecord\tmodule_type\tlocus_tags\tdomains\tcomplete\titerative\n")
     Z("blast_top").write("genome\trecord\tregion\trank\thit_accession\thit_label\thit_cluster_type\thit_description\tsimilarity\tcore_gene_hits\tgene_hits\tblast_score\ttotal_hits\n")
     Z("adomain").write("genome\trecord\tdomain_id\ttool\taa10\tstachelhaus_top_substrates\taa10_score\taa34_score\tphysicochemical_class\tlarge_cluster\tsmall_cluster\n")
-    out["known"].write("genome\trecord\tregion\trank\tmibig_accession\thit_description\thit_cluster_type\tsimilarity\tcore_gene_hits\tgene_hits\tblast_score\ttotal_hits\n")
-    n = {"known": 0, "adomain": 0, "regions": 0, "cds": 0, "domains": 0, "modules": 0, "blast_top": 0, "faa": 0}
+    out["known"].write("genome\trecord\tregion\trank\tmibig_accession\thit_description\thit_cluster_type\tsimilarity\tcore_gene_hits\tgene_hits\tblast_score\ttotal_hits\tn_entry_proteins\tsynteny_score\tcore_bonus\n")
+    out["known_pairs"].write("genome\trecord\tregion\trank\tmibig_accession\tquery_locus_tag\tquery_start\tquery_end\tquery_strand\tmibig_gene\tmibig_protein\tperc_ident\tperc_coverage\tblast_score\tevalue\tmibig_annotation\n")
+    n = {"known_pairs": 0, "known": 0, "adomain": 0, "regions": 0, "cds": 0, "domains": 0, "modules": 0, "blast_top": 0, "faa": 0}
     for rec in data["records"]:
         rid = rec["id"]
         regions = []
@@ -119,7 +121,17 @@ def main(path, outdir, genome=None, minimal=False):
             for rank, item in enumerate(res.get("ranking", [])[:TOPN], 1):
                 cl, sc = item[0], item[1]
                 out["known"].write("\t".join(map(str, [genome, rid, res.get("region_number"), rank, cl.get("accession"), str(cl.get("description", "")).replace("\t", " "),
-                                                         cl.get("cluster_type"), sc.get("similarity"), sc.get("core_gene_hits"), sc.get("hits"), sc.get("blast_score"), res.get("total_hits")])) + "\n"); n["known"] += 1
+                                                         cl.get("cluster_type"), sc.get("similarity"), sc.get("core_gene_hits"), sc.get("hits"), sc.get("blast_score"), res.get("total_hits"),
+                                                         len(cl.get("proteins", [])), sc.get("synteny_score"), sc.get("core_bonus")])) + "\n"); n["known"] += 1
+                for pq, _idx, pm in sc.get("pairings", []):
+                    qp = pq.split("|")
+                    qloc = qp[4] if len(qp) > 4 else ""
+                    qco = qp[2].split("-") if len(qp) > 2 and "-" in qp[2] else ["", ""]
+                    out["known_pairs"].write("\t".join(map(str, [genome, rid, res.get("region_number"), rank, cl.get("accession"), qloc, qco[0], qco[1],
+                                                                  qp[3] if len(qp) > 3 else "", pm.get("name"), pm.get("locus_tag"), pm.get("perc_ident"),
+                                                                  round(pm.get("perc_coverage", 0), 1) if pm.get("perc_coverage") is not None else "",
+                                                                  pm.get("blastscore"), pm.get("evalue"),
+                                                                  str(pm.get("annotation", "")).replace("\t", " ")])) + "\n"); n["known_pairs"] += 1
         preds = rec.get("modules", {}).get("antismash.modules.nrps_pks", {}).get("domain_predictions", {})
         for did, tools in preds.items():
             for tool, v in tools.items():
@@ -130,6 +142,14 @@ def main(path, outdir, genome=None, minimal=False):
                 Z("adomain").write("\t".join(map(str, [genome, rid, did, tool, v.get("aa10", ""), subs, st.get("aa10_score", ""), st.get("aa34_score", ""),
                                                           (v.get("physiochemical_class") or {}).get("name", ""), (v.get("large_cluster") or {}).get("name", ""),
                                                           (v.get("small_cluster") or {}).get("name", "")])) + "\n"); n["adomain"] += 1
+    tsec = round(sum(sum(v.values()) for v in data.get("timings", {}).values() if isinstance(v, dict)), 1)
+    kv = ""
+    for rec in data["records"]:
+        kv = rec.get("modules", {}).get("antismash.modules.clusterblast", {}).get("knowncluster", {}).get("data_version", "") or kv
+    meta = {"genome": genome, "antismash_version": data.get("version"), "schema": data.get("schema"), "taxon": data.get("taxon"),
+            "mibig_data_version": kv, "mode": mode, "input_file": data.get("input_file"), "n_records": len(data["records"]),
+            "n_regions": n["regions"], "antismash_module_seconds_sum": tsec, "extractor": "extract_antismash_subset.py"}
+    json.dump(meta, open(outdir / f"{genome}.run.json", "w"))
     for h in out.values():
         h.close()
     faa.close()
@@ -137,7 +157,11 @@ def main(path, outdir, genome=None, minimal=False):
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--minimal"]
+    argv = sys.argv[1:]
+    mode = ""
+    if "--mode" in argv:
+        i = argv.index("--mode"); mode = argv[i + 1]; del argv[i:i + 2]
+    args = [a for a in argv if a != "--minimal"]
     if len(args) < 2:
         sys.exit(__doc__)
-    main(*args[:3], minimal="--minimal" in sys.argv)
+    main(*args[:3], minimal="--minimal" in argv, mode=mode)
