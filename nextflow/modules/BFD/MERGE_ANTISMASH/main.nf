@@ -21,7 +21,7 @@ process MERGE_ANTISMASH {
 
     stub:
     """
-    printf 'species_prefix,record_id,cluster_num,product,contig_edge,start,end\\n' > antismash.csv
+    printf 'species_prefix,record_id,cluster_num,product,contig_edge,start,end,categories,n_cds,n_biosynthetic\\n' > antismash.csv
     module load duckdb 2>/dev/null || true
     duckdb -c "COPY (SELECT * FROM read_csv_auto('antismash.csv', sample_size=-1)) TO 'antismash.parquet' (FORMAT PARQUET);"
     rm -f antismash.csv

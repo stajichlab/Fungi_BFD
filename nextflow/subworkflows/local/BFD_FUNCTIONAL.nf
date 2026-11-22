@@ -65,7 +65,7 @@ include { MERGE_CAZY_CGC  } from '../../modules/BFD/MERGE_CAZY_CGC/main.nf'
 include { gatedGlobIn; staleGuard; bucketedOutputs; mergeWanted; hashBucketForType; tablesDir } from '../../modules/common/utils.nf'
 
 // Cached-output paths for staleGuard(). Protein-level tools name their outputs
-// by LOCUSTAG, genome-level tools (antiSMASH, tRNAscan-SE, Infernal, dbCAN CGC)
+// by LOCUSTAG (antiSMASH too, since 2026-11-21), genome-level tools (tRNAscan-SE, Infernal, dbCAN CGC)
 // by meta.id; both are hash-bucketed under params.outdir/<type>/.
 def byLocustag(String type, List suffixes) {
     return { m -> bucketedOutputs(params.outdir as String, type, m.locustag as String, suffixes) }
@@ -180,7 +180,7 @@ workflow BFD_FUNCTIONAL {
         RUN_TCDB(staleGuard(proteins_ch, byLocustag('tcdb', ['.blasttab.gz'])), SETUP_TCDB_DB.out.fasta, SETUP_TCDB_DB.out.blastdb)
     }
     if (run_antismash)
-        RUN_ANTISMASH(staleGuard(genome_ch, byId('antismash', ['.antismash.json.gz'])))
+        RUN_ANTISMASH(staleGuard(genome_ch, byLocustag('antismash', ['.antismash.regions.tsv.gz'])))
     if (run_trnascan)
         RUN_TRNASCAN(staleGuard(genome_ch, byId('trnascan', ['.trnascan.no-overlaps.gff3.gz'])))
     if (run_infernal)
@@ -348,7 +348,7 @@ workflow BFD_FUNCTIONAL {
             merge_outs << MERGE_TF.out.parquet
         }
 
-        def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.json.gz"], ['antismash.parquet']) ? null : mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.json : null, "antismash/**/*.antismash.json.gz")
+        def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.regions.tsv.gz"], ['antismash.parquet']) ? null : mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.regions : null, "antismash/**/*.antismash.regions.tsv.gz")
         if (antismash_in) {
             MERGE_ANTISMASH(antismash_in)
             merge_outs << MERGE_ANTISMASH.out.parquet
