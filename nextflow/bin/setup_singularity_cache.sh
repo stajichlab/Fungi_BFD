@@ -229,7 +229,7 @@ EOF
 # The older funannotate-1.9.1-beta.2.sif was a local overlay (funannotate-live
 # scripts/build_overlay_sif.sh), not a registry image, so it is not listed.
 PINNED_SIFS="\
-AAFTF-0.7.0-beta.4-18-g9ce56a1.sif|public|aaftf_sif|docker://ghcr.io/stajichlab/aaftf@sha256:e855d55a5e189c09073730440f0f15cff7ea94a11f99446b3f5c6322db30bcca|
+AAFTF-0.8.1.sif|public|aaftf_sif|docker://ghcr.io/stajichlab/aaftf:v0.8.1|
 funannotate-1.9.1.sif|public|funannotate_sif|docker://ghcr.io/nextgenusfs/funannotate:v1.9.1|
 braker3-v3.1.1.sif|public|genemark_sif|docker://teambraker/braker3:v3.1.1|
 mariadb-10.3.9.sif|build|mariadb_sif||${MARIADB_DEF}
