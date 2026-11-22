@@ -116,7 +116,7 @@ process FUNANNOTATE_PREDICT {
     # verified code-identical to the patch file (comments aside) via
     # `apptainer exec ... cat /pixi/.../funannotate/aux_scripts/augustus_parallel.py`.
     SING_BINDS="--bind \$PWD:\$PWD,${params.target}:${params.target},${params.training_target}:${params.training_target},${params.augustus_config}:${params.augustus_config},${params.funannotate_db}:${params.funannotate_db},${params.proteins}:${params.proteins},${params.proteins_microsporidia}:${params.proteins_microsporidia},${params.gene_prediction_shared_abinitio}:${params.gene_prediction_shared_abinitio},${workflow.workDir}:${workflow.workDir},\$TMPDIR:\$TMPDIR"
-    SING="apptainer exec \${SING_BINDS} ${params.funannotate_predict_sif ?: params.funannotate_sif}"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # Microsporidia protein evidence override (see profile_funannotate.config's
     # proteins_microsporidia comment for the exonerate-alignment rationale).
@@ -442,7 +442,7 @@ process FUNANNOTATE_PREDICT {
             *) SING_BINDS="\$SING_BINDS,\$(dirname "${shared_params_json}"):\$(dirname "${shared_params_json}")" ;;
         esac
     fi
-    SING="apptainer exec \${SING_BINDS} ${params.funannotate_predict_sif ?: params.funannotate_sif}"
+    SING="apptainer exec \${SING_BINDS} ${params.funannotate_sif}"
 
     # ── Repeat-aware EVM mode ─────────────────────────────────────────────────
     # See profile_funannotate.config's predict_evm_repeat_pct_threshold comment

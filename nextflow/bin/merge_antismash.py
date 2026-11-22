@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Merge per-genome antiSMASH region JSON into a tables-loadable CSV.
+"""Merge per-genome antiSMASH region results into a tables-loadable CSV.
+
+Input is either *.antismash.regions.tsv.gz (the lite-mode table written by
+modules/BFD/ANTISMASH, the default) or *.antismash.json.gz (full mode, raw JSON).
+A zero-cluster genome gives a header-only or empty regions file and no rows.
 
 antiSMASH's own *.json output nests BGC calls under records[].areas[]
 (recent versions) or records[].regions[] (older versions) -- both are
@@ -28,9 +32,17 @@ def main():
     with open(args.outfile, "w", newline="") as of:
         w = csv.writer(of)
         w.writerow(['species_prefix', 'record_id', 'cluster_num',
-                    'product', 'contig_edge', 'start', 'end'])
+                    'product', 'contig_edge', 'start', 'end',
+                    'categories', 'n_cds', 'n_biosynthetic'])
         for f in sorted(args.jsons):
             species_prefix = f.split("/")[-1].split(".")[0]
+            if f.endswith(".regions.tsv.gz"):
+                with gzip.open(f, "rt") as fh:
+                    for r in csv.DictReader(fh, delimiter="\t"):
+                        w.writerow([species_prefix, r["record"], r["region"], r["products"],
+                                    r["contig_edge"], r["start"], r["end"],
+                                    r["categories"], r["n_cds"], r["n_biosynthetic"]])
+                continue
             with gzip.open(f, "rt") as fh:
                 try:
                     data = json.load(fh)
@@ -44,7 +56,7 @@ def main():
                         species_prefix, record_id, i,
                         ";".join(p for p in products if p),
                         area.get("contig_edge", ""),
-                        area.get("start", ""), area.get("end", ""),
+                        area.get("start", ""), area.get("end", ""), "", "", "",
                     ])
 
     print(f"Written: {args.outfile}", file=sys.stderr)

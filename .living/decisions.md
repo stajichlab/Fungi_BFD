@@ -814,3 +814,27 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Re-run**: `storeDir` `telomeres_v2` hides the change; move it aside first. Steps in the analysis doc.
 
 **Tags**: telomeres, find_telomeres, merge-gap, terminal-tolerance, decision
+
+## J: Paralogoscope dN/dS estimator: yn00 (kaks) default, optional codeml second pass (2026-11-20)
+
+**Context**: Branch `paralogoscope-giant-cap` (worktree `Fungi_BFD_runs/paralogoscope_pilot/Fungi_BFD_wt`). Compared codeml, yn00 (command line and kaks) on 3,034 pairs (`eval/bench_excl`) and 384 simulated pairs with known dS (`eval/kaks_browser_testset/manifest.tsv`, includes indel sets). Details: `docs/PARALOGOSCOPE_DNDS_ESTIMATOR.md` in the worktree.
+
+**Decision**: Keep yn00 through kaks as the default estimator (`wgd_dnds_method = yn00`). Add an optional second pass: pairs with yn00 dS in `[wgd_refine_codeml_min, wgd_refine_codeml_max]` are re-estimated with codeml on the same alignment (default off, max = 0; suggested range 0.5-2). Treat dS above about 1.5 as rank-order only.
+
+**Measured**: yn00 2.8 ms vs codeml 86 ms per pair. Whole genome: Mycena 240 s vs 1,382 s; Allomyces 102 s vs 382 s. codeml/yn00 median ratio 1.45 at yn00 dS 0.5-0.8 and about 2 above 0.8. In simulation, share within max(0.1, 0.5 x true) at true dS 1.5-2: codeml 40%, yn00 58%; 3-5: 28% vs 84%. Below dS 1.5 codeml is equal or better (1.0-1.5: 60% vs 46%).
+
+**Not decided**: giant-family rule. Five genomes (Ambispora, Geosiphon, Gigaspora, two Jimgerdemannia) are skipped. The protein-alignment first pass is 99% of the time there, so the estimator choice does not help.
+
+**Tags**: paralogoscope, wgd, yn00, kaks, codeml, dnds, decision
+
+## K: Paralogoscope giant families: sampling option K random partners per gene, off by default (2026-11-20, corrected 2026-11-21)
+
+**Context**: Five genomes (Ambispora leptoticha, Geosiphon, Gigaspora margarita, Jimgerdemannia flammicorona, Jimgerdemannia lactiflua) were skipped in the Nov 6 full yn00 run because the all-pairs alignment pass in families up to 3,041 genes did not finish in 6 h.
+
+**Decision**: Add `wgd_giant_genes` (0 = off) and `wgd_giant_k` (default 200; 400 used in production). Families above the gene limit align K random partners per gene. Unaligned NJ distances are a scaled two-step path. Marked genomes are listed by `<genome>...ks.tsv.gz.giant.tsv.gz` in the store and by `giant_sampled` / `giant_family` columns in the merged tables. The option stays off by default.
+
+**Measured** (`eval/giant_k200`, `giant_kvar`, `giant_scaled`, `giant_geosiphon` in the pilot run folder; node-mean dS median against the full all-pairs run): Jimgerdemannia lactiflua family of 1,800 genes: K=200 +13%, K=400 +7% (449 s vs 1,808 s). Geosiphon family of 1,967 genes: K=400 +25% (991 s vs 2,601 s). The bias is not stable and not removed. Cause untested. Do not use sampled giant-family dS for peak position or shape.
+
+**Production status** (corrects the first version of this entry): four of the five genomes (Ambispora, Geosiphon, Gigaspora, Jimgerdemannia flammicorona) have exact results (node sampling, no cap, no giant sampling) from the `nf_giants` run of 2026-11-06. Only Jimgerdemannia lactiflua OSC162217 was run with sampling (K=400, 5 giant families of 3,041 / 2,067 / 1,857 / 1,259 / 867 sequences; run `nf_giants_k400`, job 32352988). Its sampled giant families are biased high.
+
+**Tags**: paralogoscope, wgd, giant-family, sampling, decision

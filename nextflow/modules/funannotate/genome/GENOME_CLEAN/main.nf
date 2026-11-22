@@ -55,7 +55,15 @@ process GENOME_CLEAN {
     export FCS_GX_SHM_DIR="\$FCS_GX_STAGE/gxdb"
     STAGE_BIND=""
     [ "\$FCS_GX_STAGE_ROOT" != "\$SCRATCH" ] && STAGE_BIND=",\$FCS_GX_STAGE_ROOT:\$FCS_GX_STAGE_ROOT"
-    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb}\${STAGE_BIND}"
+    # TEMPORARY: bind a patched aaftf/utility.py over the image copy (AAFTF PR #102, issue #101).
+    # Only the AAFTF call gets it. Set params.aaftf_utility_patch = null to disable.
+    # Remove this block once the AAFTF .sif contains the fix.
+    PATCH_BIND=""
+    if [ -n "${params.aaftf_utility_patch ?: ''}" ]; then
+        [ -s "${params.aaftf_utility_patch ?: ''}" ] || { echo "[ERROR] aaftf_utility_patch not found: ${params.aaftf_utility_patch}" >&2; exit 1; }
+        PATCH_BIND=",${params.aaftf_utility_patch ?: ''}:/opt/AAFTF/.pixi/envs/complete/lib/python3.12/site-packages/aaftf/utility.py:ro"
+    fi
+    SING_BINDS="--bind \${SCRATCH}:\${SCRATCH},${taxondb}:${taxondb}\${STAGE_BIND}\${PATCH_BIND}"
     SING="apptainer exec \${SING_BINDS} \${AAFTF_SIF}"
     # taxonkit is not in the AAFTF >= 0.7 image; it runs from params.taxonkit_container.
     TSING="apptainer exec --bind ${taxondb}:${taxondb}:ro ${params.taxonkit_container}"
