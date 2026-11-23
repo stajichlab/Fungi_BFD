@@ -838,3 +838,12 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Production status** (corrects the first version of this entry): four of the five genomes (Ambispora, Geosiphon, Gigaspora, Jimgerdemannia flammicorona) have exact results (node sampling, no cap, no giant sampling) from the `nf_giants` run of 2026-11-06. Only Jimgerdemannia lactiflua OSC162217 was run with sampling (K=400, 5 giant families of 3,041 / 2,067 / 1,857 / 1,259 / 867 sequences; run `nf_giants_k400`, job 32352988). Its sampled giant families are biased high.
 
 **Tags**: paralogoscope, wgd, giant-family, sampling, decision
+
+## P: antiSMASH-lite results keyed by LOCUSTAG, minimal tables only (2026-11-22)
+
+**Decision**: `RUN_ANTISMASH` writes `results/function/antismash/<sha1(LOCUSTAG)[:2]>/<LOCUSTAG>.antismash.{regions,cds,known,known_pairs}.tsv.gz` and `run.json`. Raw antiSMASH output is not kept. The key is LOCUSTAG, as for cazy and pfam_hmmscan, not `out`.
+**Why**: `out` is rebuilt from species and strain, so a rename orphans results. Design, measured numbers and pending items: `docs/BFD_ANTISMASH_DESIGN.md`.
+**Measured** (32 Pezizomycotina genomes, `ebc-dgf` report): median 965 s and 11.2 GB per genome at 8 CPUs; 21-46 KB gz per genome kept. 24,000-genome totals are extrapolations.
+**Open**: `--no-zip-output --no-summary-gbk --no-region-gbks` test; GFF3 vs GBK gene source; yeasts and basidiomycetes untested; check no live run reads the checkout edited in 75dc089 and c5d2407.
+
+**Tags**: antismash, bgc, schema, locustag, decision
