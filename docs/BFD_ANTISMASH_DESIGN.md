@@ -185,3 +185,22 @@ Comments that say "top-3" in the extractor and module are now out of date.
   several hits per region, more than 3 genomes, a genome with no regions.
 - Expected size at 24,000 genomes (`ebc-dgf`, EXTRAPOLATION from 12 genomes): about 551 MB
   for the four tables.
+
+## TODO: check back on regions with several MIBiG hits (opened 2026-11-22)
+The 3-genome Nextflow test had only 1 MIBiG hit in total, so no path that handles several
+hits per region has run through the pipeline. Check these places before a production run:
+1. `bgc_cluster.best_mibig / best_similarity / best_rank` keep ONE hit per region
+   (highest similarity among ranks 1-5; ties go to the lower rank). The other hits are only
+   in `bgc_mibig_hit`. A query that reads `bgc_cluster` alone hides them.
+2. Rank is antiSMASH order, not similarity order. The best-similarity hit was outside
+   ranks 1-3 in 4.2% of regions and outside ranks 1-5 in 1.6% (12 genomes, `ebc-dgf`).
+   Hits at rank 6 and above are never stored.
+3. `bgc_mibig_pair` is filtered to rank <= 5 and keyed by (locustag, record, region, rank,
+   gene_id). Check that joins to `bgc_mibig_hit` do not multiply rows.
+4. `region` is unique only inside a record, and `record` only inside a genome. A join
+   without `locustag` merges hits of different genomes.
+5. One-protein MIBiG entries (`n_entry_proteins = 1`) give high similarity with weak
+   evidence. A top-hit filter should also use `n_entry_proteins`.
+How to check: run the merge on the 12 `ebc-dgf` genomes (mean 3.2 hits per region, 310
+regions with a hit) and compare row counts of `bgc_mibig_hit` and `bgc_mibig_pair` with its
+778 and 3,110 rows. Then test the joins in points 3 and 4 with a query.
