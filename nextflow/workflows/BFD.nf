@@ -69,6 +69,7 @@ workflow BFD {
                 asmid   : row.ASMID?.trim() ?: '',
                 species : row.SPECIES?.trim() ?: '',
                 strain  : cleanStrain(row.STRAIN?.trim() ?: ''),
+                transl_table: row.TRANSL_TABLE?.trim() ?: '1',   // genetic code; used by RUN_ANTISMASH
             ]
         }
         .take((params.n_test as int) > 0 ? (params.n_test as int) : -1)
