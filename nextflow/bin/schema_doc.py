@@ -14,11 +14,12 @@ count(*) (31 s for the 2026-11-08 database). GitHub renders the
 import argparse, csv, datetime, io, os, subprocess, sys
 
 # Join keys. species_prefix in the per-genome tables holds the LOCUSTAG value.
-KEYS = ["LOCUSTAG", "species_prefix", "ASMID", "gene_id", "transcript_id", "protein_id"]
+KEYS = ["LOCUSTAG", "species_prefix", "locustag", "ASMID", "gene_id", "transcript_id", "protein_id"]
 # (child column, parent table, parent column, label)
 LINKS = [
     ("LOCUSTAG", "species", "LOCUSTAG", "genome"),
     ("species_prefix", "species", "LOCUSTAG", "genome"),
+    ("locustag", "species", "LOCUSTAG", "genome"),   # bgc_* tables
     ("gene_id", "gene_info", "gene_id", "gene"),
     ("transcript_id", "gene_transcripts", "transcript_id", "transcript"),
     ("protein_id", "gene_proteins", "protein_id", "protein"),
@@ -94,6 +95,7 @@ def main():
            "|---|---|---|",
            "| `LOCUSTAG` | genome key | `species` |",
            "| `species_prefix` | the LOCUSTAG of the genome, in per-genome result tables | `species.LOCUSTAG` |",
+           "| `locustag` | the LOCUSTAG of the genome, in the `bgc_*` tables (lower case) | `species.LOCUSTAG` |",
            "| `gene_id` | gene model | `gene_info` |",
            "| `transcript_id` | mRNA / tRNA transcript | `gene_transcripts` |",
            "| `protein_id` | predicted protein | `gene_proteins` |",
