@@ -204,3 +204,21 @@ hits per region has run through the pipeline. Check these places before a produc
 How to check: run the merge on the 12 `ebc-dgf` genomes (mean 3.2 hits per region, 310
 regions with a hit) and compare row counts of `bgc_mibig_hit` and `bgc_mibig_pair` with its
 778 and 3,110 rows. Then test the joins in points 3 and 4 with a query.
+
+### SQL and database registration, 2026-11-22
+- `nextflow/sql/merge/antismash.sql` is now the primary definition of the four `bgc_*`
+  tables (columns, types, sort order, best-hit rule). `bin/merge_antismash.py` reads it and
+  fills the placeholders. `ebc-dgf`'s `build_bgc_parquet.sql` (DeltaGain, unpushed) is not
+  used and can be dropped. Test: output of the new script equals the earlier output
+  row for row on the 3 test genomes (standalone and through Nextflow, job 32377347).
+- `nextflow/bin/build_BFD_duckDB.sh`: `mkview` lines for the four tables (optional, skipped if
+  the parquet is missing) and uniqueness checks on (locustag, record, region[, gene_id | rank]).
+  `bgc_mibig_pair` has no uniqueness check, because one gene can pair with several MIBiG genes.
+- `sql/bfd_compat_views.sql`: `COMMENT ON VIEW` text for each table.
+- `nextflow/bin/schema_doc.py`: knows the lower-case `locustag` key, so `docs/BFD_SCHEMA.md`
+  will list it after the next database rebuild. That file is generated and was not edited.
+- Tested on a small test database with views over the 3-genome parquet: views created,
+  uniqueness queries pass, comments applied, `schema_doc.py` runs. NOT tested: a full
+  `build_BFD_duckDB.sh` run, and `verify_BFD_duckDB.py` with the new views.
+- `sql/table_schema.json` covers only species, asm_stats and busco_genome, so the bgc tables
+  are not added to it.

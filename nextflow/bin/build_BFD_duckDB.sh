@@ -150,6 +150,18 @@ mkview cazy          cazy.cazymes_hmm.parquet  1
 mkview cazy_overview cazy.overview.parquet     1
 mkview merops        merops.parquet            1
 mkview tf_inventory  tf_inventory.parquet      0
+# antiSMASH-lite BGC tables (MERGE_ANTISMASH; defined in nextflow/sql/merge/antismash.sql). Optional: run_antismash
+# is off by default. Genome key is `locustag` (lower case), joined to species.LOCUSTAG. Join key between the four
+# tables: (locustag, record, region); `region` and `record` are unique only inside a genome.
+mkview bgc_cluster      bgc_cluster.parquet      0
+mkview bgc_cluster_gene bgc_cluster_gene.parquet 0
+mkview bgc_mibig_hit    bgc_mibig_hit.parquet    0
+mkview bgc_mibig_pair   bgc_mibig_pair.parquet   0
+if has_view bgc_cluster; then
+check_unique bgc_cluster      "locustag, record, region"
+check_unique bgc_cluster_gene "locustag, record, region, gene_id"
+check_unique bgc_mibig_hit    "locustag, record, region, rank"
+fi
 check_unique pfam          "protein_id, pfam_id, domain_num"
 check_unique cazy          "protein_id, HMM_id, s_start"
 check_unique cazy_overview protein_id
