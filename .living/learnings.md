@@ -1693,3 +1693,26 @@ New cache rule (`sraQueryCached()` and the matching shell test in SRA_QUERY_BATC
 **Why it matters**: `--fuzzy` is frame-locked, so one indel shifts every later unit. A regex that merges exact copies across a short gap handled this at the same runtime.
 **Resolution**: Added `--merge-gap` (default 0); pipeline uses 8. Also: a `storeDir` keyed by genome hides parameter changes, so a re-run needs the old directory moved aside. Timing on the shared login node with 8 parallel jobs was 4-8x slower than serial; time single jobs serially.
 **Tags**: telomeres, find_telomeres, merge-gap, storeDir, benchmarking
+
+## Manually rebuilt `*_norm_R1/R2` files skipped the `/1` `/2` header rename (2026-11-22)
+
+**Category**: gotcha, rnaseq
+**What happened**: A scan of all 7,509 `rnaseq_reads/*_norm_R1.fastq.gz` files found 4 non-empty files without the `/1` suffix: Rhizopus_microsporus (2026-09-24), Batrachochytrium_dendrobatidis (2026-09-25), Grifola_frondosa (2026-09-27), Malassezia_globosa (2026-09-19). 1,749 files have it; 5,756 are empty stubs. The rename step in `SRA_FETCH` (`fix_fastq_header_trinity --read 1|2`, params.fastq_hdr_script) is intact. A 10,000-pair test through `parallel` -> `enforce_seqpair_readlen` -> bbnorm -> fastp kept `/1` and `/2` at every stage. The Rhizopus and Batrachochytrium files were rebuilt by hand for T-036 (contamination archive README). The cause for Grifola and Malassezia is not found.
+**Why it matters**: De novo Trinity (`TRINITY_STANDALONE`, `--left/--right`) probably needs the `/1` `/2` names to pair reads. This is from memory, not verified in the logs.
+**Resolution**: `scripts/one-off/fix_norm_read_suffix.sh --apply <species...>` (SLURM job 32373806, 8 files, read counts equal before and after). Originals kept as `*.pre_rename` in `rnaseq_reads/`. To check any file: `zcat f | head -1` must end in `/1` (R1) or `/2` (R2).
+**Tags**: rnaseq, fastq-header, SRA_FETCH, manual-rebuild, trinity, T-036
+
+## GmG as an RNA-seq contamination screen: use the full index, not reps (2026-11-22)
+
+**Category**: tooling, rnaseq
+**What happened**: Deployed GmG v0.3.2 (release binary, sha256 checked; `GmG_runs/bin/gmg` -> `gmg-v0.3.2-66055154a`, previous `gmg-ca8e3b9-20261030-234904`) and index-2026.10.5 (reps and full, sha256 checked, in `GmG_runs/index/`). The old deployed binary was 0.0.1. Ran 18 inputs (100k reads each): 6 archived T-036 reads and 12 current reads. With the reps index, current Malassezia_globosa reads got `no_match` (ANI 0.80) and current Rhizoctonia_solani `low_confidence`; with the full index they were called to species (0.9991, 0.9962), so the reps index gave false alarms. Full index, archived reads: Rhizopus microsporus and Batrachochytrium dendrobatidis not called to genus (`low_confidence`, ANI 0.82; B. dendrobatidis flagged `distant_non_fungal_hit`), Microsporum canis `no_match` (`high_error_reads`), Rhizoctonia solani called Aspergillus with `mixture_suspected`. Not detected: Gongronella butleri archived (called G. butleri, ANI 0.9964, despite 76% of reads from flagged runs); Plenodomus biglobosus archived (88% flagged) only showed a lower ANI (0.977 vs 0.992). All 12 current inputs got the right genus; Neurospora crassa got species N. intermedia (genus right).
+**Why it matters**: small test (18 inputs, first 100k reads, not random), so sensitivity and specificity are not estimated. The user noted the GmG set may have few non-fungal genomes.
+**Tags**: gmg, contamination, rnaseq, T-036, T-037, kraken2
+
+## A focused test run that symlinks rnaseq_data/rnaseq_reads shares them with the production run (2026-11-22)
+
+**Category**: gotcha, nextflow
+**What happened**: The first T-040 rebuild (`.nf_launch/20261122_rnaseq_rebuild`) symlinked the shared `rnaseq_data` and `rnaseq_reads`, on purpose, so rebuilt assemblies would land where other strains look. The production run `Fungi_BFD_runs/do_annotation` (launched 2026-11-21 22:46, still running) uses the same stores. After the Trinity files for 4 species were deleted, both runs wrote there: my `RNASEQ_PREPARE` tasks finished 12:37-13:56 and wrote the FASTA, StringTie GTF, junctions BED and `pasa_fl_accs`; production ran `TRINITY_STANDALONE` for Malassezia_globosa (finished 13:42) and replaced my 8,826-transcript genome-guided FASTA with a symlink to a 37.4 MB de novo assembly; production also trained ~58 strains of these species while my files were landing, so which Trinity each used is unknown. Production has no `rnaseq_representative_override.csv`, so it uses the ANI reuse-assignment pick (Malassezia CBS_7990, Grifola HT01), not my override picks (CBS7966, H03501); that this explains the different Malassezia result is not verified.
+**Resolution**: Cancelled my run (jobs 32375135 + 3 children) and relaunched from `.nf_launch/20261122b_rnaseq_rebuild_isolated` with local `rnaseq_data`, local `rnaseq_reads` (symlinks to the 4 species' files, local copies of their SRA query caches) and all outputs local. The earlier decision (N, 2026-11-22) to share these two stores is reversed.
+**Before any test run**: check `ps`/`squeue` and the other launch directories' `.nextflow.log` for runs that use the same stores, and check each symlink in the launch directory for who else writes through it.
+**Tags**: nextflow, storeDir, shared-state, production-run, rnaseq_data, T-040
