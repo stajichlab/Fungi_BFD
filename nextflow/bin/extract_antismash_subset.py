@@ -9,14 +9,14 @@ Drops: genome sequence, all CDS outside regions, all PFAM_domain/gene/mRNA featu
 ClusterBlast protein alignments, HTML, per-region GenBank copies, the zip.
 
 Usage: extract_antismash_subset.py INPUT.json[.gz] OUTDIR [GENOME_ID] [--minimal] [--mode lite|full]
---minimal writes only regions, cds (genes in regions), known (MIBiG top-3 hits per region), known_pairs
+--minimal writes only regions, cds (genes in regions), known (MIBiG top-5 hits per region), known_pairs
 (which of our genes hit which MIBiG gene) and run.json (provenance): the BFD representation.
 Writes OUTDIR/<GENOME_ID>.{regions,cds,domains,modules,blast_top}.tsv.gz and
 OUTDIR/<GENOME_ID>.biosyn_proteins.faa.gz. Reads plain or gzip JSON.
 """
 import gzip, json, os, re, sys, pathlib
 
-TOPN = 3
+TOPN = 5  # owner decision 2026-11-22: top 5 MIBiG hits (was 3)
 
 
 def opener(path, mode="rt"):

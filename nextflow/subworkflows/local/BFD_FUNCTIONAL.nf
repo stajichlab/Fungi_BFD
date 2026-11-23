@@ -348,10 +348,12 @@ workflow BFD_FUNCTIONAL {
             merge_outs << MERGE_TF.out.parquet
         }
 
-        def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.regions.tsv.gz"], ['antismash.parquet']) ? null : mergeInput(use_glob, run_antismash, run_antismash ? RUN_ANTISMASH.out.regions : null, "antismash/**/*.antismash.regions.tsv.gz")
+        def antismash_glob = "antismash/**/*.antismash.{regions,cds,known,known_pairs}.tsv.gz"
+        def antismash_out  = run_antismash ? RUN_ANTISMASH.out.regions.mix(RUN_ANTISMASH.out.cds, RUN_ANTISMASH.out.known, RUN_ANTISMASH.out.known_pairs) : null
+        def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.regions.tsv.gz"], ['bgc_cluster.parquet', 'bgc_cluster_gene.parquet', 'bgc_mibig_hit.parquet', 'bgc_mibig_pair.parquet']) ? null : mergeInput(use_glob, run_antismash, antismash_out, antismash_glob)
         if (antismash_in) {
             MERGE_ANTISMASH(antismash_in)
-            merge_outs << MERGE_ANTISMASH.out.parquet
+            merge_outs << MERGE_ANTISMASH.out.parquet << MERGE_ANTISMASH.out.gene << MERGE_ANTISMASH.out.hit << MERGE_ANTISMASH.out.pair
         }
 
         def trnascan_in = !mergeWanted(run_trnascan, 'MERGE_TRNASCAN', params.outdir as String, ["trnascan/**/*.trnascan.no-overlaps.gff3.gz"], ['trnascan.parquet']) ? null : mergeInput(use_glob, run_trnascan, run_trnascan ? RUN_TRNASCAN.out.gff3 : null, "trnascan/**/*.trnascan.no-overlaps.gff3.gz")

@@ -20,7 +20,7 @@ include { hashBucketForType; plainName; gzInflate } from '../../common/utils.nf'
 //             <LOCUSTAG>.antismash.regions.tsv.gz  location, class, contig edge, core
 //             <LOCUSTAG>.antismash.cds.tsv.gz      genes inside regions (locus tag,
 //                                            coordinates, strand, kind, function)
-//             <LOCUSTAG>.antismash.known.tsv.gz    top-3 MIBiG hits per region (with entry size, synteny)
+//             <LOCUSTAG>.antismash.known.tsv.gz    top-5 MIBiG hits per region (with entry size, synteny)
 //             <LOCUSTAG>.antismash.known_pairs.tsv.gz  our gene -> MIBiG gene pairs (identity, coverage)
 //             <LOCUSTAG>.antismash.run.json        antiSMASH and MIBiG versions, mode
 //           ~2 MB per genome for all of the subset tables; the three minimal
@@ -57,11 +57,22 @@ process RUN_ANTISMASH {
     def genome_plain = plainName(genome)
     def genome_rm = genome.name.endsWith('.gz') ? "rm -f '${genome_plain}'" : ''
     def full = (params.antismash_mode ?: 'lite') == 'full'
+    // antiSMASH 8.0.4 has no genetic-code option and reads the GFF3 as code 1 (CUG = Leu).
+    // For TRANSL_TABLE != 1 (samples.csv; 1,164 genomes use 12), tag every CDS line with
+    // transl_table so translations match BFD. Measured on D. hansenii CBS767 (table 12):
+    // 3,923 of 5,951 CDS differ without the tag, 0 with it. Table 26 is untested.
+    def tt = (meta.transl_table ?: '1') as String
+    def tt_cmd = tt == '1' ? '' :
+        "awk -F'\\t' -v OFS='\\t' -v t=${tt} '\$0 !~ /^#/ && \$3==\"CDS\" {\$9=\$9\";transl_table=\"t} {print}' ${gff3_plain} > tt.gff3 && mv tt.gff3 ${gff3_plain}"
+    // lite: no --cb-general. Measured 2026-11-22 on 3 genomes: 3.8x-6.9x faster, regions,
+    // known and known_pairs identical. Only the unstored blast_top table needs it.
+    // --no-*: smaller raw output in $SCRATCH (206 -> 102 MB on A1163); no time saving.
     def flags = full ? '--fullhmmer --clusterhmmer --cb-general --cb-knownclusters --pfam2go'
-                     : '--cb-general --cb-knownclusters'
+                     : '--cb-knownclusters --no-zip-output --no-summary-gbk --no-region-gbks'
     """
     ${gzInflate(gff3)}
     ${gzInflate(genome)}
+    ${tt_cmd}
     module load apptainer
     export TMPDIR=\${SCRATCH:?SCRATCH is not set (expected the SLURM job scratch dir)}
     export MPLCONFIGDIR=\$TMPDIR/mpl; mkdir -p \$MPLCONFIGDIR
