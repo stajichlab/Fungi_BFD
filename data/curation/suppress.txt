@@ -400,3 +400,4 @@ GCA_000417865.1_Bgt_94202_1,Blumeria graminis f. sp. tritici 94202 -- too fragme
 GCA_002571405.2_ASM257140v2,Saccharomyces cerevisiae CEN.PK113-7D -- skip both CEN.PK113-7D assemblies (user decision 2026-11-19); the two assemblies shared one results folder
 GCA_032173475.1_ASM3217347v1,Amanita phalloides -- fragmented older assembly (N50 0.32 Mb); skip, gfAmaPhal2 hap1/hap2 are annotated (user decision 2026-11-19)
 GCA_900068975.1_Hygrocybe_1_8,Hygrocybe conica -- very fragmented (N50 0.01 Mb, 68 Mb); skip, gfHygConi1 hap1/hap2 are annotated (user decision 2026-11-19)
+GCA_055773995.1_ASM5577399v1,MAG assembly (3300051444_70) from a non-human environment; not a Malassezia globosa isolate genome

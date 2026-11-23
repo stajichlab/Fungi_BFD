@@ -839,6 +839,39 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 
 **Tags**: paralogoscope, wgd, giant-family, sampling, decision
 
+## L: Delete Trinity-GG, StringTie, junctions and pasa_fl_accs for 3 species to force a rebuild (2026-11-22)
+
+**Decision**: Deleted from `rnaseq_data/` for Rhizopus_microsporus, Batrachochytrium_dendrobatidis and Grifola_frondosa: `<sp>.trinity-GG.fasta`, `<sp>.stringtie.gtf`, `<sp>.junctions.bed`, `<sp>.trinity-GG.pasa_fl_accs` and its `.md5`. Kept the `<sp>.funannotate-trinity.log` files.
+**Why**: The Trinity FASTA is frozen once built, so a rebuild needs the old one removed. Rhizopus and Batrachochytrium also need rebuilding for T-036 (community contamination). Grifola was rebuilt because its reads lacked the `/1` `/2` suffix. The Trinity FASTA sizes were normal (percentiles over 1,806 files: p10 16.3 MB, median 64.0 MB, p90 131.8 MB; these were 40.6, 91.0, 83.3 MB), so size gave no evidence of damage. The deletion was a precaution, not a measured fault. The derived files came from the deleted FASTAs and would not match new ones.
+**Not done**: Malassezia_globosa (542-transcript assembly dated 2026-09-01, older than its 2026-09-19 reads) was left alone. No rebuild has been run yet. Training and predictions for strains of these species are not yet redone (T-036).
+**Related**: learnings 2026-11-22 (header suffix), todo T-036.
+
+## M: Malassezia_globosa Trinity assembly deleted and added to T-040 (2026-11-22)
+
+**Decision**: Deleted `rnaseq_data/Malassezia_globosa.trinity-GG.fasta` (symlink), `.trinity-denovo.fasta` and `.trinity-standalone.log`. Added the species to T-040.
+**Why**: The assembly had 542 transcripts (191 KB), far below the collection's 16.3 MB 10th percentile. It was made on 2026-09-01 by the de novo fallback. All 5 accessions that `rnaseq_blacklist.csv` lists as SE_trinity for this species are METATRANSCRIPTOMIC (PRJNA658716). That the assembly came from them is an inference; the inputs could not be confirmed. The current paired reads (SRR27830002, SRR27830013) are TRANSCRIPTOMIC cultured strains.
+**Open**: If recovery is still low after the rebuild, handle it manually, not through the automatic de novo fallback.
+
+## N: T-040 rebuild staged as a 4-genome run in .nf_launch/20261122_rnaseq_rebuild (2026-11-22)
+
+**Decision**: One representative genome per species: Batrachochytrium_dendrobatidis_CLFT044 (reuse-assignment pick), Rhizopus_microsporus_B9738 (reuse-assignment pick), Grifola_frondosa_H03501 and Malassezia_globosa_3300051444_70 (both from `rnaseq_representative_override.csv`, which takes precedence over the reuse pick). This is a deliberate subset of the 55 genomes in these species, chosen by the user (option "1a").
+**Layout**: `rnaseq_reads` and `rnaseq_data` are symlinks to the shared stores, on purpose, so rebuilt assemblies land where the other strains look. Training, prediction, GeneMark and shared ab-initio stores are local and empty, so results can be compared with `genome_annotation/` before a manual sync. Malassezia_globosa is in `trinity_standalone_skip.csv`, so a low-count genome-guided assembly stays for manual review instead of falling back to de novo.
+**Cautions**: Do not run `-stub-run` here. `RNASEQ_PREPARE` writes to a `storeDir` inside the shared `rnaseq_data`, so stub outputs would be stored as fake files. Malassezia_globosa_3300051444_70 has no `input_clean_genomes` file or training directory in the production tree; a genome ID like `3300051444_70` may be a metagenome bin (unverified). Not yet submitted.
+
+**Amendment (2026-11-22, same day)**: The user chose GCF_000181695.2_ASM18169v2 (Malassezia globosa CBS 7966, RefSeq) as the Malassezia representative, replacing 3300051444_70. This genome was on `data/curation/suppress.txt` as "Duplicate for strain and worse N50" and is not in `samples.csv`. N50 measured from `input_clean_genomes`: GCF_000181695.2 654,612 bp (33 contigs), GCA_001264805.1 724,645 bp (37), GCA_010232095.1 969,661 bp (10), so the curation note holds for N50; the user's reason for the choice was not recorded. For the rebuild run only: a new `samples_rebuild.csv` row (LOCUSTAG F1479337 = 'F' + last 7 hex of md5 of the ASMID, the `create_samples_file.py` rule, checked against GCA_001264805 -> F55592AB), a local copy of `rnaseq_representative_override.csv` pointing Malassezia_globosa at Malassezia_globosa_CBS_7966, and a local `suppress.txt` without the GCF line. The shared override and suppress files are unchanged.
+**Caution**: the output name Malassezia_globosa_CBS_7966 already exists in production `genome_annotation/` and `genome_annotation_training/`. Production likely built it from GCA_001264805.1 (the GCF was suppressed); this was not checked. Syncing the rebuild result there would replace that directory with a different assembly's output.
+
+**Amendment 2 (2026-11-22)**: The user changed the Malassezia reference again, to GCA_010232095.1_ASM1023209v1 (strain `CBS7966`, N50 969,661 bp, 10 contigs; the best of the three CBS 7966 assemblies by the N50 measured above), replacing GCF_000181695.2. It is already in `samples.csv` (LOCUSTAG FE4C6AAA), is not suppressed, and production has `Malassezia_globosa_CBS7966` output directories, so no output-name collision and no local `suppress.txt` copy is needed (shared link restored). The local override copy now points Malassezia_globosa at Malassezia_globosa_CBS7966. Amendment 1's GCF row, locus tag and collision caution no longer apply.
+
+## O: Suppress GCA_055773995.1_ASM5577399v1 (Malassezia globosa 3300051444_70) (2026-11-22)
+
+**Decision**: Appended the assembly to `data/curation/suppress.txt` (tracked in git; `Fungi_BFD_runs/suppress.txt` links to it, so all runs see it). Reason given by the user: a MAG assembly from a non-human environment. The MAG status is the user's statement; I did not check the NCBI metadata.
+**Not changed**: the shared `rnaseq_representative_override.csv` still names this genome for Malassezia_globosa; existing `genome_annotation/Malassezia_globosa_3300051444_70` output stays. Three other `3300051444_*` entries in `samples.csv` (Sphaerulina musiva, `_104`, `_43`, `_5`) share the ID prefix and are not suppressed; the user has not said whether they are MAGs.
+
+**Amendment to O (2026-11-22)**: At the user's request, set `Malassezia_globosa,Malassezia_globosa_CBS7966` in the shared `Fungi_BFD_runs/rnaseq_representative_override.csv` (backup: `rnaseq_representative_override.csv.bak.20261122`). The rebuild run's local override copy was identical, so it is a link to the shared file again.
+
+**Amendment 2 to O (2026-11-22)**: The user decided to keep the other three `3300051444_*` assemblies (Sphaerulina musiva `_104`, `_43`, `_5`) unsuppressed. Only Malassezia globosa 3300051444_70 is suppressed.
+
 ## P: antiSMASH-lite results keyed by LOCUSTAG, minimal tables only (2026-11-22)
 
 **Decision**: `RUN_ANTISMASH` writes `results/function/antismash/<sha1(LOCUSTAG)[:2]>/<LOCUSTAG>.antismash.{regions,cds,known,known_pairs}.tsv.gz` and `run.json`. Raw antiSMASH output is not kept. The key is LOCUSTAG, as for cazy and pfam_hmmscan, not `out`.
@@ -847,3 +880,9 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Open**: `--no-zip-output --no-summary-gbk --no-region-gbks` test; GFF3 vs GBK gene source; yeasts and basidiomycetes untested; check no live run reads the checkout edited in 75dc089 and c5d2407.
 
 **Tags**: antismash, bgc, schema, locustag, decision
+
+**Amendment 3 to N (2026-11-22)**: The first submit (job 32374524) failed in 49 s: `run_ani_reuse=true` needs `genome_annotation/_reuse_assignments/abinitio_reuse_assignments.csv` at startup, and the funannotate workflow does not create it (`PICK_REPRESENTATIVE_STRAIN` belongs to `compare_ANI`). The run dir now holds a seeded copy with the 4 genomes, each its own representative (`reuse_eligible=False`); job 32375135 was submitted with it. The user chose to keep the seed. The production file was not used because it makes Grifola H03501 and Malassezia CBS7966 non-representatives of HT01 and CBS_7990, which are not in this run (expected to be skipped for missing reuse stores; not tested). The ANI-based reuse path is therefore not exercised by this run.
+
+**Amendment 4 to N (2026-11-22)**: Reversed the choice to share `rnaseq_data` and `rnaseq_reads` (see learnings of this date). Cancelled job 32375135 and relaunched the same 4 genomes in `.nf_launch/20261122b_rnaseq_rebuild_isolated` with those two stores local and empty/symlinked per species. The first attempt's local outputs remain in `.nf_launch/20261122_rnaseq_rebuild/` (about 500 MB, not deleted). Production's shared `rnaseq_data` now holds rewritten files for these species (new FASTAs for Batrachochytrium, Grifola and Rhizopus; a de novo Malassezia assembly; pasa_fl_accs/StringTie/junctions files) that were not made under a controlled process; not yet reviewed or cleaned.
+
+**Amendment 5 to N (2026-11-22)**: At the user's request, deleted `.nf_launch/20261122_rnaseq_rebuild/` (1.8 GB; symlinks removed first). Shared stores checked afterwards and intact. The first attempt's local outputs and logs no longer exist; the rebuild continues in `.nf_launch/20261122b_rnaseq_rebuild_isolated` (job 32376616).
