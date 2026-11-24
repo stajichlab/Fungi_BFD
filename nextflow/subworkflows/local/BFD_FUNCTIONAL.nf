@@ -360,7 +360,7 @@ workflow BFD_FUNCTIONAL {
         }
 
         def antismash_glob = "antismash/**/*.antismash.{regions,cds,known,known_pairs}.tsv.gz"
-        def antismash_out  = run_antismash ? RUN_ANTISMASH.out.regions.mix(RUN_ANTISMASH.out.cds, RUN_ANTISMASH.out.known, RUN_ANTISMASH.out.known_pairs).flatten() : null
+        def antismash_out  = run_antismash ? RUN_ANTISMASH.out.stored.splitText().map { line -> file(line.trim()) }.filter { f -> f.name =~ /\.antismash\.(regions|cds|known|known_pairs)\.tsv\.gz$/ } : null
         def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.regions.tsv.gz"], ['bgc_cluster.parquet', 'bgc_cluster_gene.parquet', 'bgc_mibig_hit.parquet', 'bgc_mibig_pair.parquet']) ? null : mergeInput(use_glob, run_antismash, antismash_out, antismash_glob)
         if (antismash_in) {
             MERGE_ANTISMASH(antismash_in)
