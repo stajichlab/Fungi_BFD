@@ -179,8 +179,19 @@ workflow BFD_FUNCTIONAL {
         SETUP_TCDB_DB()
         RUN_TCDB(staleGuard(proteins_ch, byLocustag('tcdb', ['.blasttab.gz'])), SETUP_TCDB_DB.out.fasta, SETUP_TCDB_DB.out.blastdb)
     }
-    if (run_antismash)
-        RUN_ANTISMASH(staleGuard(genome_ch, byLocustag('antismash', ['.antismash.regions.tsv.gz'])))
+    if (run_antismash) {
+        // Batched: only genomes with no stored regions table go in, grouped into
+        // antismash_batch_size per task (storeDir cannot skip single genomes of a
+        // batch). staleGuard() first deletes outputs older than their inputs.
+        def as_regions = byLocustag('antismash', ['.antismash.regions.tsv.gz'])
+        def as_todo = staleGuard(genome_ch, as_regions)
+            .filter { meta, _gff, _dna -> !as_regions.call(meta)[0].exists() }
+        RUN_ANTISMASH(
+            as_todo
+                .buffer(size: params.antismash_batch_size as int, remainder: true)
+                .map { batch -> tuple(batch.collect { it[0] }, batch.collect { it[1] }, batch.collect { it[2] }) }
+        )
+    }
     if (run_trnascan)
         RUN_TRNASCAN(staleGuard(genome_ch, byId('trnascan', ['.trnascan.no-overlaps.gff3.gz'])))
     if (run_infernal)
@@ -349,7 +360,7 @@ workflow BFD_FUNCTIONAL {
         }
 
         def antismash_glob = "antismash/**/*.antismash.{regions,cds,known,known_pairs}.tsv.gz"
-        def antismash_out  = run_antismash ? RUN_ANTISMASH.out.regions.mix(RUN_ANTISMASH.out.cds, RUN_ANTISMASH.out.known, RUN_ANTISMASH.out.known_pairs) : null
+        def antismash_out  = run_antismash ? RUN_ANTISMASH.out.regions.mix(RUN_ANTISMASH.out.cds, RUN_ANTISMASH.out.known, RUN_ANTISMASH.out.known_pairs).flatten() : null
         def antismash_in = !mergeWanted(run_antismash, 'MERGE_ANTISMASH', params.outdir as String, ["antismash/**/*.antismash.regions.tsv.gz"], ['bgc_cluster.parquet', 'bgc_cluster_gene.parquet', 'bgc_mibig_hit.parquet', 'bgc_mibig_pair.parquet']) ? null : mergeInput(use_glob, run_antismash, antismash_out, antismash_glob)
         if (antismash_in) {
             MERGE_ANTISMASH(antismash_in)

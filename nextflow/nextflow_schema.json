@@ -836,6 +836,24 @@
                     "default": "fungi",
                     "description": "antiSMASH --taxon."
                 },
+                "antismash_mode": {
+                    "type": "string",
+                    "enum": ["lite", "full"],
+                    "default": "lite",
+                    "description": "lite: regions, genes in regions and MIBiG hits only. full: adds --fullhmmer --clusterhmmer --cb-general --pfam2go and keeps the raw JSON."
+                },
+                "antismash_batch_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 10,
+                    "description": "Genomes per RUN_ANTISMASH task."
+                },
+                "antismash_batch_parallel": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 2,
+                    "description": "Genomes antiSMASH runs at once inside one RUN_ANTISMASH task. Each gets (label cpus / this) CPUs."
+                },
                 "trnascan_sif": {
                     "type": "string",
                     "description": "tRNAscan-SE Singularity image."
