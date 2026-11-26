@@ -886,3 +886,12 @@ Had a `fable`-model second opinion review this specifically for large-scale-NFS 
 **Amendment 4 to N (2026-11-22)**: Reversed the choice to share `rnaseq_data` and `rnaseq_reads` (see learnings of this date). Cancelled job 32375135 and relaunched the same 4 genomes in `.nf_launch/20261122b_rnaseq_rebuild_isolated` with those two stores local and empty/symlinked per species. The first attempt's local outputs remain in `.nf_launch/20261122_rnaseq_rebuild/` (about 500 MB, not deleted). Production's shared `rnaseq_data` now holds rewritten files for these species (new FASTAs for Batrachochytrium, Grifola and Rhizopus; a de novo Malassezia assembly; pasa_fl_accs/StringTie/junctions files) that were not made under a controlled process; not yet reviewed or cleaned.
 
 **Amendment 5 to N (2026-11-22)**: At the user's request, deleted `.nf_launch/20261122_rnaseq_rebuild/` (1.8 GB; symlinks removed first). Shared stores checked afterwards and intact. The first attempt's local outputs and logs no longer exist; the rebuild continues in `.nf_launch/20261122b_rnaseq_rebuild_isolated` (job 32376616).
+
+## Q: genemark_store GTFs stored as .gtf.gz; writers compress with afterScript (2026-11-26)
+
+**Decision**: `<out>.genemark.gtf` in `genemark_store` may be `<out>.genemark.gtf.gz`. `storedGenemarkFor()` accepts either (newer file wins). `FUNANNOTATE_PREDICT` inflates a `.gz` into `$TMPDIR`, passes that to `--genemark_gtf`, and deletes it. `GENEMARK_RUN`, `GENEMARK_TRAIN` and `GENEMARK_MERGE` make the `.gz` in an `afterScript` and publish only the `.gz` (`saveAs` drops the plain GTF). In-run steps still get the plain GTF. `.mod` and `.other.gff3` stay plain.
+**Why**: the GTF is 92% of the store's bytes (275 GB of 299 GB); gzip gives about 10.7x. `afterScript` runs once whichever branch of GENEMARK_TRAIN wrote the GTF, so no per-branch edits. The converter keeps the original mtime because the reuse check compares it with the masked genome.
+**Measured**: real predict on Saccharomyces_x_bayanus_NBRC1948 from a `.gz` entry: GeneMark gave 4,889 models; GBK had 5,144 genes, same as the earlier plain-GTF run. Shared store converted (job 32479199): 262.7 GB -> 24.5 GB.
+**Open**: no real (non-stub) GeneMark run has gone through the new `afterScript` yet; Prodigal, RNA-seq and chunked routes not tested end to end; `do_annotation/genemark_store` and other small stores (13 GB plain) not converted (live run).
+
+**Tags**: genemark, storage, compression, nextflow, decision

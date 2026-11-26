@@ -1,0 +1,9 @@
+store	species_dirs	symlinks	bytes_gtf	bytes_gtf_gz	bytes_mod	bytes_other_gff3	bytes_other	n_gtf	n_gtf_gz	n_mod	n_other_gff3	n_other
+backup_pre_wave3_replaced_20261120/genemark_store	6	0	32780226	0	5811426	0	0	6	0	6	6	0
+do_annotation/genemark_store	1226	0	11735602331	0	951912294	21673440	0	1226	0	977	1226	0
+do_annotation_big_drops_step2/genemark_store	81	0	615183834	0	73729346	0	0	81	0	76	81	0
+do_annotation_busco_gap/genemark_store	3	0	37281748	0	2933792	0	0	3	0	3	3	0
+do_annotation_busco_gap_earlgrey/genemark_store	51	0	761023519	0	49922525	0	0	51	0	51	51	0
+do_annotation_fusarium_luffae/genemark_store	23831	0	0	24514446846	22433598969	71025855	0	161	23461	22987	23622	0
+do_annotation_rosellinia_step2/genemark_store	1	0	13999178	0	980970	0	0	1	0	1	1	0
+TOTAL	25199	0	13195870836	24514446846	23518889322	92699295	0	1529	23461	24101	24990	0

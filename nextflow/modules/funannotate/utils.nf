@@ -310,7 +310,13 @@ def _newerThanGenome(def f, String genomeFa) {
 def storedGenemarkFor(String out, String genomeFa) {
     if (!genemarkReuseOn() || !params.genemark_store) return null
     def dir   = "${params.genemark_store}/${out}"
-    def gtf   = file("${dir}/${out}.genemark.gtf")
+    // The GTF may be stored plain or gzip-compressed (<out>.genemark.gtf.gz, made by
+    // scripts/one-off/compress_genemark_store.py). If both exist, the newer one wins: a
+    // fresh GENEMARK_* publish writes a plain GTF next to an older .gz. A .gz is passed on
+    // as-is; FUNANNOTATE_PREDICT inflates it into its own task dir (never into the store).
+    def gtfPlain = file("${dir}/${out}.genemark.gtf")
+    def gtfGz    = file("${dir}/${out}.genemark.gtf.gz")
+    def gtf      = (gtfGz.exists() && (!gtfPlain.exists() || gtfGz.lastModified() >= gtfPlain.lastModified())) ? gtfGz : gtfPlain
     def other = file("${dir}/${out}.other.gff3")
     if (!(other.exists() && _newerThanGenome(gtf, genomeFa))) return null
     def mod = file("${dir}/${out}.genemark.mod")

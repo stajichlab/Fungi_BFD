@@ -5,7 +5,7 @@ genemark_chunked.tsv (written by GENEMARK_TRAIN, one row per chunk) records ever
 entered the scatter/gather route. With errorStrategy 'ignore' a permanently failed chunk or merge
 leaves no GTF, and nothing else records that, so compare against the store after each run.
 
-A genome counts as missing when <store>/<out>/<out>.genemark.gtf does not exist or is empty.
+A genome counts as missing when <store>/<out>/<out>.genemark.gtf (or .gtf.gz) does not exist or is empty.
 Usage: genemark_chunked_missing.py --chunked-tsv <target>/genemark_chunked.tsv --store <genemark_store> > missing.tsv
 Reads plain or .gz input.
 """
@@ -15,6 +15,13 @@ import gzip
 import os
 import sys
 
+
+def gtf_is_empty(path):
+    """True when the GTF has no content; a .gz is empty when it inflates to zero bytes."""
+    if path.endswith(".gz"):
+        with gzip.open(path, "rb") as fh:
+            return not fh.read(1)
+    return os.path.getsize(path) == 0
 
 def main():
     ap = argparse.ArgumentParser()
@@ -30,10 +37,11 @@ def main():
     w.writerow(["out", "asmid", "route", "n_chunks", "genome_contigs", "store_status"])
     missing = 0
     for out, r in sorted(seen.items()):
-        gtf = os.path.join(a.store, out, out + ".genemark.gtf")
+        base = os.path.join(a.store, out, out + ".genemark.gtf")
+        gtf = base if os.path.exists(base) else base + ".gz"  # plain or gzip-compressed
         if not os.path.exists(gtf):
             status = "missing"
-        elif os.path.getsize(gtf) == 0:
+        elif gtf_is_empty(gtf):
             status = "empty"
         else:
             continue

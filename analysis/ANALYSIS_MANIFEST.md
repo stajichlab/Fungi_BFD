@@ -451,3 +451,24 @@ tags: [taxonomy, curation, overrides, aai, diamond, pucciniomycotina, mislabel]
 
 Why BFD's PHYLUM/CLASS for the two genomes were overridden in `data/curation/overrides.csv`.
 
+
+### genemark_store_census
+
+```yaml
+name: genemark-store-census
+type: storage-census
+status: complete
+created: 2026-11-25
+last_updated: 2026-11-26
+datasets: [Fungi_BFD_runs/genemark_store, Fungi_BFD_runs/do_annotation*/genemark_store]
+algorithms: [os.scandir stat() byte sums per file type, 16 threads]
+parent_analysis: null
+key_findings:
+  - "Before: 25,099 species folders, 275.3 GB of .genemark.gtf (92% of bytes), 23.5 GB .mod, 0.09 GB .other.gff3. The shared store (23,831 folders) is one real directory reached by 5 names."
+  - "After compress_genemark_store.py on the shared store (job 32479199, 32 min): GTF 262.7 GB -> 24.5 GB as .gtf.gz (23,461 files, 10.7x); 161 empty plain GTFs left."
+  - "Plain GTFs still in smaller stores: 13.2 GB in all, mostly do_annotation/genemark_store (live run, not converted)."
+report: analysis/genemark_store_census/GENEMARK_STORE_CENSUS.md
+tags: [genemark, storage, compression, census]
+```
+
+Sizes are stat() apparent bytes, not disk blocks. Scripts: `scripts/one-off/genemark_store_census.py`, `compress_genemark_store.py`, `run_compress_genemark_store.sh`.
