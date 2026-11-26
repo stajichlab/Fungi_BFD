@@ -84,8 +84,13 @@ process GENEMARK_TRAIN {
     // the chunked route's files (chunks/, *.train.mod, *.reuse.mod, *.other.pending.gff3) are
     // never published here -- GENEMARK_MERGE publishes after validating the merged GTF.
     publishDir path: { "${params.genemark_store}/${out}" }, mode: 'copy', overwrite: true,
-        saveAs: { fn -> (fn ==~ /.*\.genemark\.(gtf|mod)$/ || fn ==~ /.*\.other\.gff3$/) ? fn : null },
+        saveAs: { fn -> (fn ==~ /.*\.genemark\.(gtf\.gz|mod)$/ || fn ==~ /.*\.other\.gff3$/) ? fn : null },
         enabled: params.genemark_store ? true : false
+    // Store the GTF gzip-compressed (genemark_store is large; see docs/GZ_PREDICT_OUTPUTS.md).
+    // afterScript runs once at the end of the task, whichever branch wrote the GTF. In-run
+    // consumers still get the plain ${out}.genemark.gtf; only the published copy is the .gz.
+    // An empty GTF (too-small skip) also gets a .gz, so the store always has a GTF entry.
+    afterScript { "if [ -f '${out}.genemark.gtf' ]; then (pigz -c -n '${out}.genemark.gtf' || gzip -c -n '${out}.genemark.gtf') > '${out}.genemark.gtf.gz.tmp' && mv '${out}.genemark.gtf.gz.tmp' '${out}.genemark.gtf.gz'; fi" }
 
     cpus   16
     memory '32 GB'
@@ -101,6 +106,7 @@ process GENEMARK_TRAIN {
     // optional outputs because the chunked route emits none of them. other.gff3 is touched
     // before every skip/exit, so the monolithic route always has gtf AND other_gff.
     tuple val(out), path("${out}.genemark.gtf"), optional: true, emit: gtf
+    tuple val(out), path("${out}.genemark.gtf.gz"), optional: true, emit: gtf_gz   // published to genemark_store instead of the plain GTF
     // Microsporidia Prodigal supplement (nextflow/docs/MICROSPORIDIA_PRODIGAL_BRANCH_PLAN.md):
     // empty file when is_microsporidia=false or this genome didn't qualify.
     tuple val(out), path("${out}.other.gff3"), optional: true, emit: other_gff

@@ -387,9 +387,25 @@ process FUNANNOTATE_PREDICT {
     fi
     # -s not -n: GENEMARK_RUN's too-small-genome skip path emits a real but
     # deliberately empty ${out}.genemark.gtf (see GENEMARK_RUN/main.nf).
-    if [ -s "${genemark_gtf}" ]; then
-        echo "[INFO] ${out}: using pre-computed GeneMark GTF from ${genemark_gtf}"
-        GENEMARK_GTF_FLAG=(--genemark_gtf "${genemark_gtf}")
+    # A stored GTF may be gzip-compressed (genemark_store/<out>/<out>.genemark.gtf.gz).
+    # Funannotate needs a plain file, so inflate into \$TMPDIR (node-local, already bound;
+    # same as the genome above) and use that copy; the store keeps only the .gz. The copy
+    # is removed right after the predict call.
+    GM_GTF="${genemark_gtf}"
+    GM_GTF_INFLATED=""
+    case "\$GM_GTF" in
+        *.gz)
+            if [ -s "\$GM_GTF" ]; then
+                GM_GTF_INFLATED="\$TMPDIR/${out}.genemark.inflated.gtf"
+                pigz -dc "\$GM_GTF" > "\$GM_GTF_INFLATED.tmp" && mv "\$GM_GTF_INFLATED.tmp" "\$GM_GTF_INFLATED" \
+                    || { echo "ERROR: ${out}: cannot inflate \$GM_GTF" >&2; exit 1; }
+                GM_GTF="\$GM_GTF_INFLATED"
+            fi
+            ;;
+    esac
+    if [ -s "\$GM_GTF" ]; then
+        echo "[INFO] ${out}: using pre-computed GeneMark GTF from \$GM_GTF (source ${genemark_gtf})"
+        GENEMARK_GTF_FLAG=(--genemark_gtf "\$GM_GTF")
         WEIGHT_ARGS+=(genemark:1)
     fi
     # EVM weight refit (pasa_train_performance_evaluate/DECISIONS.md D126/D127):
@@ -430,7 +446,8 @@ process FUNANNOTATE_PREDICT {
     if [ -s "${other_gff}" ]; then
         SING_BINDS="\$SING_BINDS,\$(dirname "${other_gff}"):\$(dirname "${other_gff}")"
     fi
-    if [ -s "${genemark_gtf}" ]; then
+    # An inflated copy lives in \$TMPDIR (already bound); only a plain stored GTF needs its own bind.
+    if [ -s "\$GM_GTF" ] && [ -z "\$GM_GTF_INFLATED" ]; then
         SING_BINDS="\$SING_BINDS,\$(dirname "${genemark_gtf}"):\$(dirname "${genemark_gtf}")"
     fi
     # The -p parameters.json directory: the per-genome abinitio_own store (DECISIONS
@@ -499,6 +516,7 @@ process FUNANNOTATE_PREDICT {
         --max_intronlen ${params.max_intronlen} --min_intronlen ${params.min_intronlen} \\
         --tbl2asn "\$TBL2ASN_PARAMS" --table ${transl_table} --auto-skip-genemark \\
         "\${ABINITIO_REUSE_FLAG[@]}" "\${GENEMARK_GTF_FLAG[@]}" "\${OTHER_GFF_FLAG[@]}" "\${EXTRA_PREDICT_ARGS[@]}" "\${EVM_REPEAT_FLAGS[@]}" "\${EVM_TMPDIR_FLAG[@]}" || true
+    if [ -n "\$GM_GTF_INFLATED" ]; then rm -f "\$GM_GTF_INFLATED"; fi
 
     # ── Post-predict catch ────────────────────────────────────────────────────
     # If predict produced no GBK, distinguish the known "too few training models"

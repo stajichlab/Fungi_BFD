@@ -48,3 +48,15 @@ so they do not see `.gz` files. See `~/projects/funannotate/funannotate-live/TOD
 `workflows/BFD.nf` (`cdsIndex`), `STAGE_FILES`, `PHYLING_ALIGN`, `paralogoscope.nf`, `bin/merge_wgd_ks.py`,
 and the `k8` and `development` InterProScan scripts read plain `input/cds`, `input/gff`, `input/pep`.
 Fix them (read `.gz` or inflate into `$SCRATCH`) before running the comparative steps on gzipped output.
+
+## genemark_store GTF compression (2026-11-24)
+
+`genemark_store/<out>/<out>.genemark.gtf` may be stored as `<out>.genemark.gtf.gz`.
+
+- Reader: `storedGenemarkFor()` (utils.nf) accepts either form. If both exist, the newer file wins.
+- Predict: `FUNANNOTATE_PREDICT` inflates a `.gz` into `$TMPDIR` and passes that copy to `--genemark_gtf`. It deletes the copy after predict. The store keeps only the `.gz`.
+- Writers (`GENEMARK_RUN`, `GENEMARK_TRAIN`, `GENEMARK_MERGE`) compress before publish. An `afterScript` makes `<out>.genemark.gtf.gz` at the end of the task. `publishDir` `saveAs` drops the plain GTF, so the store gets only the `.gz`. Steps in the same run still receive the plain GTF. A new output `gtf_gz` is declared (optional; no consumers). An empty GTF also gets a `.gz`.
+- Existing plain GTFs: run `scripts/one-off/compress_genemark_store.py --store <genemark_store> --apply`. It is dry-run by default, verifies each `.gz` by sha256, and keeps the original mtime. Add `--remove-superseded` to delete an older plain GTF that sits next to a newer verified `.gz` (a pipeline rerun leaves these).
+- Sizes: `scripts/one-off/genemark_store_census.py` (read-only; output in `analysis/genemark_store_census/`).
+- `.mod` and `.other.gff3` stay plain.
+- Tested 2026-11-24/25: reader probe (gz only, plain only, both, stale genome); converter on 3 real folders (10.7x); inflate block in bash; a real `funannotate predict` on Saccharomyces_x_bayanus_NBRC1948 from a `.gz` store entry (GeneMark contributed 4,889 models; GBK gene count 5,144, same as the earlier plain-GTF run); stub runs of GENEMARK_RUN, GENEMARK_TRAIN and GENEMARK_MERGE (store gets the `.gz` only). NOT tested: a real (non-stub) GeneMark run through the new `afterScript`, Prodigal/other.gff3 genomes, RNA-seq genomes, the chunked route end to end.

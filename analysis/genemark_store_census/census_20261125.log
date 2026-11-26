@@ -1,0 +1,11 @@
+SKIP /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_wave1/genemark_store: same real path as /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_fusarium_luffae/genemark_store
+SKIP /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_wave2/genemark_store: same real path as /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_fusarium_luffae/genemark_store
+SKIP /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_wave3/genemark_store: same real path as /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_fusarium_luffae/genemark_store
+SKIP /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/genemark_store: same real path as /bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_fusarium_luffae/genemark_store
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/backup_pre_wave3_replaced_20261120/genemark_store: 6 species dirs in 0s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation/genemark_store: 1126 species dirs in 4s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_big_drops_step2/genemark_store: 81 species dirs in 1s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_busco_gap/genemark_store: 3 species dirs in 0s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_busco_gap_earlgrey/genemark_store: 51 species dirs in 0s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_fusarium_luffae/genemark_store: 23831 species dirs in 124s
+/bigdata/stajichlab/shared/projects/BFD/Fungi_BFD_runs/do_annotation_rosellinia_step2/genemark_store: 1 species dirs in 0s

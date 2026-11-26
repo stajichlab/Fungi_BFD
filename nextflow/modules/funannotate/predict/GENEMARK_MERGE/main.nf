@@ -9,7 +9,13 @@
 process GENEMARK_MERGE {
     tag "$out"
     publishDir path: { "${params.genemark_store}/${out}" }, mode: 'copy', overwrite: true,
+        saveAs: { fn -> fn.endsWith('.genemark.gtf') ? null : fn },
         enabled: params.genemark_store ? true : false
+    // Store the GTF gzip-compressed (genemark_store is large; see docs/GZ_PREDICT_OUTPUTS.md).
+    // afterScript runs once at the end of the task, whichever branch wrote the GTF. In-run
+    // consumers still get the plain ${out}.genemark.gtf; only the published copy is the .gz.
+    // An empty GTF (too-small skip) also gets a .gz, so the store always has a GTF entry.
+    afterScript { "if [ -f '${out}.genemark.gtf' ]; then (pigz -c -n '${out}.genemark.gtf' || gzip -c -n '${out}.genemark.gtf') > '${out}.genemark.gtf.gz.tmp' && mv '${out}.genemark.gtf.gz.tmp' '${out}.genemark.gtf.gz'; fi" }
 
     cpus   2
     memory '4 GB'
@@ -20,6 +26,7 @@ process GENEMARK_MERGE {
 
     output:
     tuple val(out), path("${out}.genemark.gtf"), emit: gtf
+    tuple val(out), path("${out}.genemark.gtf.gz"), optional: true, emit: gtf_gz   // published to genemark_store instead of the plain GTF
     tuple val(out), path("${out}.other.gff3"), emit: other_gff
     tuple val(out), val(species), path("${out}.genemark.mod"), optional: true, emit: mod
 
