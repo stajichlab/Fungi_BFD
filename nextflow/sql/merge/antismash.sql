@@ -10,10 +10,10 @@
 -- No sequences are stored. Genomes with no cluster give header-only files and no rows.
 -- Sort orders (ORDER BY of each COPY) are part of the schema: they keep Parquet row-group statistics useful.
 -- "end" is a reserved word and needs quotes.
-CREATE TEMP TABLE r AS SELECT * FROM read_csv({regions}, delim='\t', header=true, auto_detect=true, types={'contig_edge':'BOOLEAN'});
-CREATE TEMP TABLE c AS SELECT * FROM read_csv({cds}, delim='\t', header=true, auto_detect=true, types={'locus_tag':'VARCHAR','protein_id':'VARCHAR'});
-CREATE TEMP TABLE k AS SELECT * FROM read_csv({known}, delim='\t', header=true, auto_detect=true);
-CREATE TEMP TABLE p AS SELECT * FROM read_csv({pairs}, delim='\t', header=true, auto_detect=true, types={'query_locus_tag':'VARCHAR','mibig_protein':'VARCHAR'});
+CREATE TEMP TABLE r AS SELECT * FROM read_csv({regions}, delim='\t', header=true, auto_detect=true, types={'genome':'VARCHAR','record':'VARCHAR','region':'BIGINT','start':'BIGINT','end':'BIGINT','length':'BIGINT','products':'VARCHAR','categories':'VARCHAR','contig_edge':'BOOLEAN','core_start':'BIGINT','core_end':'BIGINT','candidate_kinds':'VARCHAR','n_cds':'BIGINT','n_biosynthetic':'BIGINT','n_additional':'BIGINT'});
+CREATE TEMP TABLE c AS SELECT * FROM read_csv({cds}, delim='\t', header=true, auto_detect=true, types={'genome':'VARCHAR','record':'VARCHAR','region':'BIGINT','locus_tag':'VARCHAR','protein_id':'VARCHAR','start':'BIGINT','end':'BIGINT','strand':'VARCHAR','gene_kind':'VARCHAR','protein_len':'BIGINT','functions':'VARCHAR','product':'VARCHAR'});
+CREATE TEMP TABLE k AS SELECT * FROM read_csv({known}, delim='\t', header=true, auto_detect=true, types={'genome':'VARCHAR','record':'VARCHAR','region':'BIGINT','rank':'BIGINT','mibig_accession':'VARCHAR','hit_description':'VARCHAR','hit_cluster_type':'VARCHAR','similarity':'BIGINT','core_gene_hits':'BIGINT','gene_hits':'BIGINT','blast_score':'DOUBLE','total_hits':'BIGINT','n_entry_proteins':'BIGINT','synteny_score':'DOUBLE','core_bonus':'DOUBLE'});
+CREATE TEMP TABLE p AS SELECT * FROM read_csv({pairs}, delim='\t', header=true, auto_detect=true, types={'genome':'VARCHAR','record':'VARCHAR','region':'BIGINT','rank':'BIGINT','mibig_accession':'VARCHAR','query_locus_tag':'VARCHAR','query_start':'BIGINT','query_end':'BIGINT','query_strand':'VARCHAR','mibig_gene':'VARCHAR','mibig_protein':'VARCHAR','perc_ident':'DOUBLE','perc_coverage':'DOUBLE','blast_score':'DOUBLE','evalue':'DOUBLE','mibig_annotation':'VARCHAR'});
 -- Best hit per region: highest similarity among ranks 1..topn; ties go to the lower rank.
 CREATE TEMP TABLE best AS
   SELECT genome, record, region, arg_max(mibig_accession, (similarity, -rank)) AS best_mibig, max(similarity) AS best_similarity,
