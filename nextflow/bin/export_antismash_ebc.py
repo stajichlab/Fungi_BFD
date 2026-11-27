@@ -3,7 +3,8 @@
 
 Inputs : --inputs input_files.txt (the file list given to the merge); --pq DIR with bgc_cluster, bgc_cluster_gene, bgc_mibig_hit parquet (merge_antismash.py output);
          --samples samples.csv; --runjson GLOB of <LOCUSTAG>.antismash.run.json;
-         --missing missing_antismash_annotated.tsv (optional, reason text for genomes without a run).
+         --linked-missing TSV (output of check_antismash_complete.py --out: genomes with linked inputs and no regions table; column LOCUSTAG).
+Run status: ok (in the merge), no_run_yet (linked-missing list, or finished after the merge), not_annotated (every other genome without a run).
 Outputs (in --out): regions_v5.tsv.gz, genomes_v5.tsv.gz, mibig_hits_v5.tsv.gz,
          flagged_clusters_v5.tsv.gz, flagged_summary_v5.tsv, export_counts.txt
 Column choices follow regions_with_mibig_v3 / regions_v4 where the data allow. Differences:
@@ -62,9 +63,13 @@ CREATE TABLE gen AS
 SELECT s.LOCUSTAG AS genome, s.ASMID AS assembly, s.NCBI_TAXONID AS ncbi_taxid, s.SPECIES_IN AS species_in, s.SPECIES AS species, s.STRAIN AS strain,
        s.BIOPROJECT AS bioproject, s.PHYLUM AS phylum, s.SUBPHYLUM AS subphylum, s.CLASS AS class, s.SUBCLASS AS subclass, s."ORDER" AS "order",
        s.FAMILY AS family, s.GENUS AS genus, s.TRANSL_TABLE AS transl_table,
-       CASE WHEN r.genome IS NOT NULL THEN 'ok' ELSE 'missing' END AS run_status,
-       CASE WHEN r.genome IS NULL AND ra.genome IS NOT NULL THEN 'run finished after the merge snapshot; not in these tables'
-            WHEN r.genome IS NULL THEN coalesce('no antiSMASH run; BFD contig_count=' || m.contig_count || '; suppressed=' || m.SUPPRESSED, 'no antiSMASH run; reason not recorded') END AS status_note,
+       CASE WHEN r.genome IS NOT NULL THEN 'ok'
+            WHEN ra.genome IS NOT NULL OR m.LOCUSTAG IS NOT NULL THEN 'no_run_yet'
+            ELSE 'not_annotated' END AS run_status,
+       CASE WHEN r.genome IS NOT NULL THEN NULL
+            WHEN ra.genome IS NOT NULL THEN 'run finished after the merge snapshot; not in these tables'
+            WHEN m.LOCUSTAG IS NOT NULL THEN 'inputs linked, no antiSMASH regions table (failed or not yet run); BFD contig_count=' || coalesce(m.contig_count, 'NA')
+            ELSE 'no gene models / assembly input linked in BFD; antiSMASH cannot run' END AS status_note,
        r.antismash_version, r.mibig_data_version, r.mode AS antismash_mode, r.n_records, r.n_regions AS n_regions_runjson,
        coalesce(rc.n_regions_table, 0) AS n_regions_table
 FROM sm s LEFT JOIN rj r ON r.genome = s.LOCUSTAG LEFT JOIN rj_all ra ON ra.genome = s.LOCUSTAG LEFT JOIN rc ON rc.locustag = s.LOCUSTAG LEFT JOIN ms m ON m.LOCUSTAG = s.LOCUSTAG
@@ -97,7 +102,7 @@ COPY (
   ORDER BY 1, n_genomes_hit_ge75 DESC, 3) TO '{out}/flagged_summary_v5.tsv' (FORMAT csv, DELIMITER '\t', HEADER);
 
 COPY (SELECT 'regions' AS tbl, count(*) AS n FROM reg UNION ALL SELECT 'genomes', count(*) FROM gen UNION ALL SELECT 'genomes_ok', count(*) FROM gen WHERE run_status='ok'
-      UNION ALL SELECT 'genomes_missing', count(*) FROM gen WHERE run_status<>'ok' UNION ALL SELECT 'hits', count(*) FROM hh
+      UNION ALL SELECT 'genomes_without_run', count(*) FROM gen WHERE run_status<>'ok' UNION ALL SELECT 'genomes_no_run_yet', count(*) FROM gen WHERE run_status='no_run_yet' UNION ALL SELECT 'genomes_not_annotated', count(*) FROM gen WHERE run_status='not_annotated' UNION ALL SELECT 'hits', count(*) FROM hh
       UNION ALL SELECT 'regions_without_samples_row', count(*) FROM reg WHERE species IS NULL
       UNION ALL SELECT 'genomes_runjson_vs_table_regions_mismatch', count(*) FROM gen WHERE run_status='ok' AND n_regions_runjson <> n_regions_table
       UNION ALL SELECT 'runjson_without_samples_row', count(*) FROM rj WHERE genome NOT IN (SELECT LOCUSTAG FROM sm)) TO '{out}/export_counts.txt' (FORMAT csv, DELIMITER '\t', HEADER);
@@ -110,11 +115,10 @@ def main():
     ap.add_argument("--pq", required=True); ap.add_argument("--samples", required=True)
     ap.add_argument("--runjson", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--inputs", required=True, help="list of merged input files (input_files.txt of the merge); genomes not in it are not counted as ok");
-    ap.add_argument("--missing"); ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--linked-missing", required=True); ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    miss = (f"SELECT * FROM read_csv('{q(a.missing)}', delim='\\t', header=true, all_varchar=true)" if a.missing
-            else "SELECT NULL::VARCHAR AS LOCUSTAG, NULL::VARCHAR AS contig_count, NULL::VARCHAR AS SUPPRESSED WHERE false")
+    miss = f"SELECT * FROM read_csv('{q(a.linked_missing)}', delim='\\t', header=true, all_varchar=true)"
     sql = SQL.format(pq=q(a.pq), samples=q(a.samples), runjson=q(a.runjson), inputs=q(a.inputs), out=q(a.out), threads=a.threads, missing_sql=miss)
     r = subprocess.run(["duckdb", "-bail"], input=sql, capture_output=True, text=True)
     if r.returncode != 0:
