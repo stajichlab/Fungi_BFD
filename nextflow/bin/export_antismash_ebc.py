@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export the merged antiSMASH parquet tables as the gzip TSV tables sent to the EBC-KT agents.
 
-Inputs : --pq DIR with bgc_cluster, bgc_cluster_gene, bgc_mibig_hit parquet (merge_antismash.py output);
+Inputs : --inputs input_files.txt (the file list given to the merge); --pq DIR with bgc_cluster, bgc_cluster_gene, bgc_mibig_hit parquet (merge_antismash.py output);
          --samples samples.csv; --runjson GLOB of <LOCUSTAG>.antismash.run.json;
          --missing missing_antismash_annotated.tsv (optional, reason text for genomes without a run).
 Outputs (in --out): regions_v5.tsv.gz, genomes_v5.tsv.gz, mibig_hits_v5.tsv.gz,
@@ -18,8 +18,11 @@ CREATE VIEW cl AS SELECT * FROM read_parquet('{pq}/bgc_cluster.parquet');
 CREATE VIEW cg AS SELECT * FROM read_parquet('{pq}/bgc_cluster_gene.parquet');
 CREATE VIEW hh AS SELECT * FROM read_parquet('{pq}/bgc_mibig_hit.parquet');
 CREATE TABLE sm AS SELECT * FROM read_csv('{samples}', header=true, all_varchar=true);
-CREATE TABLE rj AS SELECT * FROM read_json('{runjson}', format='newline_delimited', union_by_name=true,
+CREATE TABLE snap AS SELECT DISTINCT regexp_extract(f, '([^/]+)\.antismash\.regions\.tsv\.gz$', 1) AS genome
+  FROM read_csv('{inputs}', header=false, columns={{f:'VARCHAR'}}) WHERE f LIKE '%.antismash.regions.tsv.gz';
+CREATE TABLE rj_all AS SELECT * FROM read_json('{runjson}', format='newline_delimited', union_by_name=true,
    columns={{genome:'VARCHAR', antismash_version:'VARCHAR', mibig_data_version:'VARCHAR', mode:'VARCHAR', n_records:'BIGINT', n_regions:'BIGINT'}});
+CREATE TABLE rj AS SELECT * FROM rj_all WHERE genome IN (SELECT genome FROM snap);
 CREATE TABLE ms AS {missing_sql};
 
 -- hits ordered by similarity (ties keep antiSMASH rank order); sim_rank 1 = best
@@ -29,7 +32,7 @@ CREATE TABLE hr AS
   FROM (SELECT *, max(similarity) OVER (PARTITION BY locustag, record, region) AS max_sim FROM hh);
 
 CREATE TABLE bg AS
-  SELECT locustag, record, region, string_agg(gene_id, ',' ORDER BY start) AS biosynthetic_genes
+  SELECT locustag, record, region, string_agg(gene_id, ',' ORDER BY start, gene_id) AS biosynthetic_genes
   FROM cg WHERE gene_kind = 'biosynthetic' GROUP BY ALL;
 
 CREATE TABLE reg AS
@@ -49,8 +52,8 @@ SELECT c.locustag AS genome, s.SPECIES AS species, s.STRAIN AS strain, s.NCBI_TA
        g.biosynthetic_genes
 FROM cl c
 LEFT JOIN sm s ON s.LOCUSTAG = c.locustag
-LEFT JOIN hr b ON b.locustag=c.locustag AND b.record=c.record AND b.region=c.region AND b.sim_rank=1
-LEFT JOIN (SELECT locustag, record, region, string_agg(mibig_accession||'|'||compounds||'|'||similarity, ';' ORDER BY sim_rank) AS top3_hits
+LEFT JOIN hr b ON b.locustag=c.locustag AND b.record=c.record AND b.region=c.region AND b.sim_rank=1 AND b.similarity >= 1
+LEFT JOIN (SELECT locustag, record, region, string_agg(mibig_accession||'|'||coalesce(compounds,'')||'|'||similarity, ';' ORDER BY sim_rank) AS top3_hits
            FROM hr WHERE sim_rank <= 3 GROUP BY ALL) t ON t.locustag=c.locustag AND t.record=c.record AND t.region=c.region
 LEFT JOIN bg g ON g.locustag=c.locustag AND g.record=c.record AND g.region=c.region;
 
@@ -60,10 +63,11 @@ SELECT s.LOCUSTAG AS genome, s.ASMID AS assembly, s.NCBI_TAXONID AS ncbi_taxid, 
        s.BIOPROJECT AS bioproject, s.PHYLUM AS phylum, s.SUBPHYLUM AS subphylum, s.CLASS AS class, s.SUBCLASS AS subclass, s."ORDER" AS "order",
        s.FAMILY AS family, s.GENUS AS genus, s.TRANSL_TABLE AS transl_table,
        CASE WHEN r.genome IS NOT NULL THEN 'ok' ELSE 'missing' END AS run_status,
-       CASE WHEN r.genome IS NULL THEN coalesce('no antiSMASH run; BFD contig_count=' || m.contig_count || '; suppressed=' || m.SUPPRESSED, 'no antiSMASH run; reason not recorded') END AS status_note,
+       CASE WHEN r.genome IS NULL AND ra.genome IS NOT NULL THEN 'run finished after the merge snapshot; not in these tables'
+            WHEN r.genome IS NULL THEN coalesce('no antiSMASH run; BFD contig_count=' || m.contig_count || '; suppressed=' || m.SUPPRESSED, 'no antiSMASH run; reason not recorded') END AS status_note,
        r.antismash_version, r.mibig_data_version, r.mode AS antismash_mode, r.n_records, r.n_regions AS n_regions_runjson,
        coalesce(rc.n_regions_table, 0) AS n_regions_table
-FROM sm s LEFT JOIN rj r ON r.genome = s.LOCUSTAG LEFT JOIN rc ON rc.locustag = s.LOCUSTAG LEFT JOIN ms m ON m.LOCUSTAG = s.LOCUSTAG
+FROM sm s LEFT JOIN rj r ON r.genome = s.LOCUSTAG LEFT JOIN rj_all ra ON ra.genome = s.LOCUSTAG LEFT JOIN rc ON rc.locustag = s.LOCUSTAG LEFT JOIN ms m ON m.LOCUSTAG = s.LOCUSTAG
 ORDER BY s.LOCUSTAG;
 
 COPY (SELECT * FROM reg ORDER BY genome, record, region) TO '{out}/regions_v5.tsv.gz' (FORMAT csv, DELIMITER '\t', HEADER, COMPRESSION gzip);
@@ -83,12 +87,14 @@ COPY (SELECT x.*, s.SPECIES AS species, s.ASMID AS assembly FROM fh x LEFT JOIN 
 COPY (
   SELECT f.acc AS flagged_accession, f.label, g.species, count(*) FILTER (WHERE g.run_status='ok') AS n_genomes_ok, count(*) AS n_genomes_all,
          count(DISTINCT g.genome) FILTER (WHERE x.n_any > 0) AS n_genomes_any_hit, count(DISTINCT g.genome) FILTER (WHERE x.n_ge75 > 0) AS n_genomes_hit_ge75,
-         round(100.0 * count(DISTINCT g.genome) FILTER (WHERE x.n_ge75 > 0) / nullif(count(*) FILTER (WHERE g.run_status='ok'),0), 1) AS pct_ok_genomes_hit_ge75
+         round(100.0 * count(DISTINCT g.genome) FILTER (WHERE x.n_ge75 > 0) / nullif(count(*) FILTER (WHERE g.run_status='ok'),0), 1) AS pct_ok_genomes_hit_ge75,
+         round(100.0 * count(DISTINCT g.genome) FILTER (WHERE x.n_any > 0) / nullif(count(*) FILTER (WHERE g.run_status='ok'),0), 1) AS pct_ok_genomes_any_hit
   FROM flag f CROSS JOIN gen g
   LEFT JOIN (SELECT flagged_accession, genome, count(*) AS n_any, count(*) FILTER (WHERE similarity >= 75) AS n_ge75 FROM fh GROUP BY 1,2) x
          ON x.flagged_accession = f.acc AND x.genome = g.genome
-  WHERE g.genus IN ('Aspergillus','Penicillium','Talaromyces','Fusarium','Neosartorya') OR x.n_any > 0
-  GROUP BY ALL ORDER BY 1, n_genomes_hit_ge75 DESC, 3) TO '{out}/flagged_summary_v5.tsv' (FORMAT csv, DELIMITER '\t', HEADER);
+  GROUP BY f.acc, f.label, g.species
+  HAVING bool_or(g.genus IN ('Aspergillus','Penicillium','Talaromyces','Fusarium','Neosartorya')) OR count(DISTINCT g.genome) FILTER (WHERE x.n_any > 0) > 0
+  ORDER BY 1, n_genomes_hit_ge75 DESC, 3) TO '{out}/flagged_summary_v5.tsv' (FORMAT csv, DELIMITER '\t', HEADER);
 
 COPY (SELECT 'regions' AS tbl, count(*) AS n FROM reg UNION ALL SELECT 'genomes', count(*) FROM gen UNION ALL SELECT 'genomes_ok', count(*) FROM gen WHERE run_status='ok'
       UNION ALL SELECT 'genomes_missing', count(*) FROM gen WHERE run_status<>'ok' UNION ALL SELECT 'hits', count(*) FROM hh
@@ -103,14 +109,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--pq", required=True); ap.add_argument("--samples", required=True)
     ap.add_argument("--runjson", required=True); ap.add_argument("--out", required=True)
+    ap.add_argument("--inputs", required=True, help="list of merged input files (input_files.txt of the merge); genomes not in it are not counted as ok");
     ap.add_argument("--missing"); ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     miss = (f"SELECT * FROM read_csv('{q(a.missing)}', delim='\\t', header=true, all_varchar=true)" if a.missing
             else "SELECT NULL::VARCHAR AS LOCUSTAG, NULL::VARCHAR AS contig_count, NULL::VARCHAR AS SUPPRESSED WHERE false")
-    sql = SQL.format(pq=q(a.pq), samples=q(a.samples), runjson=q(a.runjson), out=q(a.out), threads=a.threads, missing_sql=miss)
-    r = subprocess.run(["duckdb"], input=sql, capture_output=True, text=True)
-    if r.returncode != 0 or "Error" in r.stderr:
+    sql = SQL.format(pq=q(a.pq), samples=q(a.samples), runjson=q(a.runjson), inputs=q(a.inputs), out=q(a.out), threads=a.threads, missing_sql=miss)
+    r = subprocess.run(["duckdb", "-bail"], input=sql, capture_output=True, text=True)
+    if r.returncode != 0:
         sys.exit("ERROR: duckdb failed:\n" + r.stderr[:3000])
     print(open(os.path.join(a.out, "export_counts.txt")).read())
 
