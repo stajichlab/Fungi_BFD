@@ -13,6 +13,8 @@ Header-only files (genomes with no cluster) are fine. Files with no header at al
 gzip, e.g. from the stub block) are skipped. Hits above --topn are dropped (default 5).
 
 Usage: merge_antismash.py [-o OUTDIR] [--topn 5] FILE [FILE ...]
+An argument "@LIST" reads one path per line from the file LIST (needed above ~20,000 genomes,
+where the paths no longer fit in the 2 MB argument limit).
 """
 import argparse, gzip, os, subprocess, sys
 
@@ -39,6 +41,13 @@ def main():
     ap.add_argument("--sql", default=None, help="SQL template (default: nextflow/sql/merge/antismash.sql)")
     ap.add_argument("--threads", type=int, default=int(os.environ.get("NCPU", "4")))
     a = ap.parse_args()
+    files = []
+    for f in a.files:
+        if f.startswith("@"):
+            files += [l.strip() for l in open(f[1:]) if l.strip()]
+        else:
+            files.append(f)
+    a.files = files
 
     by = {k: [] for k in KINDS}
     skipped = 0
