@@ -25,7 +25,7 @@ process MERGE_ANTISMASH {
     set -euo pipefail
     module load duckdb 2>/dev/null || true
     printf '%s\\n' ${tables} | LC_ALL=C sort > antismash.files
-    python3 ${projectDir}/bin/merge_antismash.py --threads ${task.cpus} -o . \$(cat antismash.files)
+    python3 ${projectDir}/bin/merge_antismash.py --threads ${task.cpus} -o . @antismash.files
     ${cov}
     """
 
