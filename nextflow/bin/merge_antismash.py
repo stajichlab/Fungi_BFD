@@ -77,8 +77,8 @@ def main():
     for k, v in subs.items():
         body = body.replace("{" + k + "}", v)
     sql = f"SET threads = {a.threads};\n" + body
-    res = subprocess.run(["duckdb"], input=sql, capture_output=True, text=True)
-    if res.returncode != 0 or "Error" in res.stderr:
+    res = subprocess.run(["duckdb", "-bail"], input=sql, capture_output=True, text=True)
+    if res.returncode != 0:
         sys.exit("ERROR: duckdb failed:\n" + res.stderr.strip()[:3000])
     for t in tables:
         final = os.path.join(a.outdir, t + ".parquet")

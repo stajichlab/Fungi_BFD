@@ -83,7 +83,7 @@ COPY (SELECT h.locustag AS genome, h.record, h.region, h.sim_rank, h.rank AS ant
       FROM hr h ORDER BY 1,2,3,4) TO '{out}/mibig_hits_v5.tsv.gz' (FORMAT csv, DELIMITER '\t', HEADER, COMPRESSION gzip);
 
 CREATE TABLE flag(acc VARCHAR, label VARCHAR);
-INSERT INTO flag VALUES ('BGC0000356','fumitremorgin/verruculogen'),('BGC0000420','roquefortine'),('BGC0000129','pyripyropene'),('BGC0000686','helvolic acid'),('BGC0001067','fumagillin');
+INSERT INTO flag VALUES {flag_values};
 CREATE TABLE fh AS
   SELECT f.acc AS flagged_accession, f.label, h.locustag AS genome, h.record, h.region, h.mibig_accession, h.sim_rank, h.similarity, h.n_entry_proteins, h.gene_hits, h.core_gene_hits
   FROM hr h JOIN flag f ON split_part(h.mibig_accession,'.',1) = f.acc;
@@ -98,7 +98,7 @@ COPY (
   LEFT JOIN (SELECT flagged_accession, genome, count(*) AS n_any, count(*) FILTER (WHERE similarity >= 75) AS n_ge75 FROM fh GROUP BY 1,2) x
          ON x.flagged_accession = f.acc AND x.genome = g.genome
   GROUP BY f.acc, f.label, g.species
-  HAVING bool_or(g.genus IN ('Aspergillus','Penicillium','Talaromyces','Fusarium','Neosartorya')) OR count(DISTINCT g.genome) FILTER (WHERE x.n_any > 0) > 0
+  HAVING bool_or(g.genus IN ({genera_list})) OR count(DISTINCT g.genome) FILTER (WHERE x.n_any > 0) > 0
   ORDER BY 1, n_genomes_hit_ge75 DESC, 3) TO '{out}/flagged_summary_v5.tsv' (FORMAT csv, DELIMITER '\t', HEADER);
 
 COPY (SELECT 'regions' AS tbl, count(*) AS n FROM reg UNION ALL SELECT 'genomes', count(*) FROM gen UNION ALL SELECT 'genomes_ok', count(*) FROM gen WHERE run_status='ok'
@@ -108,6 +108,10 @@ COPY (SELECT 'regions' AS tbl, count(*) AS n FROM reg UNION ALL SELECT 'genomes'
       UNION ALL SELECT 'runjson_without_samples_row', count(*) FROM rj WHERE genome NOT IN (SELECT LOCUSTAG FROM sm)) TO '{out}/export_counts.txt' (FORMAT csv, DELIMITER '\t', HEADER);
 """
 
+DEFAULT_FLAGS = ["BGC0000356=fumitremorgin/verruculogen", "BGC0000420=roquefortine", "BGC0000129=pyripyropene",
+                 "BGC0000686=helvolic acid", "BGC0001067=fumagillin"]
+DEFAULT_GENERA = "Aspergillus,Penicillium,Talaromyces,Fusarium,Neosartorya"
+
 def q(s): return s.replace("'", "''")
 
 def main():
@@ -115,11 +119,24 @@ def main():
     ap.add_argument("--pq", required=True); ap.add_argument("--samples", required=True)
     ap.add_argument("--runjson", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--inputs", required=True, help="list of merged input files (input_files.txt of the merge); genomes not in it are not counted as ok");
-    ap.add_argument("--linked-missing", required=True); ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--linked-missing", required=True)
+    ap.add_argument("--flag", action="append", metavar="ACC=LABEL", help="MIBiG accession (no version) to report, with a label; repeat. Default: the five of message 021")
+    ap.add_argument("--genera", default=DEFAULT_GENERA, help="comma list of genera whose species are always listed in flagged_summary (others only if they have a hit)")
+    ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     miss = f"SELECT * FROM read_csv('{q(a.linked_missing)}', delim='\\t', header=true, all_varchar=true)"
-    sql = SQL.format(pq=q(a.pq), samples=q(a.samples), runjson=q(a.runjson), inputs=q(a.inputs), out=q(a.out), threads=a.threads, missing_sql=miss)
+    pairs = []
+    for item in (a.flag or DEFAULT_FLAGS):
+        acc, sep, label = item.partition("=")
+        if not sep or not acc.strip():
+            sys.exit(f"ERROR: --flag needs ACC=LABEL, got: {item!r}")
+        pairs.append(f"('{q(acc.strip())}','{q(label.strip())}')")
+    genera = [g.strip() for g in a.genera.split(",") if g.strip()]
+    if not genera:
+        sys.exit("ERROR: --genera is empty")
+    sql = SQL.format(pq=q(a.pq), samples=q(a.samples), runjson=q(a.runjson), inputs=q(a.inputs), out=q(a.out), threads=a.threads, missing_sql=miss,
+                     flag_values=",".join(pairs), genera_list=",".join("'" + q(g) + "'" for g in genera))
     r = subprocess.run(["duckdb", "-bail"], input=sql, capture_output=True, text=True)
     if r.returncode != 0:
         sys.exit("ERROR: duckdb failed:\n" + r.stderr[:3000])
