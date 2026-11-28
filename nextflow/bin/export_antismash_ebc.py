@@ -108,8 +108,9 @@ COPY (SELECT 'regions' AS tbl, count(*) AS n FROM reg UNION ALL SELECT 'genomes'
       UNION ALL SELECT 'runjson_without_samples_row', count(*) FROM rj WHERE genome NOT IN (SELECT LOCUSTAG FROM sm)) TO '{out}/export_counts.txt' (FORMAT csv, DELIMITER '\t', HEADER);
 """
 
-DEFAULT_FLAGS = ["BGC0000356=fumitremorgin/verruculogen", "BGC0000420=roquefortine", "BGC0000129=pyripyropene",
-                 "BGC0000686=helvolic acid", "BGC0001067=fumagillin"]
+# BGC0000356 (fumitremorgin/verruculogen) is not in the MIBiG 4.0 reference used by antiSMASH 8.0.4 here, so it cannot
+# produce a hit; it was in the first (v5) default list and is left out now. Pass --flag to add any accession.
+DEFAULT_FLAGS = ["BGC0000420=roquefortine", "BGC0000129=pyripyropene", "BGC0000686=helvolic acid", "BGC0001067=fumagillin"]
 DEFAULT_GENERA = "Aspergillus,Penicillium,Talaromyces,Fusarium,Neosartorya"
 
 def q(s): return s.replace("'", "''")
@@ -120,7 +121,7 @@ def main():
     ap.add_argument("--runjson", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--inputs", required=True, help="list of merged input files (input_files.txt of the merge); genomes not in it are not counted as ok");
     ap.add_argument("--linked-missing", required=True)
-    ap.add_argument("--flag", action="append", metavar="ACC=LABEL", help="MIBiG accession (no version) to report, with a label; repeat. Default: the five of message 021")
+    ap.add_argument("--flag", action="append", metavar="ACC=LABEL", help="MIBiG accession (no version) to report, with a label; repeat. Default: roquefortine, pyripyropene, helvolic acid, fumagillin")
     ap.add_argument("--genera", default=DEFAULT_GENERA, help="comma list of genera whose species are always listed in flagged_summary (others only if they have a hit)")
     ap.add_argument("--threads", type=int, default=4)
     a = ap.parse_args()
